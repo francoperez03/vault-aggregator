@@ -231,3 +231,7 @@ cast call 0x794a61358d6845594f94dc1db02a252b5b4814ad \
 ### Carried-forward risk (M1 §1.4)
 
 `cargo stylus verify`'s reproducible Docker build does not reproduce a `-Zbuild-std` artifact with the stock image — open since Phase 04.1, carried through Phase 7. Because the Vault Aggregator's build pipeline inherits the same `-Cpanic=immediate-abort`/`-Zbuild-std` nightly recipe (per the M1 carryover, §1.3/§1.4), this same verification gap resurfaces at Phase 15's mainnet deploy unless Phase 7 closes it first. Recorded here so it is not lost between phases.
+
+## Client share (D-12)
+
+The frozen adapter-design ADR (`docs/adr/001-vault-adapter-design.md`) plus this document's market shortlist (§3) are ready to send to Gonzalo/WakeUp proactively. Phase 9 starts without waiting for their sign-off on this design freeze — only the final per-protocol market addresses (D-07) wait for client confirmation, and that confirmation only gates mainnet deploy configuration, not adapter code.
