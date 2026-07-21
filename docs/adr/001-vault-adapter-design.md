@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — amended 2026-07-21 (Beefy→Euler swap, pending Gonzalo/WakeUp confirmation, D-07)
+Accepted — amended 2026-07-21 (Beefy→Euler swap, confirmed 2026-07-21; final market addresses still await D-07)
 
 ## Context
 
@@ -128,7 +128,7 @@ not an unverified assertion.
   against a local devnode — budget and gas-funding for this must be planned into those phases'
   scope, not assumed to be zero-cost like a typical fork test.
 
-## Amendment (2026-07-21): Beefy→Euler swap — pending Gonzalo/WakeUp confirmation (D-07)
+## Amendment (2026-07-21): Beefy→Euler swap — CONFIRMED 2026-07-21
 
 - **Change:** the fourth protocol is swapped from Beefy to Euler v2 (`eUSDC-2`,
   `0x6afb...673b`, cast-verified strict ERC-4626, ~725K USDC TVL, DISCOVERY §3.3). The four
@@ -141,9 +141,10 @@ not an unverified assertion.
   18-vs-6-decimal scaling are all removed from the design. Audit surface shrinks to one
   adapter shape. (Note: shape A was rejected in the original Decision only because Beefy was
   non-4626; removing Beefy removes that objection.)
-- **Status of the swap:** this is the client-facing decision and is **pending Gonzalo/WakeUp
-  confirmation (D-07)**. Until confirmed, the frozen shape-B Decision above stands as the
-  fallback. Beefy is not discarded — it moves to the replacement bench (inverse swap,
+- **Status of the swap:** **CONFIRMED (2026-07-21)** — shape A (single generic ERC-4626
+  adapter for all four protocols) is the effective design going into Phase 9. The frozen
+  shape-B Decision above remains documented as the fallback only if Euler is later
+  rejected. Beefy is not discarded — it moves to the replacement bench (inverse swap,
   DISCOVERY §3.4) so its pre-4626 dedicated-adapter analysis (§2.4) stays available if Euler
   is rejected; reinstating Beefy would reintroduce the dedicated adapter shape.
 - **Consequences superseded under the amendment:** the "Beefy's dedicated adapter is real

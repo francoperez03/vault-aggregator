@@ -2,7 +2,7 @@
 
 Phase 8 discovery deliverable. Answers DISC-01's sub-questions before any M2 production code is written. Sections are appended by later plans in this phase; this file starts with the router-existence verdict.
 
-**Amendment (2026-07-21) — Beefy→Euler swap (pending D-07):** the fourth active protocol is now Euler v2 (eUSDC-2), a strict ERC-4626 vault; Beefy moves to the replacement bench (§3.4). Client-facing swap, pending Gonzalo/WakeUp confirmation (D-07). See ADR 001's Amendment section. Sections below are updated in place; §2.4 retains Beefy's verified interface as the bench entry's backing evidence.
+**Amendment (2026-07-21) — Beefy→Euler swap (CONFIRMED 2026-07-21):** the fourth active protocol is now Euler v2 (eUSDC-2), a strict ERC-4626 vault; Beefy moves to the replacement bench (§3.4). Final per-protocol market addresses still await D-07 confirmation. See ADR 001's Amendment section. Sections below are updated in place; §2.4 retains Beefy's verified interface as the bench entry's backing evidence.
 
 ## 1. Router existence verdict
 
