@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = []
+
+[profile.release]
+opt-level = "z"
+lto = true
+panic = "abort"
+codegen-units = 1
+strip = true
