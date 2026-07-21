@@ -185,3 +185,49 @@ This bench exists so the ADR (Plan 05) can recommend a swap **without reopening 
 - `DefiLlama/yield-server` `silo-v2` adaptor source (`raw.githubusercontent.com`) — read directly 2026-07-21 for the Silo v2 Arbitrum `SiloFactory` address (`0x384DC7759d35313F0b567D42bf2f611B285B657C`) and the protocol's own bad-debt/"Stream-impacted" denylist for Arbitrum USDC silos
 - `cast logs` against the Silo v2 Arbitrum `SiloFactory`'s `NewSilo` event, `https://arb1.arbitrum.io/rpc` — queried directly 2026-07-21 to enumerate USDC-denominated Silo markets on-chain
 - `yields.llama.fi/pools` (DefiLlama yields API) — queried 2026-07-21 for cross-reference TVL figures on Euler v2/Silo v2/Dolomite/Gearbox candidates
+
+## 4. Fork-tooling verdict
+
+**Hypothesis under test (D-04):** Given the Vault Aggregator needs fork tests against real Aave/Morpho/Fluid/Beefy state on Arbitrum One, when the two candidate fork-testing paths are each exercised directly — Candidate A (`nitro-testnode` forking Arbitrum One state + a dummy Stylus contract deployed to that fork + a real call against forked Aave Pool state) and Candidate B (`stylus-test`'s `TestVMBuilder::rpc_url()` state-forked reads) — then D-04's literal bar is: at least one candidate makes "a real call against forked Aave pool state" from a Stylus contract's own execution.
+
+**Verdict: NEITHER.** Full evidence in `.planning/spikes/002-fork-tooling/README.md` (Plan 08-02).
+
+- **Candidate A (`nitro-testnode`): NO fork mechanism exists.** Confirmed from direct inspection of the `release` branch's `test-node.bash` (825 lines, full flag surface enumerated) — every flag configures a from-genesis devnode (chain type, DA mode, timeboost, tokenbridge, build/CI knobs); none import, fork, or point at an existing L2's state. `NethermindEth/arbitrum-nitro-testnode` was checked and ruled out as a stale, byte-identical mirror (confirmed via GitHub API `parent` field), not an independent fork-capable implementation.
+- **Candidate B (`TestVMBuilder::rpc_url()`): PARTIAL, and the partial result does not satisfy D-04.** Reading `stylus-test = "0.10.8"`'s own source (`src/builder.rs`, `src/vm.rs`) shows `rpc_url()` only forks the storage of the TestVM's own `contract_address` — proven live against Aave Pool V3's real slot 0. External calls (`call_contract`/`static_call_contract`) are always routed through the local `mock_call`/`mock_static_call` registry regardless of `rpc_url`, proven by a static call to Aave Pool from a different dummy address returning an empty, undecodable, unmocked success. The Vault Aggregator's actual fork-test need — adapters calling OUT to Aave/Morpho/Fluid/Beefy — is exactly the shape TestVM never forks.
+- The Aave Pool V3 / native-USDC addresses from §2.1 were re-verified live (`cast code`, `cast call getReserveNormalizedIncome`) during the spike: a real call against Aave on Arbitrum One IS possible today, just not from inside either fork-testing candidate.
+
+### D-05 decision: recommended fork-test path for Phases 9/10/13
+
+Neither candidate satisfies D-04's bar, so per D-05 this reopens the no-mainnet-spend decision (D-02) with the spike's failure evidence in hand. **No mainnet spend was performed or is being triggered here** — this is a documented decision, not an action; the timing/authorization of any actual spend is left to whoever owns Phases 9-13's test-architecture call (Gonzalo/Franco).
+
+**Recommended path:** ABI-level assertions via Foundry (`cast call`/`cast send`/`forge script`) against small real deposits/withdrawals on Arbitrum One, rather than either fork candidate — because the spike's own evidence shows `cast call`/`cast send` against the real, deployed Aave Pool (and the other three protocols, all live-verified in §2) already works today with no special tooling. Phases 9/10/13 should budget for this real-USDC path (~$50-100 per D-05's fallback estimate) instead of designing a fork-node test harness that does not exist.
+
+### How to Run (reproduction, from spike 002)
+
+```bash
+# Candidate A crux check (no docker container needed — the CLI itself has no fork flag):
+curl -s "https://raw.githubusercontent.com/OffchainLabs/nitro-testnode/release/test-node.bash" \
+  | grep -n -- '--[a-z-]*)' | sort -u
+# → chain-type/DA/build/CI flags only; grep for "fork"/"mainnet"/"import" returns nothing
+
+# Candidate B (real forked storage read + proof external calls aren't forked):
+cd .planning/spikes/002-fork-tooling/testvm-fork
+cargo test --release
+
+# Direct re-verification of live Aave state (no fork tooling needed):
+cast code 0x794a61358d6845594f94dc1db02a252b5b4814ad --rpc-url https://arb1.arbitrum.io/rpc
+cast call 0x794a61358d6845594f94dc1db02a252b5b4814ad \
+  "getReserveNormalizedIncome(address)(uint256)" \
+  0xaf88d065e77c8cC2239327C5EDb3A432268e5831 \
+  --rpc-url https://arb1.arbitrum.io/rpc
+```
+
+### What to Expect
+
+- `test-node.bash` flag grep: no line contains "fork", "mainnet", or "import" in relation to L2 state.
+- `cargo test --release` in `testvm-fork/`: `test result: ok. 3 passed; 0 failed`.
+- `cast call getReserveNormalizedIncome`: a real non-zero `uint256` (a live index, will drift over time; non-zero is the load-bearing assertion).
+
+### Carried-forward risk (M1 §1.4)
+
+`cargo stylus verify`'s reproducible Docker build does not reproduce a `-Zbuild-std` artifact with the stock image — open since Phase 04.1, carried through Phase 7. Because the Vault Aggregator's build pipeline inherits the same `-Cpanic=immediate-abort`/`-Zbuild-std` nightly recipe (per the M1 carryover, §1.3/§1.4), this same verification gap resurfaces at Phase 15's mainnet deploy unless Phase 7 closes it first. Recorded here so it is not lost between phases.
