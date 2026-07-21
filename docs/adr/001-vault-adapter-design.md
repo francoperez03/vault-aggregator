@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted — amended 2026-07-21 (Beefy→Euler swap, pending Gonzalo/WakeUp confirmation, D-07)
 
 ## Context
 
@@ -56,8 +56,10 @@ not an unverified assertion.
   Morpho Blue singleton (`0x6c247b1F6182318877311737BaC0844bAa518F5e`) is deployed on Arbitrum
   One (Morpho's own `blue-api.morpho.org` GraphQL API plus `cast code` cross-check), and the
   shortlisted vaults (`DISCOVERY.md` §3.1: Gauntlet USDC Core primary, Steakhouse High Yield
-  USDC backup) expose the standard `deposit`/`redeem`/`convertToAssets` selectors non-reverting.
-  No adapter deviation beyond the generic shape.
+  USDC backup) expose the standard selectors per the shared MetaMorpho implementation — the
+  selector scan is verified on `tgUSDC` (§2.2); the shortlisted vaults are the
+  same-implementation assumption, to be confirmed by Phase 9's first live call. No adapter
+  deviation beyond the generic shape.
 - **Fluid:** the generic 4626 adapter targets fUSDC (`0x1A996cb54bb95462040408C06122D45D6Cdb6096`).
   Verified: `asset()` returns native USDC, `convertToAssets`/`maxRedeem` are both callable and
   non-reverting, share price is non-1:1 (`DISCOVERY.md` §2.3). No adapter deviation.
@@ -93,7 +95,7 @@ not an unverified assertion.
 - **Protocol swap-in recommendation (pending Gonzalo/WakeUp approval, D-07):** none of the four
   verified interfaces (§2) disqualifies its protocol outright, so no swap is recommended today.
   If any of Morpho/Fluid/Beefy's shortlisted vault becomes unavailable before deploy, the
-  replacement-protocols bench (`DISCOVERY.md` §3.1, D-13: Euler v2 for Beefy, Yearn V3 for
+  replacement-protocols bench (`DISCOVERY.md` §3.4, D-13: Euler v2 for Beefy, Yearn V3 for
   Morpho, Silo v2 for Fluid — all cast-verified strict ERC-4626) swaps in without reopening this
   ADR's adapter shapes: Euler/Yearn/Silo all fit the generic 4626 adapter unchanged (none needs
   Beefy's dedicated shape). Any actual swap still needs Gonzalo/WakeUp sign-off per D-07.
@@ -125,6 +127,30 @@ not an unverified assertion.
   Phases 9/10/13 spends small amounts of real USDC on Arbitrum One instead of running for free
   against a local devnode — budget and gas-funding for this must be planned into those phases'
   scope, not assumed to be zero-cost like a typical fork test.
+
+## Amendment (2026-07-21): Beefy→Euler swap — pending Gonzalo/WakeUp confirmation (D-07)
+
+- **Change:** the fourth protocol is swapped from Beefy to Euler v2 (`eUSDC-2`,
+  `0x6afb...673b`, cast-verified strict ERC-4626, ~725K USDC TVL, DISCOVERY §3.3). The four
+  active protocols become Aave-via-Stata, Morpho (Gauntlet USDC Core), Fluid (fUSDC), and
+  Euler v2 (eUSDC-2) — all strict ERC-4626.
+- **Design consequence:** with no non-4626 protocol left, the design collapses from
+  shape B (generic ×3 + dedicated Beefy) to **shape A — a single generic ERC-4626 adapter
+  for all four**, parameterized only by target-vault address. The dedicated Beefy adapter,
+  its manual `getPricePerFullShare()`-based `convertToAssets`/`convertToShares` math, and the
+  18-vs-6-decimal scaling are all removed from the design. Audit surface shrinks to one
+  adapter shape. (Note: shape A was rejected in the original Decision only because Beefy was
+  non-4626; removing Beefy removes that objection.)
+- **Status of the swap:** this is the client-facing decision and is **pending Gonzalo/WakeUp
+  confirmation (D-07)**. Until confirmed, the frozen shape-B Decision above stands as the
+  fallback. Beefy is not discarded — it moves to the replacement bench (inverse swap,
+  DISCOVERY §3.4) so its pre-4626 dedicated-adapter analysis (§2.4) stays available if Euler
+  is rejected; reinstating Beefy would reintroduce the dedicated adapter shape.
+- **Consequences superseded under the amendment:** the "Beefy's dedicated adapter is real
+  audit surface" consequence is voided while the swap holds (single generic adapter to audit);
+  the 18-vs-6-decimal Beefy scaling concern no longer applies. All other consequences (22KB
+  gate, inflation/first-depositor protection, real-USDC fork-test substitute, verify/
+  `-Zbuild-std` reproducibility, addresses-await-D-07) are unchanged.
 
 ## Client share (D-12)
 
