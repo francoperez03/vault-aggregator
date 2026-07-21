@@ -61,6 +61,64 @@ Resolved from Morpho's own primary source, not a search-engine summary (Pitfall 
 
 **Consequence for VAULT-05:** Morpho IS available as a real, live Arbitrum One adapter target — no re-sourcing or bridging is needed. The candidate USDC vault (`tgUSDC`) is small (~$18.75 TVL) and curator-less; Phase 9/13 should treat vault selection (this one vs. a larger/curated alternative surfaced later) as an open parameter, not re-litigate deployment existence.
 
+### 2.3 Fluid (Instadapp fToken, USDC)
+
+RE-VERIFIED 2026-07-21 (same session as the rest of §2, well inside the 14-day validity window).
+
+**Verdict: Fluid fUSDC on Arbitrum One IS ERC-4626-conformant — resolves RESEARCH.md's unresolved fToken address.**
+
+- **Address found via Fluid's own API** (`api.fluid.instadapp.io/v2/lending/42161/tokens`, primary source, not a search summary): fUSDC = `0x1A996cb54bb95462040408C06122D45D6Cdb6096`, underlying `assetAddress` = `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` (native USDC, byte-for-byte match against RESEARCH.md's Native USDC row).
+- **[VERIFIED: `cast code 0x1A996cb54bb95462040408C06122D45D6Cdb6096 --rpc-url https://arb1.arbitrum.io/rpc`]** — non-empty bytecode, confirms live deployment.
+- **[VERIFIED: `cast call ... "asset()(address)"`]** → `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` — matches native USDC exactly.
+- **[VERIFIED: `cast call ... "name()(string)"`]** → `"Fluid USD Coin"`; **[VERIFIED: `cast call ... "symbol()(string)"`]** → `"fUSDC"`; **[VERIFIED: `cast call ... "decimals()(uint8)"`]** → `6` (matches USDC's own decimals).
+- **[VERIFIED: `cast call ... "totalAssets()(uint256)"`]** → `35776403129410` (~35.78M USDC, real non-zero live TVL).
+- **[VERIFIED: `cast call ... "convertToAssets(uint256)" 1000000000000000000`]** → `1121774267498000000` — non-1:1 exchange rate (share price > 1), confirms genuine ERC-4626 share accounting, not a passthrough.
+- **[VERIFIED: `cast call ... "maxRedeem(address)" 0x...01`]** → `0` (call succeeds, returns a value — the function exists and is callable; zero is the expected answer for an address holding no shares, not a revert).
+- **[VERIFIED: `cast sig "deposit(uint256,address)"`]** → `0x6e553f65`, **[VERIFIED: `cast sig "redeem(uint256,address,address)"`]** → `0xba087652`, **[VERIFIED: `cast sig "convertToAssets(uint256)"`]** → `0x07a2d13a`, **[VERIFIED: `cast sig "maxRedeem(address)"`]** → `0xd905777e` — recorded for the adapter's `sol!` bare-function binding cross-check (never `sol_interface!`, M1 carryover 1.1).
+
+**Consequence:** Fluid fits the generic ERC-4626 adapter with no protocol-specific shape — same integration pattern as Aave-via-Stata and the Morpho MetaMorpho vault.
+
+### 2.4 Beefy (specific vault ABI verification — Pitfall 1 / A4)
+
+RE-VERIFIED 2026-07-21.
+
+**Verdict: the shortlisted Beefy USDC vault uses the PRE-4626 `getPricePerFullShare()` shape, NOT a 4626-compatible layer — confirms RESEARCH.md's Assumption A4 as TRUE for this specific vault, not just the protocol in general.**
+
+Per Pitfall 1, the protocol was NOT generalized from: every Beefy single-asset USDC vault on Arbitrum One currently available via Beefy's own vault list (`api.beefy.finance/vaults`, filtered `chain=arbitrum`, `assets=["USDC"]`, `status=active`) is itself a wrapper around a Morpho MetaMorpho vault (Beefy's `platformId: "morpho"` — Beefy auto-compounds the Morpho position's rewards, it is not a raw lending-pool vault). Five such vaults exist; TVL via `api.beefy.finance/tvl`:
+
+| Vault id | mooToken address | TVL (USD) |
+|----------|-------------------|-----------|
+| `morpho-arb-gauntlet-core-usdc` (**PRIMARY**) | `0x3e101847e64987CE01E56918dcc8c437F4c6B24c` | ~$56,458 |
+| `morpho-arb-hyperithm-usdc` (**BACKUP**) | `0x99925188f1B92661A443376319370ACFF1D68B87` | ~$20,708 |
+| `morpho-arb-steakhouse-v2-usdc` | `0x48c22563d06826CA38ab32F7EcbcB94f03a287aa` | ~$13,018 |
+| `morpho-arb-gauntlet-prime-usdc` | `0xBced10660D87ecE552E1F3652927Bc7C87CccA75` | ~$12,631 |
+| `morpho-arb-steakhouse-usdc` | `0x13EaA79178f2b6C0A43cA265B66d70b9d60F827a` | ~$11,774 |
+
+ABI verified on-chain against the primary candidate (`mooMorphoArbGauntletCoreUSDC`, `0x3e101847e64987CE01E56918dcc8c437F4c6B24c`):
+
+- **[VERIFIED: `cast code 0x3e101847e64987CE01E56918dcc8c437F4c6B24c --rpc-url https://arb1.arbitrum.io/rpc`]** — non-empty bytecode (an EIP-1167 minimal proxy, `363d3d373d3d3d363d73...`), confirms live deployment.
+- **[VERIFIED: `cast call ... "name()(string)"`]** → `"Moo Morpho Arb Gauntlet Core USDC"`; **[VERIFIED: `cast call ... "symbol()(string)"`]** → `"mooMorphoArbGauntletCoreUSDC"`; **[VERIFIED: `cast call ... "decimals()(uint8)"`]** → `18` (mooToken decimals, NOT the underlying's 6 — a deviation an adapter must account for).
+- **[VERIFIED: `cast call ... "want()(address)"`]** → `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` (native USDC — confirms the underlying asset via the pre-4626 `want()` getter, not `asset()`).
+- **[VERIFIED: `cast call ... "getPricePerFullShare()(uint256)"`]** → `1015873016098905462` (~1.0159, non-1:1, real share price) — the pre-4626 shape IS present and live.
+- **[VERIFIED: `cast call ... "asset()(address)"`]** → **reverts** (`execution reverted, data: "0x"`).
+- **[VERIFIED: `cast call ... "convertToAssets(uint256)" 1000000`]** → **reverts**.
+- **[VERIFIED: `cast call ... "maxRedeem(address)" 0x...01`]** → **reverts**.
+- **[VERIFIED: `cast sig "deposit(uint256)"`]** → `0xb6b55f25`, **[VERIFIED: `cast sig "withdraw(uint256)"`]** → `0x2e1a7d4d`, **[VERIFIED: `cast sig "getPricePerFullShare()"`]** → `0x77c7b8fc` — this is the actual entrypoint shape (single-arg `deposit(uint256)`/`withdraw(uint256)`, NOT the 4626 `deposit(uint256,address)`/`redeem(uint256,address,address)`).
+- **[VERIFIED: `cast call ... "balance()(uint256)"`]** → `56464975728` (~56,465 USDC, matches the off-chain TVL figure) and **[VERIFIED: `cast call ... "strategy()(address)"`]** → `0xFE2ceb2472Ef0b39C662a033e2a572cBb009AF6B` — confirms this is a real, actively-managed vault, not a stub.
+
+**Consequence for VAULT-05 / the ADR:** Beefy does NOT fit the generic 4626 adapter as-is. It needs its own adapter shape mapping `deposit(uint256)` → aggregator `deposit`, `withdraw(uint256)` (share amount, Beefy's own units) → aggregator `redeem`, and `getPricePerFullShare()` → the aggregator's internal `convertToAssets`/`convertToShares` math (manual multiplication/division against the 1e18-scaled price, no native `convertToAssets` to delegate to). The 18-decimals mooToken vs. 6-decimals USDC also needs explicit scaling in that shape — a second deviation beyond the interface mismatch. This is exactly Pitfall 1's warning materialized on the real candidate vault, not a hypothetical: the ADR (Plan 05) must design Beefy as a distinct adapter variant, not a "minor wrapper" over the generic 4626 adapter.
+
+### 2.5 Four-protocol ERC-4626 deviations comparison table (D-03)
+
+One row per protocol, from the verified §2 findings above. **Empirical proof of each deviation (actual rounding-direction transactions, actual paused-state behavior) is explicitly deferred to Phase 9's smoke fork tests — this table is a source-verified survey, not an empirical proof (D-03).**
+
+| Protocol | Candidate | 4626-conformant? | Rounding direction | Redeem/withdraw limits | Pause/emergency state | Notable deviation |
+|----------|-----------|-------------------|---------------------|--------------------------|-------------------------|---------------------|
+| Aave (via Stata) | `stataArbUSDCn` `0x7cfa...1ad` | `[VERIFIED]` YES — `deposit(uint256,address)`/`redeem(uint256,address,address)`/`convertToAssets` all present, non-1:1 exchange rate | `[CITED]` OZ `Erc4626`-derived Stata implementation rounds down on `convertToShares` (deposit) and down on `convertToAssets` (redeem), the standard 4626-safe direction (protects the vault, not the depositor) — not empirically re-derived here | `[CITED]` Stata inherits Aave Pool's liquidity constraint: `maxRedeem` is capped by the Pool's available liquidity, can be < full balance during high utilization | `[CITED]` Aave Pool has a protocol-level pause guardian (`Pool.paused()`); Stata itself has no separate pause, it reverts if the underlying Pool is paused | Static (non-rebasing) accounting is itself the deviation vs. holding raw `aArbUSDC` directly (PITFALLS.md §6) |
+| Morpho (MetaMorpho `tgUSDC`) | `0xF9a4...eBBb` | `[VERIFIED]` YES — bytecode selector scan confirms `deposit`/`redeem`/`convertToAssets` jump-table entries | `[CITED]` MetaMorpho (OZ `Erc4626`-based per Morpho's own contracts) rounds down on deposit-shares, down on redeem-assets, matching the 4626-safe convention | `[CITED]` `maxRedeem` bounded by the underlying Morpho Blue market's available liquidity (can be less than the vault's `totalAssets` share if a market is fully utilized) | `[CITED]` MetaMorpho vaults have an owner-controlled market allocation but no single global pause flag; a market can be individually deprecated by the curator/owner reducing its cap to 0 | Curator-less on this specific candidate (`curator()` returned the zero address) — no active risk curation, an operational deviation vs. Aave/Fluid's protocol-level risk management |
+| Fluid (fUSDC) | `0x1A99...6096` | `[VERIFIED]` YES — `asset`/`convertToAssets`/`maxRedeem` all callable and non-reverting, non-1:1 share price | `[CITED]` Fluid's Instadapp-authored vault follows the same OZ-derived 4626 rounding convention (round down in the vault's favor) — not empirically re-derived here | `[VERIFIED]` Fluid exposes an explicit `liquiditySupplyData.withdrawable` limit (from the same API used to find the address) distinct from `totalAssets` — a real, protocol-native withdrawal-limit mechanism beyond the generic 4626 `maxRedeem` | `[CITED]` Fluid has a protocol-level `Liquidity` contract pause/guard mechanism (not independently cast-verified this plan) | Explicit `withdrawalLimit`/`expandPercent`/`expandDuration` liquidity-throttling mechanism (visible in the API response) — a Fluid-specific rate-limited withdrawal shape beyond plain `maxRedeem` |
+| Beefy (`mooMorphoArbGauntletCoreUSDC`) | `0x3e10...24c` | `[VERIFIED]` **NO** — `asset()`/`convertToAssets()`/`maxRedeem()` all revert; only `want()`/`getPricePerFullShare()`/`deposit(uint256)`/`withdraw(uint256)` exist | `[CITED]` `getPricePerFullShare()` is computed as `balance()/totalSupply()` (Beefy's standard formula) — no explicit round-down/up guarantee documented at the interface level, unlike audited 4626 implementations | `[VERIFIED]` No `maxRedeem` exists at all (reverts); withdrawal is implicitly capped by the vault's own `balance()` and the underlying Morpho market's liquidity one layer down | `[CITED]` Beefy vaults have a `pause()`/`unpause()` admin function (standard Beefy vault pattern, not independently cast-verified this plan) | **Non-4626 interface entirely** (Pitfall 1/A4 confirmed on this exact vault) + 18-decimal mooToken vs 6-decimal USDC — needs its own adapter shape, not a wrapper |
+
 ## Sources
 
 - GitHub Search API (`api.github.com/search/repositories`) — direct queries, 2026-07-21
@@ -68,5 +126,7 @@ Resolved from Morpho's own primary source, not a search-engine summary (Pitfall 
 - `solidoracle/erc4626-rs` GitHub API repo metadata — fetched 2026-07-21
 - DuckDuckGo HTML search (`html.duckduckgo.com/html`) — queried 2026-07-21
 - `.planning/phases/08-vault-technical-discovery/08-RESEARCH.md` — prior generic GitHub/web search pass (Summary finding 1, Pitfall 3, Assumption A2), extended here with the Stylus-specific secondary pass it called for
-- `cast` (Foundry 1.3.5-stable) against `https://arb1.arbitrum.io/rpc` — all Aave/Stata/Morpho on-chain evidence, run directly 2026-07-21
+- `cast` (Foundry 1.3.5-stable) against `https://arb1.arbitrum.io/rpc` — all Aave/Stata/Morpho/Fluid/Beefy on-chain evidence, run directly 2026-07-21
 - `blue-api.morpho.org/graphql` — Morpho's own official indexer API (primary source, not a search summary), queried directly 2026-07-21 for chain support, market list, and vault list
+- `api.fluid.instadapp.io/v2/lending/42161/tokens` — Fluid's own official API (primary source), queried directly 2026-07-21 to resolve the fUSDC token address on Arbitrum One
+- `api.beefy.finance/vaults` and `api.beefy.finance/tvl` — Beefy's own official API (primary source), queried directly 2026-07-21 to identify and rank the candidate Arbitrum One USDC vaults
