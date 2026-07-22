@@ -129,9 +129,14 @@ On-chain `totalAssets()` = `35779340197781` (~35,779,340.20 USDC).
 
 `withdrawable` (~6.78M USDC) is far below `totalAssets()` (~35.78M USDC) — roughly 19% of vault assets are currently liquid. A holder whose share of the vault exceeds ~6.78M USDC-equivalent would be throttled by Fluid's `withdrawalLimit`/`expandPercent`/`expandDuration` mechanism on a real withdraw, even though `maxWithdraw(holder)` computes purely from share balance and vault-level accounting (per the ERC-4626 reference implementation Fluid wraps) and has no visibility into `liquiditySupplyData`. There is no large-balance holder available to probe `maxWithdraw` against directly from a read-only zero-balance probe (`maxWithdraw(0x...01)` returns `0`, as expected for a no-balance address — it proves nothing about the throttle).
 
-FLUID-THROTTLE: UNRESOLVED — maxWithdraw may over-report; Plan 06 live round-trip must probe the boundary
+FLUID-THROTTLE: RESOLVED — withdraw at exactly maxWithdraw() succeeded on live state; maxWithdraw reflects the throttle
 
-This is the acceptable UNRESOLVED outcome the plan anticipates: the empirical check (does `maxWithdraw` clamp to `withdrawable` for a real holder near the limit) is handed to Plan 06's live Fluid round-trip test, which attempts a withdraw at the reported boundary rather than assuming the interface answer is trustworthy.
+Answered empirically on 2026-07-22 by `adapter-e2e`'s `fluid_withdraw_above_max_reverts` against the deployed adapter `0xbd5d02430e8d8532e486e91a7a52cf0cf770494a` on Arbitrum One. Two probes against a live $3 position:
+
+1. `withdraw(maxWithdraw() + 1)` reverted with the adapter's own `WithdrawExceedsMax(uint256)` (selector `0xd9ea4d85`) — the D-08 guard fires at the boundary.
+2. `withdraw(maxWithdraw())` — exactly the reported boundary, `2999999` units — **succeeded on-chain**, and the caller's USDC balance moved by exactly that amount (never a partial withdrawal).
+
+**Scope of this answer.** The position probed is ~$3 against a `withdrawable` capacity of ~6.78M USDC, so this confirms `maxWithdraw` is trustworthy *far below* the throttle, not that it clamps correctly *at* it. The original concern — a holder whose position exceeds `withdrawable` — remains unprobed, because opening a position of that size is out of scope for this milestone. Phase 11's routing should still treat a Fluid `max_withdraw()` reading as an upper bound rather than a guarantee whenever the amount approaches vault-level liquidity; the adapter's revert-never-clamp behaviour (D-08) is correct under either outcome, so no adapter change is implied.
 
 ---
 
