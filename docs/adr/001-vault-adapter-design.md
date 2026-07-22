@@ -47,11 +47,12 @@ dedicated Beefy adapter.** Every decision below is anchored to a verified `DISCO
 not an unverified assertion.
 
 - **Aave v3:** the adapter holds `stataArbUSDCn` (`0x7cfadfd5645b50be87d546f42699d863648251ad`)
-  shares, not raw `aArbUSDC` (`0x625e7708f30ca75bfd92586e17077590c60eb4cd`). Verified: Stata's
+  shares, not raw `aArbUSDCn` (`0x724dc807b04555b71ed48a6896b6F41593b8C637`). Verified: Stata's
   `asset()` returns native USDC (`0xaf88d065e77c8cC2239327C5EDb3A432268e5831`), `totalAssets()`
   returns a live non-zero `324579866025`, and `convertToAssets` returns a non-1:1 rate — proving
   genuine 4626 share accounting (`DISCOVERY.md` §2.1). This closes PITFALLS.md §6 for Aave with
-  no custom wrapper.
+  no custom wrapper. (aToken address corrected 2026-07-22 per Phase 10 D-11; the address originally
+  recorded here was the USDC.e aToken. The decision itself is unchanged.)
 - **Morpho Blue:** the generic 4626 adapter targets a MetaMorpho USDC vault. Verified: the
   Morpho Blue singleton (`0x6c247b1F6182318877311737BaC0844bAa518F5e`) is deployed on Arbitrum
   One (Morpho's own `blue-api.morpho.org` GraphQL API plus `cast code` cross-check), and the
