@@ -6,13 +6,14 @@ Command: `cd packages/contracts/vault-adapter && cargo stylus check --endpoint="
 
 - **Compressed size: 12,550 bytes** (12.6 KB)
 - **Fragment count: 1** (single-fragment, activates on ArbOS 51 / Arbitrum One as-is)
-- **Gate: 22,528 bytes** (the effective ~22KB / 1-fragment Arbitrum One gate — ArbOS 51 has no
-  fragment support, so a >1-fragment binary that only passes a Sepolia check cannot activate on
-  One; see `.planning/STATE.md`'s Phase 04.1 decision and `coinflip`'s equivalent mainnet gate)
+- **Gate: 22,528 bytes (22528)** (the effective ~22KB / 1-fragment Arbitrum One gate — ArbOS 51
+  has no fragment support, so a >1-fragment binary that only passes a Sepolia check cannot
+  activate on One; see `.planning/STATE.md`'s Phase 04.1 decision and `coinflip`'s equivalent
+  mainnet gate)
 - **Headroom: 9,978 bytes (~44%)** under the gate
 - `cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"` exits `0`
 
-No lever was applied — the measured size is well under 22,528 bytes.
+No lever was applied — the measured size (12550 bytes) is well under the 22528-byte gate.
 
 ## Size progression across this phase
 
