@@ -21,6 +21,7 @@ D-06).** With `ARB_ONE_RPC_URL` unset they skip cleanly and cost nothing — thi
 | `MORPHO_ADAPTER_ADDR` | `morpho_roundtrip.rs` | Deployed adapter instance wired to Morpho `gtUSDCc`. |
 | `FLUID_ADAPTER_ADDR` | `fluid_roundtrip.rs` | Deployed adapter instance wired to Fluid `fUSDC`. |
 | `EULER_ADAPTER_ADDR` | `euler_roundtrip.rs` | Deployed adapter instance wired to Euler `eUSDC-2`. |
+| `AAVE_ADAPTER_ADDR` | `aave_roundtrip.rs` | Deployed adapter instance wired to Stata (`stataArbUSDCn`). |
 
 USDC and the three vault addresses are compile-time constants in `src/lib.rs`, not env vars —
 they are fixed and putting them behind env invites a typo pointing real money at the wrong
