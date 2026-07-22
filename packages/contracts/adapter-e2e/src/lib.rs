@@ -19,6 +19,21 @@ pub const FLUID_VAULT: Address = address!("1A996cb54bb95462040408C06122D45D6Cdb6
 /// Euler v2 `eUSDC-2`, the production vault.
 pub const EULER_VAULT: Address = address!("6afb8d3f6d4a34e9cb2f217317f4dc8e05aa673b");
 
+/// Explicit gas limit for every adapter-mutating tx, because `eth_estimateGas` under-estimates
+/// Stylus calls on Arbitrum One. Both failures were mined at status=0 with gasUsed ~= gasLimit,
+/// while the identical call replayed as `eth_call` succeeded (2026-07-22, `docs/RUNBOOK-M2.md`):
+///
+/// | Vault  | estimate | mined OOG at | actually needed |
+/// |--------|----------|--------------|-----------------|
+/// | Euler  | 217,692  | 217,692      | 198,382         |
+/// | Morpho | 602,149  | 600,000      | 578,240         |
+///
+/// Morpho is the expensive one: MetaMorpho's `withdraw` walks its market queue, so the ceiling is
+/// set well above it rather than per-protocol. Unused gas is refunded on Arbitrum, so a generous
+/// fixed limit costs nothing and removes a whole class of flaky live failures. The frontend
+/// (Phase 14) and the Phase 11 core will need the same buffer when they call these adapters.
+pub const TX_GAS_LIMIT: u64 = 2_000_000;
+
 /// ABI stubs hand-written against the adapter's real `#[public]` surface (never generated from a
 /// Rust-macro interface binding or a `.sol` file/Foundry: this repo's contracts are Rust/Stylus,
 /// the stub here is just alloy's typed-call sugar over plain JSON-RPC). Names confirmed against

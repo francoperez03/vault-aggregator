@@ -8,7 +8,7 @@ use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
 
 use adapter_e2e::arbitrum_one::{IVaultAdapter, IERC20};
-use adapter_e2e::{euler_adapter_addr, rpc_url, wallet_key, USDC};
+use adapter_e2e::{euler_adapter_addr, rpc_url, wallet_key, TX_GAS_LIMIT, USDC};
 
 #[tokio::test]
 async fn euler_deposit_withdraw_roundtrip() -> anyhow::Result<()> {
@@ -37,6 +37,7 @@ async fn euler_deposit_withdraw_roundtrip() -> anyhow::Result<()> {
     eprintln!("sending approve...");
     let approve_receipt = usdc
         .approve(adapter_address, amount)
+        .gas(TX_GAS_LIMIT)
         .send()
         .await?
         .get_receipt()
@@ -50,6 +51,7 @@ async fn euler_deposit_withdraw_roundtrip() -> anyhow::Result<()> {
     eprintln!("sending deposit...");
     let deposit_receipt = adapter
         .deposit(amount)
+        .gas(TX_GAS_LIMIT)
         .send()
         .await?
         .get_receipt()
@@ -73,6 +75,7 @@ async fn euler_deposit_withdraw_roundtrip() -> anyhow::Result<()> {
     eprintln!("sending withdraw...");
     let withdraw_receipt = adapter
         .withdraw(withdraw_amount)
+        .gas(TX_GAS_LIMIT)
         .send()
         .await?
         .get_receipt()

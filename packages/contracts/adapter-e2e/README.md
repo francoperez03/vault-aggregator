@@ -34,7 +34,7 @@ cargo test -p adapter-e2e
 
 # Live, against a deployed adapter (spends real USDC + gas):
 ARB_ONE_RPC_URL=https://arb1.arbitrum.io/rpc \
-M2_WALLET_KEY=0x... \
+M2_WALLET_KEY=$(cat ~/.wakeup-m2-arb1.key) \
 MORPHO_ADAPTER_ADDR=0x... FLUID_ADAPTER_ADDR=0x... EULER_ADAPTER_ADDR=0x... \
 cargo test -p adapter-e2e -- --nocapture
 ```

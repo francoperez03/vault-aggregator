@@ -8,7 +8,9 @@ use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
 
 use adapter_e2e::arbitrum_one::{IVaultAdapter, IERC20};
-use adapter_e2e::{assert_reverts_with_selector, fluid_adapter_addr, rpc_url, wallet_key, USDC};
+use adapter_e2e::{
+    assert_reverts_with_selector, fluid_adapter_addr, rpc_url, wallet_key, TX_GAS_LIMIT, USDC,
+};
 
 /// `WithdrawExceedsMax(uint256)`'s 4-byte selector (`cast sig "WithdrawExceedsMax(uint256)"`),
 /// the adapter's D-08 typed revert (`errors.rs`), matched byte-for-byte here.
@@ -41,6 +43,7 @@ async fn fluid_deposit_withdraw_roundtrip() -> anyhow::Result<()> {
     eprintln!("sending approve...");
     let approve_receipt = usdc
         .approve(adapter_address, amount)
+        .gas(TX_GAS_LIMIT)
         .send()
         .await?
         .get_receipt()
@@ -54,6 +57,7 @@ async fn fluid_deposit_withdraw_roundtrip() -> anyhow::Result<()> {
     eprintln!("sending deposit...");
     let deposit_receipt = adapter
         .deposit(amount)
+        .gas(TX_GAS_LIMIT)
         .send()
         .await?
         .get_receipt()
@@ -77,6 +81,7 @@ async fn fluid_deposit_withdraw_roundtrip() -> anyhow::Result<()> {
     eprintln!("sending withdraw...");
     let withdraw_receipt = adapter
         .withdraw(withdraw_amount)
+        .gas(TX_GAS_LIMIT)
         .send()
         .await?
         .get_receipt()
@@ -129,7 +134,34 @@ async fn fluid_withdraw_above_max_reverts() -> anyhow::Result<()> {
     let adapter_address = fluid_adapter_addr()?;
     let adapter = IVaultAdapter::new(adapter_address, provider.clone());
 
-    let max_withdraw = adapter.maxWithdraw().call().await?;
+    // This test must open its own position rather than inherit one. libtest runs the tests in
+    // this binary sequentially under --test-threads=1, and the round-trip above withdraws
+    // everything, so an inherited position would be empty: maxWithdraw() would read 0, probe 2
+    // would call withdraw(0), and adapter.rs's ZeroAmount() guard would revert BEFORE ever
+    // reaching Fluid — recording a throttle verdict that the vault never actually produced.
+    let mut max_withdraw = adapter.maxWithdraw().call().await?;
+    if max_withdraw.is_zero() {
+        let amount = U256::from(3_000_000u64); // $3 (D-06)
+        eprintln!("no live position, opening one for the boundary probes...");
+        usdc.approve(adapter_address, amount)
+            .gas(TX_GAS_LIMIT)
+            .send()
+            .await?
+            .get_receipt()
+            .await?;
+        adapter
+            .deposit(amount)
+            .gas(TX_GAS_LIMIT)
+            .send()
+            .await?
+            .get_receipt()
+            .await?;
+        max_withdraw = adapter.maxWithdraw().call().await?;
+    }
+    assert!(
+        !max_withdraw.is_zero(),
+        "boundary probes need a live position: maxWithdraw() is still 0 after depositing"
+    );
     eprintln!("live maxWithdraw() = {max_withdraw}");
 
     // Probe 1: strictly above the reported max must revert with the adapter's own guard.
@@ -145,7 +177,11 @@ async fn fluid_withdraw_above_max_reverts() -> anyhow::Result<()> {
     // Probe 2: the exact reported boundary. Record the outcome either way — this is the
     // empirical answer to FLUID-THROTTLE, not an assertion of a specific outcome.
     let balance_before = usdc.balanceOf(caller).call().await?;
-    let at_max_result = adapter.withdraw(max_withdraw).send().await;
+    let at_max_result = adapter
+        .withdraw(max_withdraw)
+        .gas(TX_GAS_LIMIT)
+        .send()
+        .await;
     match at_max_result {
         Ok(pending_tx) => match pending_tx.get_receipt().await {
             Ok(receipt) if receipt.status() => {
@@ -194,6 +230,20 @@ async fn fluid_withdraw_above_max_reverts() -> anyhow::Result<()> {
         "withdraw(maxWithdraw()) must either fully succeed (balance +maxWithdraw) or fully \
          revert (balance unchanged), never a partial withdrawal: observed delta {delta}"
     );
+
+    // If probe 2 reverted, the position is still open. Close it, otherwise every run of this
+    // test strands another $3 in the adapter.
+    let leftover = adapter.maxWithdraw().call().await?;
+    if !leftover.is_zero() {
+        eprintln!("closing the leftover position ({leftover} units)...");
+        adapter
+            .withdraw(leftover)
+            .gas(TX_GAS_LIMIT)
+            .send()
+            .await?
+            .get_receipt()
+            .await?;
+    }
 
     Ok(())
 }
