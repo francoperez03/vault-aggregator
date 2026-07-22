@@ -41,8 +41,8 @@ fn decode_bool_result(result: &[u8]) -> Result<(), Vec<u8>> {
     }
     match <bool as alloy_sol_types::SolValue>::abi_decode(result) {
         Ok(true) => Ok(()),
-        Ok(false) => Err(b"TransferFailed".to_vec()),
-        Err(_) => Err(b"TransferFailed".to_vec()),
+        Ok(false) => Err(crate::errors::transfer_failed()),
+        Err(_) => Err(crate::errors::transfer_failed()),
     }
 }
 
@@ -191,7 +191,7 @@ mod tests {
             U256::from(1_000u64),
         );
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), b"TransferFailed".to_vec());
+        assert_eq!(result.unwrap_err(), crate::errors::transfer_failed());
     }
 
     #[test]

@@ -8,6 +8,7 @@ extern crate alloc;
 mod adapter;
 mod erc20;
 mod erc4626;
+mod errors;
 
 use stylus_sdk::prelude::*;
 
