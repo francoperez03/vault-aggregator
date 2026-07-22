@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          targets: wasm32-unknown-unknown
+
+      - run: cargo test --workspace --lib --tests
+
+      - run: cargo install cargo-stylus --version 0.10.7 --locked
+
+      # Mainnet gate: Arbitrum One runs ArbOS 51 (no WASM fragments), so the effective
+      # ceiling is ~22KB compressed / 1 fragment. Checking against Sepolia (ArbOS 61)
+      # would green-light a binary that cannot activate on One.
+      - run: cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"
+        working-directory: packages/contracts/vault-adapter

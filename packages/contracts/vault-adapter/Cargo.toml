@@ -1,0 +1,24 @@
+[package]
+name = "vault-adapter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+alloy-primitives = "1.5.7"
+alloy-sol-types = "1.5.7"
+stylus-sdk = "0.10.7"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[dev-dependencies]
+stylus-sdk = { version = "0.10.7", features = ["stylus-test"] }
+
+[features]
+default = ["mini-alloc"]
+export-abi = ["stylus-sdk/export-abi"]
+debug = ["stylus-sdk/debug"]
+mini-alloc = ["stylus-sdk/mini-alloc"]
+
+[lints]
+workspace = true

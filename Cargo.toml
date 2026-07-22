@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = []
+members = ["packages/contracts/vault-adapter"]
+# adapter-e2e (host-only, pulls the full alloy client) is added by a later plan and must stay out
+# of default-members: `cargo stylus deploy` builds every default member for wasm32-unknown-unknown.
+default-members = ["packages/contracts/vault-adapter"]
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("contract-client-gen"))'] }
 
 [profile.release]
 opt-level = "z"
