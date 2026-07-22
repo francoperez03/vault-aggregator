@@ -1,8 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["packages/contracts/vault-adapter"]
-# adapter-e2e (host-only, pulls the full alloy client) is added by a later plan and must stay out
-# of default-members: `cargo stylus deploy` builds every default member for wasm32-unknown-unknown.
+members = ["packages/contracts/vault-adapter", "packages/contracts/adapter-e2e"]
+# adapter-e2e (host-only, pulls the full alloy client) is a workspace member but stays out of
+# default-members: `cargo stylus deploy` builds every default member for wasm32-unknown-unknown,
+# and the full `alloy` client does not compile for that target (M1 hit this exact wall when
+# `coinflip-e2e` joined the workspace).
 default-members = ["packages/contracts/vault-adapter"]
 
 [workspace.lints.rust]
