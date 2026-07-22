@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Deploys three instances of the SAME vault-adapter WASM to Arbitrum One, one per protocol, and
-# init's each one against its own vault (Phase 9 Plan 6, D-01: one blueprint, three instances —
-# never one instance serving three vaults).
+# Deploys four instances of the SAME vault-adapter WASM to Arbitrum One, one per protocol, and
+# init's each one against its own vault (Phase 9 Plan 6, D-01: one blueprint, N instances —
+# never one instance serving multiple vaults).
 #
-# Activation is cached per codehash, so only the first of the three deploys pays the ArbWasm
-# activation cost; the other two are code-deposit only.
+# Activation is cached per codehash, so only the first deploy pays the ArbWasm activation cost;
+# the rest (including Aave, added in Phase 10) are code-deposit only.
 #
 # The `core` of every instance is the M2 wallet itself — the interim EOA core for this phase
-# (D-04). These three instances are disposable: Phase 11 deploys production instances pointed at
+# (D-04). These instances are disposable: Phase 11 deploys production instances pointed at
 # the real core contract, and no fund migration from these is designed.
 #
 # Required env vars:
@@ -20,6 +20,7 @@
 #   MORPHO_ADAPTER_ADDR      - set to skip that protocol's deploy (resume after a partial run)
 #   FLUID_ADAPTER_ADDR       - idem
 #   EULER_ADAPTER_ADDR       - idem
+#   AAVE_ADAPTER_ADDR        - idem
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -34,6 +35,7 @@ USDC="0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
 MORPHO_VAULT="0x7e97fa6893871A2751B5fE961978DCCb2c201E65" # gtUSDCc  (Gauntlet USDC Core)
 FLUID_VAULT="0x1A996cb54bb95462040408C06122D45D6Cdb6096"  # fUSDC
 EULER_VAULT="0x6afb8d3f6d4a34e9cb2f217317f4dc8e05aa673b"  # eUSDC-2
+STATA_VAULT="0x7cfadfd5645b50be87d546f42699d863648251ad" # stataArbUSDCn (Aave v3 official static wrapper)
 
 MIN_USDC=10000000 # 10 USDC at 6 decimals
 
@@ -130,8 +132,15 @@ init_one() {
   esac
 }
 
+# Auto-resume: reuse anything a previous run already recorded, so re-running to add a protocol
+# never redeploys the instances that already exist. Explicit env vars still win (`.` does not
+# overwrite an already-exported var's value here because the file only ever contains `export`
+# assignments — an operator overriding one on the command line is exporting it after this point,
+# so set the file's values first and let the shell's own precedence apply).
+[ -r "$ENV_OUT" ] && . "$ENV_OUT"
+
 : >"$ENV_OUT"
-for spec in "MORPHO:$MORPHO_VAULT" "FLUID:$FLUID_VAULT" "EULER:$EULER_VAULT"; do
+for spec in "MORPHO:$MORPHO_VAULT" "FLUID:$FLUID_VAULT" "EULER:$EULER_VAULT" "AAVE:$STATA_VAULT"; do
   name="${spec%%:*}"
   vault="${spec#*:}"
   var="${name}_ADAPTER_ADDR"
