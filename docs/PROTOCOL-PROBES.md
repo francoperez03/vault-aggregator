@@ -180,3 +180,67 @@ ROUNDING-EULER: round-down confirmed
 - Fluid's throttle question is explicitly unresolved from static reads; Plan 06's live round-trip is the load-bearing check, not an assumption. The adapter's D-08 typed-revert guard (`WithdrawExceedsMax`) should not treat `maxWithdraw`'s answer as unconditionally trustworthy for Fluid.
 - All three production vaults support asset-exact `withdraw(uint256,address,address)` directly — no `redeem()` + `convertToShares` fallback path is needed anywhere in Plan 03.
 - Rounding is round-down (vault-favouring) on all three, consistent with the 4626-safe convention DISCOVERY.md cited but had not measured on the live deployments.
+
+---
+
+### AAVE-WITHDRAW-PATH: RESOLVED — asset-exact `withdraw()` confirmed on Stata
+
+`WITHDRAW-PATH` above says "available on all three" and means Morpho/Fluid/Euler — Aave/Stata was
+never put through the same probe. `DISCOVERY.md` §2.1 only ran `cast sig` on `deposit`/`redeem`,
+which hashes a signature string and proves nothing about the deployed bytecode. The adapter calls
+`withdraw(uint256,address,address)` (`0xb460af94`), an OPTIONAL ERC-4626 function, so this was a
+real gap. Probed 2026-07-22 against `stataArbUSDCn` `0x7cfadfd5645b50be87d546f42699d863648251ad`:
+
+```
+# 1. maxWithdraw(address) responds without reverting against the Stata proxy
+cast call 0x7cfadfd5645b50be87d546f42699d863648251ad "maxWithdraw(address)(uint256)" \
+  0x13B56eA93CB18ae90d7Ff6E01Cb97C1AbFB2B992 --rpc-url https://arb1.arbitrum.io/rpc
+→ 0
+```
+
+```
+# 2. withdraw(uint256,address,address) dispatches into real Aave logic (reverts only on amount==0)
+cast call 0x7cfadfd5645b50be87d546f42699d863648251ad "withdraw(uint256,address,address)(uint256)" \
+  0 0x13B56eA93CB18ae90d7Ff6E01Cb97C1AbFB2B992 0x13B56eA93CB18ae90d7Ff6E01Cb97C1AbFB2B992 \
+  --from 0x13B56eA93CB18ae90d7Ff6E01Cb97C1AbFB2B992 --rpc-url https://arb1.arbitrum.io/rpc
+→ Error: execution reverted: 8, data: "0x08c379a0...0138"
+```
+
+```
+# 3. Stata is a proxy: read the EIP-1967 implementation slot
+cast storage 0x7cfadfd5645b50be87d546f42699d863648251ad \
+  0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc \
+  --rpc-url https://arb1.arbitrum.io/rpc
+→ 0x0000000000000000000000009bf9df78b1f7c76a473588c41321b5059b62981e
+```
+
+```
+# 4. Scan the IMPLEMENTATION's dispatcher jump table (the proxy itself has no selectors)
+cast code 0x9bf9df78b1f7c76a473588c41321b5059b62981e --rpc-url https://arb1.arbitrum.io/rpc > /tmp/stata_impl.hex
+for s in b460af94 ce96cb77 ba087652 6e553f65; do printf "%s: " "$s"; grep -c "63$s" /tmp/stata_impl.hex; done
+→ b460af94: 1
+→ ce96cb77: 1
+→ ba087652: 1
+→ 6e553f65: 1
+```
+
+**Why the scan targets the implementation, not the proxy.** Stata is a proxy behind the EIP-1967
+implementation slot (call 3), which resolves to `0x9bf9df78b1f7c76a473588c41321b5059b62981e` — a
+`cast code` scan against the proxy address `0x7cfa...1ad` itself only returns the proxy's own
+dispatcher (`delegatecall` forwarding logic), not the real function selectors it forwards to.
+Scanning the proxy would give a false negative for every selector. The four selectors the adapter
+depends on (`withdraw`, `maxWithdraw`, `redeem`, `deposit`) are all present in the implementation's
+bytecode (call 4).
+
+**Why `Error("8")` on amount zero is positive evidence.** Call 2 reverts with `0x08c379a0...`
+(standard Solidity `Error(string)` encoding) carrying the code `"8"` — Aave's own invalid-amount
+error code for a zero-amount operation. A call to a selector missing from the jump table reverts
+with **empty** revert data (falls through to the proxy's fallback/receive), not a decoded string
+error. Getting Aave's real error message back proves the call reached real Aave logic through the
+selector dispatch, not that it bounced off a missing entry.
+
+**Operational consequence.** `adapter.rs` does NOT change: it keeps calling
+`erc4626::withdraw_from_vault` as the primary path. `redeem_from_vault` remains the already-existing,
+unexercised fallback — same status it had before this probe.
+
+---
