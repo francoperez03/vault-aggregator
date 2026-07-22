@@ -37,7 +37,10 @@ FLUID_VAULT="0x1A996cb54bb95462040408C06122D45D6Cdb6096"  # fUSDC
 EULER_VAULT="0x6afb8d3f6d4a34e9cb2f217317f4dc8e05aa673b"  # eUSDC-2
 STATA_VAULT="0x7cfadfd5645b50be87d546f42699d863648251ad" # stataArbUSDCn (Aave v3 official static wrapper)
 
-MIN_USDC=10000000 # 10 USDC at 6 decimals
+MIN_USDC=5000000 # 5 USDC at 6 decimals — lowered from 10 (Phase 10 Plan 04): Phase 9 left the
+                  # wallet at 9.999994 USDC (6 units lost to round-down), 6 millionths of a
+                  # dollar short of the old floor; 5 USDC is still 1.6x this phase's $3 round
+                  # trip, so re-funding for 6e-6 USD is not worth doing.
 
 # --- Preflight: fail loudly before spending anything (RESEARCH Pitfall 4) -------------------
 
