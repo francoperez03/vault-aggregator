@@ -6,6 +6,8 @@
 extern crate alloc;
 
 mod adapter;
+#[cfg(test)]
+mod conformance;
 mod erc20;
 mod erc4626;
 mod errors;
