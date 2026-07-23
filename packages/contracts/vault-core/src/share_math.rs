@@ -91,6 +91,49 @@ pub fn split_by_bps(amount: U256, weights_bps: &[U256]) -> Result<Vec<U256>, Vec
     Ok(slices)
 }
 
+/// Splits `amount` proportional to each active adapter's CURRENT `total_assets` (D-04), remainder
+/// to index 0 (D-10, matching `split_by_bps`). Each slice floors down via `mul_div_floor`'s U512
+/// widening, so `Σ(slices) == amount` exactly. NOT `split_by_bps`'s `checked_mul`/10000 shape:
+/// positions are unbounded USDC `total_assets` quantities, not bps bounded by 10000, so
+/// `amount * position` can overflow `U256` for large accumulated pools. An adapter at position 0
+/// gets a 0 slice — the redeem loop (12-02) must skip it, not `withdraw(0)` (D-11 exit-by-omission).
+/// `Err(division_by_zero)` if the positions sum to zero.
+// ponytail: wired into redeem in 12-02
+#[allow(dead_code)]
+pub fn split_by_position(amount: U256, positions: &[U256]) -> Result<Vec<U256>, Vec<u8>> {
+    let total: U256 = positions.iter().fold(U256::ZERO, |acc, p| acc + *p);
+    if total.is_zero() {
+        return Err(errors::division_by_zero());
+    }
+    let mut slices: Vec<U256> = Vec::with_capacity(positions.len());
+    let mut allocated = U256::ZERO;
+    for position in positions {
+        let slice = mul_div_floor(amount, *position, total)?;
+        allocated += slice;
+        slices.push(slice);
+    }
+    let remainder = amount - allocated; // amount >= allocated always: each slice floors down.
+    if !remainder.is_zero() {
+        if let Some(first) = slices.first_mut() {
+            *first += remainder;
+        }
+    }
+    Ok(slices)
+}
+
+/// Reconciles the credit a redeem/rebalance actually owes against the REAL measured USDC delta.
+/// D-06: a shortfall (actual < owed) reverts the whole tx. D-07: a surplus (actual > owed, e.g. a
+/// direct-USDC donation or sandwich inflating the core's balance) is capped — the caller is paid
+/// exactly `owed`, never the excess (the excess stays in the core for the next rebalance to sweep).
+// ponytail: wired into redeem in 12-02
+#[allow(dead_code)]
+pub fn reconcile_credit(owed: U256, actual_delta: U256) -> Result<U256, Vec<u8>> {
+    if actual_delta < owed {
+        return Err(errors::redeem_shortfall(owed, actual_delta));
+    }
+    Ok(owed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,5 +227,71 @@ mod tests {
         assert_eq!(sum, amount);
         // Dust lands on index 0 (D-10).
         assert!(slices[0] >= slices[1]);
+    }
+
+    #[test]
+    fn split_by_position_proportional_and_sums_to_amount() {
+        let amount = U256::from(1_000_000u64); // 1 USDC being redeemed
+        // Adapter A holds 60% of the pool, adapter B holds 40% (realistic USDC-scale positions).
+        let positions = [U256::from(60_000_000_000u64), U256::from(40_000_000_000u64)];
+        let slices = split_by_position(amount, &positions).unwrap();
+        let sum: U256 = slices.iter().fold(U256::ZERO, |acc, s| acc + *s);
+        assert_eq!(sum, amount);
+        assert!(slices[0] >= slices[1]);
+    }
+
+    #[test]
+    fn split_by_position_single_adapter_gets_everything() {
+        let amount = U256::from(1_000_000u64);
+        let slices = split_by_position(amount, &[U256::from(42_000_000u64)]).unwrap();
+        assert_eq!(slices, alloc::vec![amount]);
+    }
+
+    #[test]
+    fn split_by_position_zero_position_gets_zero_slice() {
+        // D-11 exit-by-omission scenario: an adapter at position 0 must get a 0 slice so the
+        // redeem loop can skip it instead of calling withdraw(0).
+        let amount = U256::from(1_000_000u64);
+        let positions = [U256::from(1_000_000u64), U256::ZERO];
+        let slices = split_by_position(amount, &positions).unwrap();
+        let sum: U256 = slices.iter().fold(U256::ZERO, |acc, s| acc + *s);
+        assert_eq!(sum, amount);
+        assert_eq!(slices[1], U256::ZERO);
+    }
+
+    #[test]
+    fn split_by_position_all_zero_positions_reverts() {
+        let amount = U256::from(1_000_000u64);
+        let result = split_by_position(amount, &[U256::ZERO, U256::ZERO]);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), errors::division_by_zero());
+    }
+
+    #[test]
+    fn split_by_position_empty_positions_reverts() {
+        let amount = U256::from(1_000_000u64);
+        let result = split_by_position(amount, &[]);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), errors::division_by_zero());
+    }
+
+    #[test]
+    fn reconcile_credit_shortfall_reverts() {
+        let err = reconcile_credit(U256::from(100u64), U256::from(99u64));
+        assert!(err.is_err()); // D-06: actual < owed -> whole-tx revert
+    }
+
+    #[test]
+    fn reconcile_credit_exact_match_pays_owed() {
+        let paid = reconcile_credit(U256::from(100u64), U256::from(100u64)).unwrap();
+        assert_eq!(paid, U256::from(100u64));
+    }
+
+    #[test]
+    fn reconcile_credit_surplus_caps_at_owed() {
+        // Simulates a direct-USDC donation or sandwich inflating the core's balance beyond
+        // `owed` mid-redeem (D-07's attack vector) — the user must NOT receive the surplus.
+        let paid = reconcile_credit(U256::from(100u64), U256::from(1_000_000u64)).unwrap();
+        assert_eq!(paid, U256::from(100u64));
     }
 }

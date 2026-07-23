@@ -24,6 +24,7 @@ sol! {
     error AdapterAlreadyRegistered();
     error AdapterNotRegistered();
     error InsufficientShares();
+    error RedeemShortfall(uint256 owed, uint256 actual);
 }
 
 pub fn already_initialized() -> Vec<u8> {
@@ -92,4 +93,8 @@ pub fn adapter_not_registered() -> Vec<u8> {
 
 pub fn insufficient_shares() -> Vec<u8> {
     InsufficientShares {}.abi_encode()
+}
+
+pub fn redeem_shortfall(owed: U256, actual: U256) -> Vec<u8> {
+    RedeemShortfall { owed, actual }.abi_encode()
 }
