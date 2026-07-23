@@ -26,7 +26,7 @@ const USDC: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
 /// `scripts/deploy-testnet-mocks.sh` greps this constant against the deployed MockUsdc address
 /// and stops if they diverge; update it after the script's step 1 prints the deployed address.
 #[cfg(feature = "testnet")]
-const USDC: Address = address!("00000000000000000000000000000000DeaDBeef");
+const USDC: Address = address!("e26bd9f1f02e468093e1287f418bb79749a6ac92");
 
 sol! {
     event Initialized(address indexed vault, address indexed core);
