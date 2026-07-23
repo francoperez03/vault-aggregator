@@ -161,25 +161,29 @@ impl VaultCore {
         Ok(())
     }
 
-    /// Minimal single-adapter deposit: pulls `amount` USDC from the caller, routes it to the
-    /// single active adapter (index 0), and mints offset-based shares. Full bps-weighted
-    /// multi-adapter split lands in Plan 02.
+    /// Atomic multi-adapter split deposit (VAULT-01): pulls `amount` USDC from the caller, splits
+    /// it by the current bps allocation across every active adapter (D-10 remainder to the first
+    /// active adapter), deposits each slice, and mints offset-based shares from the pre-loop
+    /// `total_assets` snapshot. Any single `adapter.deposit()` revert unwinds the whole tx (D-09).
     pub fn deposit(&mut self, amount: U256) -> Result<U256, Vec<u8>> {
         self.ensure_initialized()?;
         if amount.is_zero() {
             return Err(errors::zero_amount());
         }
-        if self.adapters.is_empty() {
-            return Err(errors::adapter_not_enabled());
-        }
-        let adapter = self.adapters.get(0).ok_or_else(errors::adapter_not_enabled)?;
-        if !self.adapter_enabled.get(adapter) {
+
+        // Snapshot the registry into local memory FIRST (Pitfall 4/T-11-11): the split loop below
+        // iterates this `Vec`, never re-reading storage mid-iteration.
+        let active = registry::active_adapters(self);
+        if active.is_empty() {
             return Err(errors::adapter_not_enabled());
         }
 
-        // Snapshot total_assets BEFORE any external mutating call (Pitfall 2/T-11-02): reading it
-        // after the deposit lands would dilute the depositor against their own contribution.
-        let total_assets_before = adapter_dispatch::total_assets(self.vm(), adapter)?;
+        // Snapshot the aggregate total_assets BEFORE any external mutating call (Pitfall 2/T-11-10):
+        // minting against a post-deposit total would dilute the depositor against their own funds.
+        let mut total_assets_before = U256::ZERO;
+        for (adapter, _bps) in active.iter() {
+            total_assets_before += adapter_dispatch::total_assets(self.vm(), *adapter)?;
+        }
 
         let user = self.vm().msg_sender();
         let self_addr = self.vm().contract_address();
@@ -187,13 +191,18 @@ impl VaultCore {
         let pull_ctx = Call::new_mutating(self);
         usdc::transfer_from(self.vm(), pull_ctx, USDC, user, self_addr, amount)?;
 
-        let approve_ctx = Call::new_mutating(self);
-        usdc::approve(self.vm(), approve_ctx, USDC, adapter, amount)?;
+        let weights: Vec<U256> = active.iter().map(|(_, bps)| *bps).collect();
+        let slices = share_math::split_by_bps(amount, &weights)?;
 
-        // Bare `?`: any adapter revert reverts the whole tx atomically (D-09), Stylus/EVM
-        // call-frame semantics give this for free, no manual rollback needed.
-        let deposit_ctx = Call::new_mutating(self);
-        adapter_dispatch::deposit(self.vm(), deposit_ctx, adapter, amount)?;
+        // Bare `?` per adapter: any revert unwinds the whole tx atomically (D-09/T-11-09),
+        // Stylus/EVM call-frame semantics give this for free, no manual rollback needed.
+        for ((adapter, _bps), slice) in active.iter().zip(slices) {
+            let approve_ctx = Call::new_mutating(self);
+            usdc::approve(self.vm(), approve_ctx, USDC, *adapter, slice)?;
+
+            let deposit_ctx = Call::new_mutating(self);
+            adapter_dispatch::deposit(self.vm(), deposit_ctx, *adapter, slice)?;
+        }
 
         let shares = share_math::convert_to_shares(
             amount,
