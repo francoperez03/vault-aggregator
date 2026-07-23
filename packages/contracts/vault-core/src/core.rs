@@ -260,7 +260,12 @@ impl VaultCore {
         }
 
         let balance_after = usdc::balance_of(self.vm(), USDC, self_addr)?;
-        let actual_delta = balance_after - balance_before; // funds only flow INTO the core here; no underflow
+        // checked_sub: a buggy/compromised adapter moving USDC OUT of the core would underflow —
+        // in release builds ruint wraps, turning a loss into a huge delta that passes the D-06
+        // gate. Treat any net outflow as a shortfall and revert.
+        let actual_delta = balance_after
+            .checked_sub(balance_before)
+            .ok_or_else(|| errors::redeem_shortfall(owed, U256::ZERO))?;
 
         // D-06 shortfall -> whole-tx revert; D-07 surplus (donation/sandwich) -> credit capped at owed.
         let paid = share_math::reconcile_credit(owed, actual_delta)?;
