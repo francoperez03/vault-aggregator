@@ -63,6 +63,34 @@ pub fn convert_to_assets(
     mul_div_floor(shares, numerator_multiplier, denominator)
 }
 
+/// Total basis-points a weights slice must sum to (mirrors `core.rs`'s `TOTAL_BPS`, kept local
+/// so this module has no dependency on `core.rs`).
+const TOTAL_BPS: U256 = U256::from_limbs([10_000u64, 0, 0, 0]);
+
+/// Splits `amount` across `weights_bps` (parallel to the caller's active-adapter list, weights
+/// assumed to sum to `TOTAL_BPS` per D-06's `set_allocation` guard). Each slice floors down
+/// (`amount * bps / 10000`, `checked_mul` so a compromised/misconfigured USDC-like supply reverts
+/// instead of silently wrapping — RESEARCH.md A4). The integer-division remainder is added to
+/// `slices[0]` (D-10: "first active adapter"), so `Σ slices == amount` exactly.
+pub fn split_by_bps(amount: U256, weights_bps: &[U256]) -> Result<Vec<U256>, Vec<u8>> {
+    let mut slices: Vec<U256> = Vec::with_capacity(weights_bps.len());
+    let mut allocated = U256::ZERO;
+    for bps in weights_bps {
+        let product = amount.checked_mul(*bps).ok_or_else(errors::mul_div_overflow)?;
+        let slice = product / TOTAL_BPS;
+        allocated += slice;
+        slices.push(slice);
+    }
+
+    let remainder = amount - allocated; // amount >= allocated always: each slice floors down.
+    if !remainder.is_zero() {
+        if let Some(first) = slices.first_mut() {
+            *first += remainder;
+        }
+    }
+    Ok(slices)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,5 +140,49 @@ mod tests {
         // a few wei short.
         assert!(assets_out <= assets_in);
         assert!(assets_in - assets_out <= U256::from(2u64));
+    }
+
+    #[test]
+    fn split_by_bps_even_split_no_remainder() {
+        let slices = split_by_bps(
+            U256::from(100u64),
+            &[U256::from(5_000u64), U256::from(5_000u64)],
+        )
+        .unwrap();
+        assert_eq!(slices, alloc::vec![U256::from(50u64), U256::from(50u64)]);
+    }
+
+    #[test]
+    fn split_by_bps_remainder_goes_to_first_slice() {
+        let amount = U256::from(100u64);
+        let slices = split_by_bps(
+            amount,
+            &[U256::from(3_333u64), U256::from(3_333u64), U256::from(3_334u64)],
+        )
+        .unwrap();
+        let sum: U256 = slices.iter().fold(U256::ZERO, |acc, s| acc + *s);
+        assert_eq!(sum, amount);
+        // 100*3333/10000=33, 100*3333/10000=33, 100*3334/10000=33 -> allocated=99, remainder=1 -> slot 0.
+        assert_eq!(slices[0], U256::from(34u64));
+    }
+
+    #[test]
+    fn split_by_bps_single_adapter_full_amount() {
+        let slices = split_by_bps(U256::from(1u64), &[U256::from(10_000u64)]).unwrap();
+        assert_eq!(slices, alloc::vec![U256::from(1u64)]);
+    }
+
+    #[test]
+    fn split_by_bps_dust_case_sum_equals_amount() {
+        let amount = U256::from(1_000_001u64);
+        let slices = split_by_bps(
+            amount,
+            &[U256::from(3_334u64), U256::from(3_333u64), U256::from(3_333u64)],
+        )
+        .unwrap();
+        let sum: U256 = slices.iter().fold(U256::ZERO, |acc, s| acc + *s);
+        assert_eq!(sum, amount);
+        // Dust lands on index 0 (D-10).
+        assert!(slices[0] >= slices[1]);
     }
 }
