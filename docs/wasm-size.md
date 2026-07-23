@@ -100,3 +100,35 @@ plan-boundary surprise.
 **Remaining budget for Plan 03's `rebalance` (unwind + re-split + owner guards): ~2,418 bytes
 (~10.7%).** Same warning carries forward — re-check after every task, the same escalation ladder
 (wasm-opt declined, core/periphery split) is the only lever left if this is exceeded.
+
+### Result (measured 2026-07-23, post Plan 03 — `rebalance` + D-13 ABI-surface fix)
+
+- **Compressed size: 21,045 bytes** (21.0 KB)
+- **Fragment count: 1** (single-fragment, activates on ArbOS 51 / Arbitrum One as-is)
+- **Gate: 22,528 bytes (22528)**
+- **Headroom: 1,483 bytes (~6.6%)** under the gate
+- **Delta vs Plan 02 (20,110 bytes): +935 bytes** — the `rebalance` method itself (unwind loop +
+  re-split loop + `Rebalanced` event) plus the `unwind_request` helper; NOT `set_allocation`'s
+  move to a plain `impl` block (moving a fn between impl blocks is a zero-cost source
+  reorganization, not new codegen)
+- `cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"` exits `0`
+
+**Phase 12 is now feature-complete (rebalance + hardened redeem) at ~6.6% headroom.** This is the
+tightest margin measured across the whole vault-core surface so far. Any future addition to
+`core.rs` (Phase 13+ fork-test scaffolding is test-only and exempt, but any new production method)
+MUST re-run this check before committing — the only levers left if this is exceeded are
+`wasm-opt -Oz` (declined, breaks `cargo stylus verify`) or a core/periphery contract split.
+
+### D-13 architectural note: `#[public]` exports ALL methods regardless of Rust visibility
+
+The plan's original approach (un-`pub`-ing `set_allocation` while leaving it inside the
+`#[public] impl VaultCore` block) does NOT remove it from the exported ABI: `stylus-proc`'s
+`PublicImpl` macro (verified against its own source, `stylus-proc-0.10.7/src/macros/public/mod.rs`)
+exports every method in a `#[public]`-annotated impl block regardless of `pub`/private
+visibility — this was already true (and unnoticed) for the pre-existing private `only_owner`/
+`ensure_initialized` helpers, both of which still appear in `cargo stylus export-abi`'s output
+today. The actual fix: `set_allocation` was moved to a SEPARATE, plain (unannotated) `impl
+VaultCore` block, placed after the `#[public]` block closes. Rust does not require same-impl-block
+locality for method calls within the same type/module, so `rebalance`'s `self.set_allocation(...)`
+call compiles unchanged. `only_owner`/`ensure_initialized` remaining exported is a pre-existing
+F11 condition, out of this plan's scope — logged to `deferred-items.md`.

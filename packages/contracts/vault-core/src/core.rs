@@ -122,61 +122,6 @@ impl VaultCore {
         Ok(())
     }
 
-    /// Owner-only: sets the global bps allocation (D-06). Validates BEFORE any write: matching
-    /// lengths, non-empty, no duplicates, every target registered+enabled, no zero weights, and
-    /// the sum is exactly 10000 (checked addition). Then clears bps for every currently-enabled
-    /// adapter and writes the new set, so the on-chain allocation is exactly the passed set.
-    fn set_allocation(
-        &mut self,
-        adapters: Vec<Address>,
-        weights_bps: Vec<U256>,
-    ) -> Result<(), Vec<u8>> {
-        self.ensure_initialized()?;
-        self.only_owner()?;
-
-        if adapters.is_empty() || adapters.len() != weights_bps.len() {
-            return Err(errors::allocation_invalid());
-        }
-
-        for i in 0..adapters.len() {
-            for j in (i + 1)..adapters.len() {
-                if adapters[i] == adapters[j] {
-                    return Err(errors::allocation_invalid());
-                }
-            }
-        }
-
-        let mut sum = U256::ZERO;
-        for i in 0..adapters.len() {
-            if !self.adapter_enabled.get(adapters[i]) {
-                return Err(errors::adapter_not_enabled());
-            }
-            if weights_bps[i].is_zero() {
-                return Err(errors::allocation_invalid());
-            }
-            sum = sum
-                .checked_add(weights_bps[i])
-                .ok_or_else(errors::allocation_invalid)?;
-        }
-        if sum != TOTAL_BPS {
-            return Err(errors::allocation_invalid());
-        }
-
-        let currently_active = registry::active_adapters(self);
-        for (adapter, _) in currently_active {
-            self.adapter_bps.setter(adapter).set(U256::ZERO);
-        }
-        for i in 0..adapters.len() {
-            self.adapter_bps.setter(adapters[i]).set(weights_bps[i]);
-        }
-
-        self.vm().log(AllocationSet {
-            adapters: adapters.clone(),
-            weightsBps: weights_bps.clone(),
-        });
-        Ok(())
-    }
-
     /// Atomic multi-adapter split deposit (VAULT-01): pulls `amount` USDC from the caller, splits
     /// it by the current bps allocation across every active adapter (D-10 remainder to the first
     /// active adapter), deposits each slice, and mints offset-based shares from the pre-loop
@@ -393,6 +338,69 @@ impl VaultCore {
     }
 }
 
+/// D-13: `set_allocation` lives OUTSIDE the `#[public]` impl block. The `#[public]` macro exports
+/// every method it wraps into the ABI regardless of Rust-level `pub`/private visibility (verified
+/// against `stylus-proc`'s own `PublicImpl` — it does not filter by fn visibility), so un-`pub`ing
+/// alone does not hide a method from `cargo stylus export-abi`. A plain, unannotated `impl`
+/// block IS the only way to keep a method callable internally (`self.set_allocation(...)` from
+/// `rebalance`) while keeping it off the exported ABI surface.
+impl VaultCore {
+    /// Owner-only: sets the global bps allocation (D-06). Validates BEFORE any write: matching
+    /// lengths, non-empty, no duplicates, every target registered+enabled, no zero weights, and
+    /// the sum is exactly 10000 (checked addition). Then clears bps for every currently-enabled
+    /// adapter and writes the new set, so the on-chain allocation is exactly the passed set.
+    fn set_allocation(
+        &mut self,
+        adapters: Vec<Address>,
+        weights_bps: Vec<U256>,
+    ) -> Result<(), Vec<u8>> {
+        self.ensure_initialized()?;
+        self.only_owner()?;
+
+        if adapters.is_empty() || adapters.len() != weights_bps.len() {
+            return Err(errors::allocation_invalid());
+        }
+
+        for i in 0..adapters.len() {
+            for j in (i + 1)..adapters.len() {
+                if adapters[i] == adapters[j] {
+                    return Err(errors::allocation_invalid());
+                }
+            }
+        }
+
+        let mut sum = U256::ZERO;
+        for i in 0..adapters.len() {
+            if !self.adapter_enabled.get(adapters[i]) {
+                return Err(errors::adapter_not_enabled());
+            }
+            if weights_bps[i].is_zero() {
+                return Err(errors::allocation_invalid());
+            }
+            sum = sum
+                .checked_add(weights_bps[i])
+                .ok_or_else(errors::allocation_invalid)?;
+        }
+        if sum != TOTAL_BPS {
+            return Err(errors::allocation_invalid());
+        }
+
+        let currently_active = registry::active_adapters(self);
+        for (adapter, _) in currently_active {
+            self.adapter_bps.setter(adapter).set(U256::ZERO);
+        }
+        for i in 0..adapters.len() {
+            self.adapter_bps.setter(adapters[i]).set(weights_bps[i]);
+        }
+
+        self.vm().log(AllocationSet {
+            adapters: adapters.clone(),
+            weightsBps: weights_bps.clone(),
+        });
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -411,6 +419,7 @@ mod tests {
         function withdraw(uint256 usdcAmount) external returns (uint256 sharesBurned);
         function transfer(address to, uint256 amount) external returns (bool);
         function balanceOf(address account) external view returns (uint256);
+        function maxWithdraw() external view returns (uint256);
     }
 
     fn owner_addr() -> Address {
@@ -1038,5 +1047,69 @@ mod tests {
 
         let victim_shares = core.shares.get(victim_addr());
         assert!(!victim_shares.is_zero(), "victim must receive non-zero shares despite the donation");
+    }
+
+    // --- rebalance (VAULT-03) ---
+
+    fn mock_max_withdraw(vm: &TestVM, adapter: Address, value: U256) {
+        let calldata = maxWithdrawCall {}.abi_encode();
+        vm.mock_static_call(adapter, calldata, Ok(value.abi_encode()));
+    }
+
+    #[test]
+    fn rebalance_owner_only() {
+        let vm = TestVM::default();
+        let mut contract = deploy_and_init(&vm);
+
+        vm.set_sender(non_owner_addr());
+        let err = contract.rebalance(alloc::vec![], alloc::vec![]);
+        assert_eq!(err.unwrap_err(), errors::not_owner());
+    }
+
+    #[test]
+    fn rebalance_rejects_invalid_weights() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        vm.set_sender(owner_addr());
+        let err = contract.rebalance(
+            alloc::vec![adapter_addr(), adapter_two_addr()],
+            alloc::vec![U256::from(6_000u64), U256::from(3_000u64)], // sums to 9000, not 10000
+        );
+        assert_eq!(err.unwrap_err(), errors::allocation_invalid());
+    }
+
+    #[test]
+    fn rebalance_reverts_on_unwind_leg_failure() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        // adapter_addr holds a live position with a non-zero unwind_request; its withdraw leg
+        // reverts, so the whole rebalance must revert (D-10 atomicity).
+        mock_total_assets(&vm, adapter_addr(), U256::from(100u64));
+        mock_max_withdraw(&vm, adapter_addr(), U256::from(100u64));
+        let withdraw_calldata = withdrawCall { usdcAmount: U256::from(100u64) }.abi_encode();
+        vm.mock_call(adapter_addr(), withdraw_calldata, U256::ZERO, Err(b"WithdrawExceedsMax".to_vec()));
+
+        vm.set_sender(owner_addr());
+        let err = contract.rebalance(
+            alloc::vec![adapter_addr(), adapter_two_addr()],
+            alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
+        );
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn unwind_request_skips_zero_and_throttled() {
+        assert_eq!(unwind_request(U256::ZERO, U256::ZERO), None);
+        assert_eq!(unwind_request(U256::from(100u64), U256::ZERO), None); // fully throttled -> skip
+        assert_eq!(
+            unwind_request(U256::from(50u64), U256::from(100u64)),
+            Some(U256::from(50u64))
+        );
+        assert_eq!(
+            unwind_request(U256::from(100u64), U256::from(50u64)),
+            Some(U256::from(50u64))
+        );
     }
 }
