@@ -21,7 +21,8 @@ use crate::VaultAdapter;
 const USDC: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
 
 /// MockUsdc on Arbitrum Sepolia — the `testnet` build variant is a disposable test fixture and
-/// must NEVER be deployed to mainnet (default build is byte-identical to before this cfg split).
+/// must NEVER be deployed to mainnet. With the feature off this crate's release wasm is
+/// byte-identical to before the cfg split (measured, see docs/TESTNET.md).
 /// `scripts/deploy-testnet-mocks.sh` greps this constant against the deployed MockUsdc address
 /// and stops if they diverge; update it after the script's step 1 prints the deployed address.
 #[cfg(feature = "testnet")]
