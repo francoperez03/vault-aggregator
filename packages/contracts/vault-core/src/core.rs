@@ -338,6 +338,14 @@ mod tests {
         Address::from([0x44; 20])
     }
 
+    fn attacker_addr() -> Address {
+        Address::from([0x66; 20])
+    }
+
+    fn victim_addr() -> Address {
+        Address::from([0x77; 20])
+    }
+
     fn adapter_addr() -> Address {
         Address::from([0x11; 20])
     }
@@ -803,5 +811,70 @@ mod tests {
         assert_eq!(contract.shares.get(user_addr()), shares_a);
         assert_eq!(contract.shares.get(non_owner_addr()), shares_b);
         assert_eq!(contract.total_shares.get(), shares_a + shares_b);
+    }
+
+    // --- D-03 MANDATORY inflation-attack test (Task 3) ---
+
+    /// 1-wei deposit + large direct donation to the adapter/protocol (never routed through
+    /// `core.deposit()`, so it mints no core shares) + a normal second depositor must still get
+    /// non-zero, proportionate shares. This is the empirical proof of D-03's virtual-offset
+    /// anti-inflation formula (success criterion 4).
+    ///
+    /// Structured as 2 separate top-level `deposit()` calls (Pitfall 3): each call's mocks are
+    /// registered with `total_assets` LAST, so its bytes win TestVM's shared return-data buffer
+    /// for every decode inside that call — the only way to get a deterministic `total_assets`
+    /// read per top-level call under this TestVM version's known limitation.
+    #[test]
+    fn inflation_attack_second_depositor_gets_nonzero_proportionate_shares() {
+        let vm = TestVM::default();
+        let mut core = deploy_init_and_seed_adapter(&vm);
+        vm.set_sender(owner_addr());
+        core.set_allocation(alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+
+        // Step 1: attacker deposits 1 wei (smallest possible unit). `total_assets` is registered
+        // FIRST here (unlike step 3 below): a literal zero as the LAST-registered mock would
+        // decode as `false` for the bool-returning transferFrom/approve calls sharing the same
+        // TestVM return-data buffer (Pitfall 3) and break the deposit; the deposit-leg mocks
+        // (nonzero content) safely win the buffer instead, which is enough since this step only
+        // needs `attacker_shares` to come out non-zero, not an exact total_assets value.
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        let attacker_deposit = U256::from(1u64);
+        let attacker_transfer_calldata = transferFromCall {
+            from: attacker_addr(),
+            to: contract_addr(),
+            amount: attacker_deposit,
+        }
+        .abi_encode();
+        vm.mock_call(USDC, attacker_transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), attacker_deposit);
+
+        vm.set_sender(attacker_addr());
+        core.deposit(attacker_deposit).unwrap();
+        let attacker_shares = core.shares.get(attacker_addr());
+        assert!(!attacker_shares.is_zero());
+
+        // Step 2: the attacker donates a large amount directly to the adapter/protocol (bypassing
+        // core.deposit() entirely, so no new core shares are minted), inflating the pool. Modeled
+        // by jumping the adapter's mocked total_assets() far above the 1-wei deposit.
+        let donation = U256::from(1_000_000_000_000u64);
+
+        // Step 3: a normal second depositor deposits a realistic amount.
+        let normal_deposit = U256::from(1_000_000u64); // 1 USDC, 6 decimals.
+        let victim_transfer_calldata = transferFromCall {
+            from: victim_addr(),
+            to: contract_addr(),
+            amount: normal_deposit,
+        }
+        .abi_encode();
+        vm.mock_call(USDC, victim_transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), normal_deposit);
+        mock_total_assets(&vm, adapter_addr(), donation); // donation-inflated value, registered last.
+
+        vm.set_sender(victim_addr());
+        core.deposit(normal_deposit).unwrap();
+
+        let victim_shares = core.shares.get(victim_addr());
+        assert!(!victim_shares.is_zero(), "victim must receive non-zero shares despite the donation");
     }
 }
