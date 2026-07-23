@@ -50,3 +50,39 @@ In order, only to be applied if a future plan pushes the measured size over 22,5
 
 This adapter is small by design (D-02/D-03's four-function surface plus `init`); do not
 pre-apply any of the above to a binary that already fits with ~44% headroom.
+
+## `vault-core` WASM Size — Arbitrum One Gate (Phase 12 baseline)
+
+Command: `cd packages/contracts/vault-core && cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"`
+
+### Result (measured 2026-07-23, F11 final committed state — deposit + redeem + inflation test)
+
+- **Compressed size: 19,529 bytes** (19.5 KB)
+- **Fragment count: 1** (single-fragment, activates on ArbOS 51 / Arbitrum One as-is)
+- **Gate: 22,528 bytes (22528)**
+- **Headroom: 2,999 bytes (~13.3%)** under the gate
+- `cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"` exits `0`
+
+### Nightly lever status: SPENT (already committed)
+
+The `-Cpanic=immediate-abort` + `-Zbuild-std` lever (escalation ladder step 2 above) is **already
+applied** — `rust-toolchain.toml` pins `channel = "nightly-2025-09-15"` with
+`components = ["rust-src"]`, committed in `940cf0e` ("Pin nightly-2025-09-15 toolchain for the
+panic=immediate-abort WASM lever") during Phase 11 Plan 04. That commit's own measurement (23,674
+bytes stable → 19,549 bytes with the lever) is what got `redeem()` under the gate; the 19,529-byte
+number above is the post-lever, current state after the zero-value-adapter-leg fix (`fd83d6c`).
+
+**For Phase 12, this means the remaining escalation levers are ONLY:**
+1. `wasm-opt -Oz` (declined — breaks `cargo stylus verify` source reproducibility, see ladder
+   step 3 above)
+2. A core/periphery contract split (moving surface out of `vault-core` entirely)
+
+There is no further "free" toolchain lever left to pull if `split_by_position` +
+`reconcile_credit` + `RedeemShortfall` + the `rebalance` orchestration push this over budget.
+
+### WARNING for Plans 02/03
+
+**~2,999 bytes (~13.3%) of headroom is the ENTIRE budget left for Phase 12's `rebalance` +
+hardened `redeem` surface.** Re-run `cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"`
+after every task that touches `core.rs`, not just at the end of each plan — do not wait for a
+plan-boundary surprise.
