@@ -74,6 +74,103 @@ pub mod arbitrum_one {
     }
 }
 
+/// Arbitrum Sepolia mock rig: the disposable MockUsdc / MockVault x4 / vault-core / adapter x4
+/// deployed by `scripts/deploy-testnet-mocks.sh`. This is where the CORE's plumbing
+/// (deposit split, rebalance, redeem reconciliation) gets exercised on-chain against adapters
+/// that really answer — the mainnet round-trips above only ever exercised a single adapter each,
+/// with an EOA standing in for the core.
+///
+/// The mocks deliberately do NOT reproduce any real protocol's quirks (Fluid's throttle, Aave's
+/// Stata wrapping, Morpho's queue walk). Adapter-vs-real-protocol behaviour is proven by the
+/// Arbitrum One round-trips in this same crate and recorded in `docs/RUNBOOK-M2.md` — these
+/// Sepolia tests never substitute for that evidence. See `docs/TESTNET.md`.
+pub mod sepolia {
+    use alloy::primitives::Address;
+    use alloy::sol;
+
+    sol! {
+        #[sol(rpc)]
+        interface IVaultCore {
+            function init(address owner) external;
+            function addAdapter(address adapter) external;
+            function setEnabled(address adapter, bool enabled) external;
+            function removeAdapter(address adapter) external;
+            function deposit(uint256 amount) external returns (uint256);
+            function redeem(uint256 shares) external returns (uint256);
+            function rebalance(address[] adapters, uint256[] newWeights) external;
+        }
+
+        #[sol(rpc)]
+        interface IMockUsdc {
+            function mint(address account, uint256 value) external;
+            function transfer(address to, uint256 value) external returns (bool);
+            function approve(address spender, uint256 value) external returns (bool);
+            function balanceOf(address account) external view returns (uint256);
+        }
+
+        #[sol(rpc)]
+        interface IMockVault {
+            function setWithdrawCap(uint256 cap) external;
+            function totalAssets() external view returns (uint256);
+            function totalSupply() external view returns (uint256);
+            function maxWithdraw(address owner) external view returns (uint256);
+        }
+    }
+
+    /// The four protocol slots, in the order the deploy script registers them with the core.
+    /// Each is a mock stand-in for the same-named real protocol on Arbitrum One.
+    pub const PROTOCOLS: [&str; 4] = ["MORPHO", "FLUID", "EULER", "AAVE"];
+
+    /// Reads `ARB_SEPOLIA_RPC_URL`. `None` when unset — the caller early-returns `Ok(())`, the
+    /// same env-gated skip idiom the Arbitrum One tests use, so `cargo test --workspace` stays
+    /// green and touches no network for anyone who has not deployed the rig.
+    pub fn rpc_url() -> Option<String> {
+        std::env::var("ARB_SEPOLIA_RPC_URL").ok()
+    }
+
+    /// Sepolia deployer/owner key. Testnet-only funds; still env-only, never a source literal.
+    pub fn wallet_key() -> anyhow::Result<String> {
+        std::env::var("SEPOLIA_WALLET_KEY")
+            .map_err(|_| anyhow::anyhow!("SEPOLIA_WALLET_KEY not set"))
+    }
+
+    /// Reads and parses one address from the environment. `Result`, not `Option`: past the
+    /// `rpc_url()` skip gate a missing address is a configuration error. All of these are written
+    /// to `docs/.sepolia-env` by the deploy script — `source` it before running the tests.
+    pub fn env_addr(var: &str) -> anyhow::Result<Address> {
+        std::env::var(var)
+            .map_err(|_| anyhow::anyhow!("{var} not set (source docs/.sepolia-env)"))?
+            .parse()
+            .map_err(|e| anyhow::anyhow!("bad {var}: {e}"))
+    }
+
+    /// MockUsdc, the asset both the core and every adapter are compiled against in `testnet` builds.
+    pub fn mock_usdc_addr() -> anyhow::Result<Address> {
+        env_addr("MOCK_USDC_ADDR")
+    }
+
+    /// The testnet-build vault-core.
+    pub fn core_addr() -> anyhow::Result<Address> {
+        env_addr("TESTNET_CORE_ADDR")
+    }
+
+    /// The four adapter instances, in `PROTOCOLS` order.
+    pub fn adapter_addrs() -> anyhow::Result<Vec<Address>> {
+        PROTOCOLS
+            .iter()
+            .map(|p| env_addr(&format!("TESTNET_{p}_ADAPTER_ADDR")))
+            .collect()
+    }
+
+    /// The four MockVault instances, in `PROTOCOLS` order.
+    pub fn mock_vault_addrs() -> anyhow::Result<Vec<Address>> {
+        PROTOCOLS
+            .iter()
+            .map(|p| env_addr(&format!("MOCK_{p}_VAULT")))
+            .collect()
+    }
+}
+
 /// Reads `ARB_ONE_RPC_URL`. `None` when unset — the caller early-returns `Ok(())` (env-gated
 /// skip idiom, T-09-19: this is what proves `cargo test --workspace` never spends real money).
 pub fn rpc_url() -> Option<String> {
