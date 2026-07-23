@@ -514,4 +514,107 @@ mod tests {
         );
         assert_eq!(err.unwrap_err(), errors::adapter_not_enabled());
     }
+
+    // --- deposit: multi-adapter atomic split (Task 3) ---
+
+    fn deploy_init_and_seed_two_adapters(vm: &TestVM) -> VaultCore {
+        let mut contract = deploy_and_init(vm);
+        vm.set_sender(owner_addr());
+        contract.add_adapter(adapter_addr()).unwrap();
+        contract.add_adapter(adapter_two_addr()).unwrap();
+        contract
+            .set_allocation(
+                alloc::vec![adapter_addr(), adapter_two_addr()],
+                alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
+            )
+            .unwrap();
+        contract
+    }
+
+    /// Mocks USDC `transferFrom`/`approve` to succeed and `adapter.deposit(usdcAmount)` to return
+    /// `usdcAmount` shares, for `adapter` and the given slice. Per Pitfall 3, the exact returned
+    /// payload doesn't matter past decode-success (TestVM's shared return-data buffer means only
+    /// the LAST registration's bytes are actually returned); the split routing itself is proven at
+    /// the `share_math::split_by_bps` unit level, not by distinct per-adapter mocked returns here.
+    fn mock_adapter_deposit_leg(vm: &TestVM, adapter: Address, slice: U256) {
+        let approve_calldata = approveCall { spender: adapter, amount: slice }.abi_encode();
+        vm.mock_call(USDC, approve_calldata, U256::ZERO, Ok(true.abi_encode()));
+
+        let deposit_calldata = depositCall { usdcAmount: slice }.abi_encode();
+        vm.mock_call(adapter, deposit_calldata, U256::ZERO, Ok(slice.abi_encode()));
+    }
+
+    #[test]
+    fn deposit_splits_across_active_adapters() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        // Same-value mocks across both adapters (Pitfall 3): the numeric assertion below only
+        // needs total_shares/shares[user] to be nonzero and equal, not a per-adapter split proof.
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
+
+        let amount = U256::from(100u64);
+        let transfer_calldata = transferFromCall {
+            from: user_addr(),
+            to: contract_addr(),
+            amount,
+        }
+        .abi_encode();
+        vm.mock_call(USDC, transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+
+        // amount=100, weights [6000,4000] -> slices [60,40], no remainder.
+        mock_adapter_deposit_leg(&vm, adapter_addr(), U256::from(60u64));
+        mock_adapter_deposit_leg(&vm, adapter_two_addr(), U256::from(40u64));
+
+        vm.set_sender(user_addr());
+        let shares = contract.deposit(amount).unwrap();
+        assert!(!shares.is_zero());
+        assert_eq!(contract.shares.get(user_addr()), shares);
+        assert_eq!(contract.total_shares.get(), shares);
+    }
+
+    #[test]
+    fn deposit_reverts_on_adapter_failure() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
+
+        let amount = U256::from(100u64);
+        let transfer_calldata = transferFromCall {
+            from: user_addr(),
+            to: contract_addr(),
+            amount,
+        }
+        .abi_encode();
+        vm.mock_call(USDC, transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+
+        // First adapter's leg succeeds; the second adapter's deposit reverts (D-09: whole tx
+        // must unwind, no partial accounting).
+        mock_adapter_deposit_leg(&vm, adapter_addr(), U256::from(60u64));
+        let approve_two_calldata = approveCall {
+            spender: adapter_two_addr(),
+            amount: U256::from(40u64),
+        }
+        .abi_encode();
+        vm.mock_call(USDC, approve_two_calldata, U256::ZERO, Ok(true.abi_encode()));
+        let deposit_two_calldata = depositCall {
+            usdcAmount: U256::from(40u64),
+        }
+        .abi_encode();
+        vm.mock_call(
+            adapter_two_addr(),
+            deposit_two_calldata,
+            U256::ZERO,
+            Err(b"AdapterPaused".to_vec()),
+        );
+
+        vm.set_sender(user_addr());
+        let err = contract.deposit(amount);
+        assert!(err.is_err());
+        assert!(contract.total_shares.get().is_zero());
+        assert!(contract.shares.get(user_addr()).is_zero());
+    }
 }
