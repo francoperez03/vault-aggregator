@@ -20,12 +20,16 @@ use crate::VaultCore;
 /// Native USDC on Arbitrum One (D-02: the aggregator is USDC-only). Compile-time constant.
 const USDC: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
 
+/// Total basis-points an allocation must sum to exactly (D-06).
+const TOTAL_BPS: U256 = U256::from_limbs([10_000u64, 0, 0, 0]);
+
 sol! {
     event Initialized(address indexed owner);
     event Deposit(address indexed user, uint256 assets, uint256 shares);
     event AdapterAdded(address indexed adapter);
     event AdapterEnabled(address indexed adapter, bool enabled);
     event AdapterRemoved(address indexed adapter);
+    event AllocationSet(address[] adapters, uint256[] weightsBps);
 }
 
 #[public]
@@ -99,6 +103,61 @@ impl VaultCore {
         self.adapter_enabled.setter(adapter).set(false);
         self.adapter_bps.setter(adapter).set(U256::ZERO);
         self.vm().log(AdapterRemoved { adapter });
+        Ok(())
+    }
+
+    /// Owner-only: sets the global bps allocation (D-06). Validates BEFORE any write: matching
+    /// lengths, non-empty, no duplicates, every target registered+enabled, no zero weights, and
+    /// the sum is exactly 10000 (checked addition). Then clears bps for every currently-enabled
+    /// adapter and writes the new set, so the on-chain allocation is exactly the passed set.
+    pub fn set_allocation(
+        &mut self,
+        adapters: Vec<Address>,
+        weights_bps: Vec<U256>,
+    ) -> Result<(), Vec<u8>> {
+        self.ensure_initialized()?;
+        self.only_owner()?;
+
+        if adapters.is_empty() || adapters.len() != weights_bps.len() {
+            return Err(errors::allocation_invalid());
+        }
+
+        for i in 0..adapters.len() {
+            for j in (i + 1)..adapters.len() {
+                if adapters[i] == adapters[j] {
+                    return Err(errors::allocation_invalid());
+                }
+            }
+        }
+
+        let mut sum = U256::ZERO;
+        for i in 0..adapters.len() {
+            if !self.adapter_enabled.get(adapters[i]) {
+                return Err(errors::adapter_not_enabled());
+            }
+            if weights_bps[i].is_zero() {
+                return Err(errors::allocation_invalid());
+            }
+            sum = sum
+                .checked_add(weights_bps[i])
+                .ok_or_else(errors::allocation_invalid)?;
+        }
+        if sum != TOTAL_BPS {
+            return Err(errors::allocation_invalid());
+        }
+
+        let currently_active = registry::active_adapters(self);
+        for (adapter, _) in currently_active {
+            self.adapter_bps.setter(adapter).set(U256::ZERO);
+        }
+        for i in 0..adapters.len() {
+            self.adapter_bps.setter(adapters[i]).set(weights_bps[i]);
+        }
+
+        self.vm().log(AllocationSet {
+            adapters: adapters.clone(),
+            weightsBps: weights_bps.clone(),
+        });
         Ok(())
     }
 
