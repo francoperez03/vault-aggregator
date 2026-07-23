@@ -86,3 +86,17 @@ There is no further "free" toolchain lever left to pull if `split_by_position` +
 hardened `redeem` surface.** Re-run `cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"`
 after every task that touches `core.rs`, not just at the end of each plan — do not wait for a
 plan-boundary surprise.
+
+### Result (measured 2026-07-23, post Plan 02 — hardened `redeem` with D-04/D-05/D-06/D-07)
+
+- **Compressed size: 20,110 bytes** (20.1 KB)
+- **Fragment count: 1** (single-fragment, activates on ArbOS 51 / Arbitrum One as-is)
+- **Gate: 22,528 bytes (22528)**
+- **Headroom: 2,418 bytes (~10.7%)** under the gate
+- **Delta vs Plan 01 baseline (19,529 bytes): +581 bytes** — the wired `split_by_position` +
+  `reconcile_credit` calls plus the extra `usdc::balance_of` before/after reads in `redeem`
+- `cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"` exits `0`
+
+**Remaining budget for Plan 03's `rebalance` (unwind + re-split + owner guards): ~2,418 bytes
+(~10.7%).** Same warning carries forward — re-check after every task, the same escalation ladder
+(wasm-opt declined, core/periphery split) is the only lever left if this is exceeded.
