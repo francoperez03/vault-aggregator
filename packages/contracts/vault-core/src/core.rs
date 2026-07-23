@@ -235,15 +235,12 @@ impl VaultCore {
         Ok(shares)
     }
 
-    /// Basic redeem (D-04): burns `shares` from the caller, converts to USDC via
-    /// `convert_to_assets` (floor, always in the vault's favor), pulls the resulting amount
-    /// proportionally from every active adapter (same bps weights/D-10 remainder rule as
-    /// `deposit`'s split), and pays the caller.
-    ///
-    /// ponytail: proportional-by-allocation redeem is the simple correct model for Phase 11's
-    /// basic redeem (D-04). It relies on the deposit invariant that adapter balances track the
-    /// allocation; if a later rebalance (Phase 12) breaks that assumption, redeem-by-actual-
-    /// balance is the upgrade path. Not needed now.
+    /// Hardened redeem (D-03..D-07): burns `shares` from the caller, converts to `owed` USDC via
+    /// `convert_to_assets` (floor, always in the vault's favor), pulls it pro-rata from every
+    /// active adapter BY LIVE POSITION (`split_by_position`, not the static bps split `deposit`
+    /// uses), then pays the caller the REAL measured USDC balance delta the core gained across
+    /// the whole withdraw loop, capped at `owed` (D-05/D-07) — never the adapter's return value or
+    /// the pre-computed `owed`. A shortfall (measured delta < owed) reverts the whole tx (D-06).
     pub fn redeem(&mut self, shares: U256) -> Result<U256, Vec<u8>> {
         self.ensure_initialized()?;
         if shares.is_zero() {
@@ -254,54 +251,65 @@ impl VaultCore {
             return Err(errors::insufficient_shares());
         }
 
-        // Snapshot the registry + fresh aggregate total_assets BEFORE any mutation/external call
-        // (Pitfall 2/4): never convert against a cached/stored total.
+        // Snapshot the registry + per-adapter LIVE total_assets BEFORE any mutation/external call
+        // (Pitfall 2/4). `positions` feeds the D-04 split; their sum feeds convert_to_assets.
         let active = registry::active_adapters(self);
+        let mut positions: Vec<U256> = Vec::with_capacity(active.len());
         let mut total_assets_before = U256::ZERO;
         for (adapter, _bps) in active.iter() {
-            total_assets_before += adapter_dispatch::total_assets(self.vm(), *adapter)?;
+            let ta = adapter_dispatch::total_assets(self.vm(), *adapter)?;
+            total_assets_before += ta;
+            positions.push(ta);
         }
 
-        let usdc_out = share_math::convert_to_assets(
+        let owed = share_math::convert_to_assets(
             shares,
             self.total_shares.get(),
             total_assets_before,
             share_math::OFFSET_POW,
         )?;
-        if usdc_out.is_zero() {
+        if owed.is_zero() {
             return Err(errors::zero_amount());
         }
 
-        // CEI: burn before any external call.
+        // CEI: burn before any external call. An atomic revert later restores these.
         let new_user_shares = self.shares.get(user) - shares;
         self.shares.setter(user).set(new_user_shares);
         let new_total_shares = self.total_shares.get() - shares;
         self.total_shares.set(new_total_shares);
 
-        let weights: Vec<U256> = active.iter().map(|(_, bps)| *bps).collect();
-        let slices = share_math::split_by_bps(usdc_out, &weights)?;
+        // D-05: measure the REAL USDC balance the core actually gains across the whole redeem —
+        // never trust adapter returns or the pre-computed `owed`.
+        let self_addr = self.vm().contract_address();
+        let balance_before = usdc::balance_of(self.vm(), USDC, self_addr)?;
 
-        // Bare `?` per adapter: any revert unwinds the whole tx (D-09 atomicity carried into
-        // redeem); the adapter reverts `WithdrawExceedsMax` rather than partial-filling.
+        // D-04: pro-rata BY LIVE POSITION, remainder to index 0 (NOT split_by_bps — the pool may
+        // be off-allocation after a rebalance, and positions are unbounded quantities).
+        let slices = share_math::split_by_position(owed, &positions)?;
         for ((adapter, _bps), slice) in active.iter().zip(slices) {
-            // Skip 0-value legs (same rationale as deposit): an enabled 0-bps adapter must not
-            // force a withdraw(0) that would revert and strand the user's redeem.
+            // Skip 0-value legs: registry::active_adapters returns every enabled adapter, and
+            // after a D-11 exit-by-omission rebalance an enabled adapter can sit at position 0 ->
+            // split_by_position hands it slice 0. adapter.withdraw(0) reverts ZeroAmount, so a
+            // bare `?` here would revert EVERY redeem — a permanent DoS, not a legit D-06
+            // shortfall. Skip it.
             if slice.is_zero() {
                 continue;
             }
             let withdraw_ctx = Call::new_mutating(self);
-            adapter_dispatch::withdraw(self.vm(), withdraw_ctx, *adapter, slice)?;
+            adapter_dispatch::withdraw(self.vm(), withdraw_ctx, *adapter, slice)?; // bare ? = D-06 atomicity
         }
 
-        let transfer_ctx = Call::new_mutating(self);
-        usdc::transfer(self.vm(), transfer_ctx, USDC, user, usdc_out)?;
+        let balance_after = usdc::balance_of(self.vm(), USDC, self_addr)?;
+        let actual_delta = balance_after - balance_before; // funds only flow INTO the core here; no underflow
 
-        self.vm().log(Redeem {
-            user,
-            shares,
-            assets: usdc_out,
-        });
-        Ok(usdc_out)
+        // D-06 shortfall -> whole-tx revert; D-07 surplus (donation/sandwich) -> credit capped at owed.
+        let paid = share_math::reconcile_credit(owed, actual_delta)?;
+
+        let transfer_ctx = Call::new_mutating(self);
+        usdc::transfer(self.vm(), transfer_ctx, USDC, user, paid)?; // D-02: to msg.sender
+
+        self.vm().log(Redeem { user, shares, assets: paid });
+        Ok(paid)
     }
 
     fn only_owner(&self) -> Result<(), Vec<u8>> {
@@ -336,6 +344,7 @@ mod tests {
         function deposit(uint256 usdcAmount) external returns (uint256 shares);
         function withdraw(uint256 usdcAmount) external returns (uint256 sharesBurned);
         function transfer(address to, uint256 amount) external returns (bool);
+        function balanceOf(address account) external view returns (uint256);
     }
 
     fn owner_addr() -> Address {
@@ -746,17 +755,27 @@ mod tests {
         assert!(!shares.is_zero());
 
         // --- redeem the whole position; adapter_two's withdraw(0) leg must likewise be skipped ---
+        // Per Pitfall 1 (12-RESEARCH.md), `redeem`'s before/after `balanceOf(core)` reads collapse
+        // to a single shared-buffer value under TestVM, so `actual_delta` is always 0 here and the
+        // call reverts on D-06's shortfall gate rather than paying out. This still proves the skip:
+        // if the `if slice.is_zero() { continue; }` guard regressed, `adapter_two`'s `withdraw(0)`
+        // mock below (registered to revert with `ZeroWithdraw`) would fire FIRST, and the tx would
+        // revert with THAT error instead of ever reaching the balance-delta reconciliation. We
+        // assert the revert is `RedeemShortfall`, distinguishing it from a `ZeroWithdraw` regression.
         let withdraw_zero = withdrawCall { usdcAmount: U256::ZERO }.abi_encode();
         vm.mock_call(adapter_two_addr(), withdraw_zero, U256::ZERO, Err(b"ZeroWithdraw".to_vec()));
         mock_adapter_withdraw_leg(&vm, adapter_addr(), amount);
-        mock_usdc_transfer(&vm, user_addr(), amount);
-        mock_total_assets(&vm, adapter_two_addr(), amount);
-        mock_total_assets(&vm, adapter_addr(), amount); // registered last -> return buffer
+        mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
+        mock_total_assets(&vm, adapter_addr(), amount);
+        let balance_calldata = balanceOfCall { account: contract_addr() }.abi_encode();
+        vm.mock_static_call(USDC, balance_calldata, Ok(amount.abi_encode())); // registered last -> return buffer
 
         vm.set_sender(user_addr());
-        let usdc_out = contract.redeem(shares).unwrap();
-        assert!(!usdc_out.is_zero());
-        assert!(contract.total_shares.get().is_zero());
+        let err = contract.redeem(shares);
+        match err {
+            Err(bytes) => assert_ne!(bytes, b"ZeroWithdraw".to_vec()),
+            Ok(_) => panic!("redeem should revert under the TestVM shared-buffer wall (Pitfall 1)"),
+        }
     }
 
     // --- redeem (Task 1/2) ---
@@ -789,8 +808,18 @@ mod tests {
         contract.deposit(amount).unwrap()
     }
 
+    /// D-05/D-06 wiring proof, NOT a full happy-path proof. `redeem` now measures
+    /// `usdc::balance_of(core)` twice (before/after the withdraw loop) — per 12-RESEARCH.md
+    /// Pitfall 1, `stylus-test`'s shared return-data buffer means TWO distinct registrations for
+    /// the identical `(USDC, balanceOf(core))` key cannot coexist inside one top-level call, so a
+    /// genuine non-zero `actual_delta` cannot be constructed here. Registering ONE value makes
+    /// both reads observe the same bytes -> `actual_delta == 0` -> `reconcile_credit` MUST revert
+    /// with `RedeemShortfall` for any `owed > 0` (D-06). This proves the wiring (balance_of is
+    /// called, its result feeds reconcile_credit, a measured shortfall reverts the whole tx); the
+    /// happy-path exact/surplus payout math is proven by share_math's pure `reconcile_credit`
+    /// tests (Plan 01) and by Phase 13's live fork tests, not by TestVM here.
     #[test]
-    fn deposit_then_redeem_round_trip() {
+    fn redeem_zero_delta_reverts_shortfall() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_adapter(&vm);
         vm.set_sender(owner_addr());
@@ -802,20 +831,21 @@ mod tests {
         let shares_minted = deposit_amount(&vm, &mut contract, amount);
         assert!(!shares_minted.is_zero());
 
-        // Position now worth `amount`. Per Pitfall 3 (TestVM's shared return-data buffer), the
-        // read that determines every decode inside this next top-level call is whichever mock
-        // was registered LAST in test code, so `total_assets` (the value the math actually
-        // depends on) is registered last, right before `redeem` runs.
+        // Position now worth `amount`. Single-value mocks only (Pitfall 1): one `balanceOf(core)`
+        // registration, registered last so it wins the shared buffer for both before/after reads.
         mock_adapter_withdraw_leg(&vm, adapter_addr(), amount);
         mock_usdc_transfer(&vm, user_addr(), amount);
         mock_total_assets(&vm, adapter_addr(), amount);
+        let balance_calldata = balanceOfCall { account: contract_addr() }.abi_encode();
+        vm.mock_static_call(USDC, balance_calldata, Ok(amount.abi_encode()));
 
         vm.set_sender(user_addr());
-        let usdc_out = contract.redeem(shares_minted).unwrap();
-        assert!(!usdc_out.is_zero());
-        assert!(usdc_out <= amount); // floor rounding, always in the vault's favor.
-        assert!(contract.shares.get(user_addr()).is_zero());
-        assert!(contract.total_shares.get().is_zero());
+        let err = contract.redeem(shares_minted);
+        assert!(err.is_err()); // actual_delta == 0 < owed -> D-06 shortfall revert
+        // Shares/total_shares are already burned (CEI runs before the external calls/revert), but
+        // per Stylus/EVM call-frame semantics the whole tx (including the burn) unwinds on Err —
+        // this in-memory `contract` value reflects only the pre-revert mutation, not what a real
+        // chain would persist. Nothing further to assert on state here.
     }
 
     #[test]

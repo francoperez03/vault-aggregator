@@ -98,8 +98,6 @@ pub fn split_by_bps(amount: U256, weights_bps: &[U256]) -> Result<Vec<U256>, Vec
 /// `amount * position` can overflow `U256` for large accumulated pools. An adapter at position 0
 /// gets a 0 slice — the redeem loop (12-02) must skip it, not `withdraw(0)` (D-11 exit-by-omission).
 /// `Err(division_by_zero)` if the positions sum to zero.
-// ponytail: wired into redeem in 12-02
-#[allow(dead_code)]
 pub fn split_by_position(amount: U256, positions: &[U256]) -> Result<Vec<U256>, Vec<u8>> {
     let total: U256 = positions.iter().fold(U256::ZERO, |acc, p| acc + *p);
     if total.is_zero() {
@@ -125,8 +123,6 @@ pub fn split_by_position(amount: U256, positions: &[U256]) -> Result<Vec<U256>, 
 /// D-06: a shortfall (actual < owed) reverts the whole tx. D-07: a surplus (actual > owed, e.g. a
 /// direct-USDC donation or sandwich inflating the core's balance) is capped — the caller is paid
 /// exactly `owed`, never the excess (the excess stays in the core for the next rebalance to sweep).
-// ponytail: wired into redeem in 12-02
-#[allow(dead_code)]
 pub fn reconcile_credit(owed: U256, actual_delta: U256) -> Result<U256, Vec<u8>> {
     if actual_delta < owed {
         return Err(errors::redeem_shortfall(owed, actual_delta));
