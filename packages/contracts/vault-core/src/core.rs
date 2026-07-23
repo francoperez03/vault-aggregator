@@ -322,6 +322,8 @@ mod tests {
         function transferFrom(address from, address to, uint256 amount) external returns (bool);
         function approve(address spender, uint256 amount) external returns (bool);
         function deposit(uint256 usdcAmount) external returns (uint256 shares);
+        function withdraw(uint256 usdcAmount) external returns (uint256 sharesBurned);
+        function transfer(address to, uint256 amount) external returns (bool);
     }
 
     fn owner_addr() -> Address {
@@ -681,5 +683,125 @@ mod tests {
         assert!(err.is_err());
         assert!(contract.total_shares.get().is_zero());
         assert!(contract.shares.get(user_addr()).is_zero());
+    }
+
+    // --- redeem (Task 1/2) ---
+
+    fn mock_adapter_withdraw_leg(vm: &TestVM, adapter: Address, slice: U256) {
+        let withdraw_calldata = withdrawCall { usdcAmount: slice }.abi_encode();
+        vm.mock_call(adapter, withdraw_calldata, U256::ZERO, Ok(slice.abi_encode()));
+    }
+
+    fn mock_usdc_transfer(vm: &TestVM, to: Address, amount: U256) {
+        let transfer_calldata = transferCall { to, amount }.abi_encode();
+        vm.mock_call(USDC, transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+    }
+
+    /// Deposits `amount` for `user_addr()` against a single seeded adapter (10000 bps), mocking
+    /// the pre-deposit `total_assets()` at zero. Returns the shares minted.
+    fn deposit_amount(vm: &TestVM, contract: &mut VaultCore, amount: U256) -> U256 {
+        mock_total_assets(vm, adapter_addr(), U256::ZERO);
+
+        let transfer_calldata = transferFromCall {
+            from: user_addr(),
+            to: contract_addr(),
+            amount,
+        }
+        .abi_encode();
+        vm.mock_call(USDC, transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(vm, adapter_addr(), amount);
+
+        vm.set_sender(user_addr());
+        contract.deposit(amount).unwrap()
+    }
+
+    #[test]
+    fn deposit_then_redeem_round_trip() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+        vm.set_sender(owner_addr());
+        contract
+            .set_allocation(alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+
+        let amount = U256::from(1_000_000u64);
+        let shares_minted = deposit_amount(&vm, &mut contract, amount);
+        assert!(!shares_minted.is_zero());
+
+        // Position now worth `amount`. Per Pitfall 3 (TestVM's shared return-data buffer), the
+        // read that determines every decode inside this next top-level call is whichever mock
+        // was registered LAST in test code, so `total_assets` (the value the math actually
+        // depends on) is registered last, right before `redeem` runs.
+        mock_adapter_withdraw_leg(&vm, adapter_addr(), amount);
+        mock_usdc_transfer(&vm, user_addr(), amount);
+        mock_total_assets(&vm, adapter_addr(), amount);
+
+        vm.set_sender(user_addr());
+        let usdc_out = contract.redeem(shares_minted).unwrap();
+        assert!(!usdc_out.is_zero());
+        assert!(usdc_out <= amount); // floor rounding, always in the vault's favor.
+        assert!(contract.shares.get(user_addr()).is_zero());
+        assert!(contract.total_shares.get().is_zero());
+    }
+
+    #[test]
+    fn redeem_more_than_owned_reverts() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+        vm.set_sender(owner_addr());
+        contract
+            .set_allocation(alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+
+        let amount = U256::from(1_000_000u64);
+        let shares_minted = deposit_amount(&vm, &mut contract, amount);
+
+        vm.set_sender(user_addr());
+        let err = contract.redeem(shares_minted + U256::from(1u64));
+        assert_eq!(err.unwrap_err(), errors::insufficient_shares());
+    }
+
+    #[test]
+    fn two_users_shares_are_independent() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+        vm.set_sender(owner_addr());
+        contract
+            .set_allocation(alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+
+        // User A deposits (fresh top-level call, fresh mocks).
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        let amount_a = U256::from(1_000_000u64);
+        let transfer_a_calldata = transferFromCall {
+            from: user_addr(),
+            to: contract_addr(),
+            amount: amount_a,
+        }
+        .abi_encode();
+        vm.mock_call(USDC, transfer_a_calldata, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), amount_a);
+        vm.set_sender(user_addr());
+        let shares_a = contract.deposit(amount_a).unwrap();
+
+        // User B deposits (separate top-level call, sidesteps the shared return-data buffer).
+        mock_total_assets(&vm, adapter_addr(), amount_a);
+        let amount_b = U256::from(2_000_000u64);
+        let transfer_b_calldata = transferFromCall {
+            from: non_owner_addr(),
+            to: contract_addr(),
+            amount: amount_b,
+        }
+        .abi_encode();
+        vm.mock_call(USDC, transfer_b_calldata, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), amount_b);
+        vm.set_sender(non_owner_addr());
+        let shares_b = contract.deposit(amount_b).unwrap();
+
+        assert!(!shares_a.is_zero());
+        assert!(!shares_b.is_zero());
+        assert_eq!(contract.shares.get(user_addr()), shares_a);
+        assert_eq!(contract.shares.get(non_owner_addr()), shares_b);
+        assert_eq!(contract.total_shares.get(), shares_a + shares_b);
     }
 }
