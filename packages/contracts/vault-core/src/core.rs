@@ -12,6 +12,7 @@ use stylus_sdk::prelude::*;
 
 use crate::adapter_dispatch;
 use crate::errors;
+use crate::registry;
 use crate::share_math;
 use crate::usdc;
 use crate::VaultCore;
@@ -19,13 +20,12 @@ use crate::VaultCore;
 /// Native USDC on Arbitrum One (D-02: the aggregator is USDC-only). Compile-time constant.
 const USDC: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
 
-/// Full basis-points allocation (single-adapter seed for Plan 01; the full multi-adapter
-/// allocation with `setAllocation` lands in Plan 02).
-const FULL_BPS: U256 = U256::from_limbs([10_000u64, 0, 0, 0]);
-
 sol! {
     event Initialized(address indexed owner);
     event Deposit(address indexed user, uint256 assets, uint256 shares);
+    event AdapterAdded(address indexed adapter);
+    event AdapterEnabled(address indexed adapter, bool enabled);
+    event AdapterRemoved(address indexed adapter);
 }
 
 #[public]
@@ -44,18 +44,61 @@ impl VaultCore {
         Ok(())
     }
 
-    /// Owner-only: seeds ONE active adapter at 100% allocation, so the minimal deposit path has
-    /// somewhere to route to. Intentionally minimal — Plan 02 replaces/extends this with the full
-    /// dynamic registry (add/remove/enable-disable + bps validation, D-07/D-06).
+    /// Owner-only: registers a new adapter, enabled by default with 0 bps (weight is assigned
+    /// only via `set_allocation`). D-07 dynamic registry.
     pub fn add_adapter(&mut self, adapter: Address) -> Result<(), Vec<u8>> {
         self.ensure_initialized()?;
         self.only_owner()?;
         if adapter.is_zero() {
             return Err(errors::zero_address());
         }
+        if registry::is_registered(self, adapter) {
+            return Err(errors::adapter_already_registered());
+        }
         self.adapters.push(adapter);
         self.adapter_enabled.setter(adapter).set(true);
-        self.adapter_bps.setter(adapter).set(FULL_BPS);
+        self.adapter_bps.setter(adapter).set(U256::ZERO);
+        self.vm().log(AdapterAdded { adapter });
+        Ok(())
+    }
+
+    /// Owner-only: enables/disables a registered adapter. Disabling enforces the D-08
+    /// empty-position invariant (`total_assets() == 0`) BEFORE the storage write, and zeroes any
+    /// stale bps weight so it can't linger in a future `set_allocation` sum.
+    pub fn set_enabled(&mut self, adapter: Address, enabled: bool) -> Result<(), Vec<u8>> {
+        self.ensure_initialized()?;
+        self.only_owner()?;
+        if !registry::is_registered(self, adapter) {
+            return Err(errors::adapter_not_registered());
+        }
+        if !enabled {
+            let total_assets = adapter_dispatch::total_assets(self.vm(), adapter)?;
+            if !total_assets.is_zero() {
+                return Err(errors::adapter_has_balance(total_assets));
+            }
+        }
+        self.adapter_enabled.setter(adapter).set(enabled);
+        if !enabled {
+            self.adapter_bps.setter(adapter).set(U256::ZERO);
+        }
+        self.vm().log(AdapterEnabled { adapter, enabled });
+        Ok(())
+    }
+
+    /// Owner-only: removes a registered adapter (swap-remove, see `registry.rs`'s doc-comment for
+    /// the locked removal semantics). Same D-08 empty-position guard as `set_enabled(false)`.
+    pub fn remove_adapter(&mut self, adapter: Address) -> Result<(), Vec<u8>> {
+        self.ensure_initialized()?;
+        self.only_owner()?;
+        let idx = registry::index_of(self, adapter).ok_or_else(errors::adapter_not_registered)?;
+        let total_assets = adapter_dispatch::total_assets(self.vm(), adapter)?;
+        if !total_assets.is_zero() {
+            return Err(errors::adapter_has_balance(total_assets));
+        }
+        registry::swap_remove(self, idx);
+        self.adapter_enabled.setter(adapter).set(false);
+        self.adapter_bps.setter(adapter).set(U256::ZERO);
+        self.vm().log(AdapterRemoved { adapter });
         Ok(())
     }
 
@@ -296,4 +339,5 @@ mod tests {
         assert_eq!(contract.shares.get(user_addr()), shares);
         assert_eq!(contract.total_shares.get(), shares);
     }
+
 }

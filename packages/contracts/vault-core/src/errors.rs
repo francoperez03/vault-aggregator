@@ -21,6 +21,8 @@ sol! {
     error ShareMathOverflow();
     error AdapterDecodeFailed();
     error TransferFailed();
+    error AdapterAlreadyRegistered();
+    error AdapterNotRegistered();
 }
 
 pub fn already_initialized() -> Vec<u8> {
@@ -77,4 +79,12 @@ pub fn adapter_decode_failed() -> Vec<u8> {
 
 pub fn transfer_failed() -> Vec<u8> {
     TransferFailed {}.abi_encode()
+}
+
+pub fn adapter_already_registered() -> Vec<u8> {
+    AdapterAlreadyRegistered {}.abi_encode()
+}
+
+pub fn adapter_not_registered() -> Vec<u8> {
+    AdapterNotRegistered {}.abi_encode()
 }
