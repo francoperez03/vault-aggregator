@@ -399,4 +399,110 @@ mod tests {
         assert_eq!(contract.total_shares.get(), shares);
     }
 
+    // --- registry: add / remove / enable-disable (Task 1) + set_allocation (Task 2) ---
+
+    fn adapter_two_addr() -> Address {
+        Address::from([0x12; 20])
+    }
+
+    fn mock_total_assets(vm: &TestVM, adapter: Address, value: U256) {
+        let calldata = totalAssetsCall {}.abi_encode();
+        vm.mock_static_call(adapter, calldata, Ok(value.abi_encode()));
+    }
+
+    #[test]
+    fn registry_add_owner_only() {
+        let vm = TestVM::default();
+        let mut contract = deploy_and_init(&vm);
+
+        vm.set_sender(non_owner_addr());
+        let err = contract.add_adapter(adapter_addr());
+        assert_eq!(err.unwrap_err(), errors::not_owner());
+
+        vm.set_sender(owner_addr());
+        assert!(contract.add_adapter(adapter_addr()).is_ok());
+    }
+
+    #[test]
+    fn registry_add_rejects_duplicate() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+
+        vm.set_sender(owner_addr());
+        let err = contract.add_adapter(adapter_addr());
+        assert_eq!(err.unwrap_err(), errors::adapter_already_registered());
+    }
+
+    #[test]
+    fn registry_disable_reverts_with_balance() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+
+        vm.set_sender(owner_addr());
+        mock_total_assets(&vm, adapter_addr(), U256::from(1_000u64));
+        let err = contract.set_enabled(adapter_addr(), false);
+        assert_eq!(err.unwrap_err(), errors::adapter_has_balance(U256::from(1_000u64)));
+
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        assert!(contract.set_enabled(adapter_addr(), false).is_ok());
+        assert!(!contract.adapter_enabled.get(adapter_addr()));
+    }
+
+    #[test]
+    fn registry_remove_reverts_with_balance() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+
+        vm.set_sender(owner_addr());
+        mock_total_assets(&vm, adapter_addr(), U256::from(500u64));
+        let err = contract.remove_adapter(adapter_addr());
+        assert_eq!(err.unwrap_err(), errors::adapter_has_balance(U256::from(500u64)));
+
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        assert!(contract.remove_adapter(adapter_addr()).is_ok());
+        assert!(!registry::is_registered(&contract, adapter_addr()));
+    }
+
+    #[test]
+    fn registry_set_allocation_sum_must_be_10000() {
+        let vm = TestVM::default();
+        let mut contract = deploy_and_init(&vm);
+
+        vm.set_sender(owner_addr());
+        contract.add_adapter(adapter_addr()).unwrap();
+        contract.add_adapter(adapter_two_addr()).unwrap();
+
+        let err = contract.set_allocation(
+            alloc::vec![adapter_addr(), adapter_two_addr()],
+            alloc::vec![U256::from(6_000u64), U256::from(3_000u64)],
+        );
+        assert_eq!(err.unwrap_err(), errors::allocation_invalid());
+
+        assert!(contract
+            .set_allocation(
+                alloc::vec![adapter_addr(), adapter_two_addr()],
+                alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
+            )
+            .is_ok());
+        assert_eq!(contract.adapter_bps.get(adapter_addr()), U256::from(6_000u64));
+        assert_eq!(contract.adapter_bps.get(adapter_two_addr()), U256::from(4_000u64));
+    }
+
+    #[test]
+    fn registry_set_allocation_rejects_disabled_target() {
+        let vm = TestVM::default();
+        let mut contract = deploy_and_init(&vm);
+
+        vm.set_sender(owner_addr());
+        contract.add_adapter(adapter_addr()).unwrap();
+        contract.add_adapter(adapter_two_addr()).unwrap();
+        mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
+        contract.set_enabled(adapter_two_addr(), false).unwrap();
+
+        let err = contract.set_allocation(
+            alloc::vec![adapter_addr(), adapter_two_addr()],
+            alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
+        );
+        assert_eq!(err.unwrap_err(), errors::adapter_not_enabled());
+    }
 }
