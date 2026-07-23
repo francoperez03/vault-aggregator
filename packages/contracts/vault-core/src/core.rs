@@ -31,6 +31,21 @@ sol! {
     event AdapterEnabled(address indexed adapter, bool enabled);
     event AdapterRemoved(address indexed adapter);
     event AllocationSet(address[] adapters, uint256[] weightsBps);
+    event Rebalanced(uint256 redeposited);
+}
+
+/// D-09b: the amount to unwind from one adapter is `min(total_assets, max_withdraw)` (the adapter
+/// exposes only exact `withdraw(usdc)`, and `withdraw(total_assets)` can round above `max_withdraw`).
+/// Returns None when that amount is zero — a fully-throttled or empty adapter must be SKIPPED, not
+/// called with 0 (the adapter reverts ZeroAmount on a zero-amount withdraw, which would wrongly trip
+/// D-10 atomicity on a merely-illiquid protocol).
+fn unwind_request(total_assets: U256, max_withdraw: U256) -> Option<U256> {
+    let request = if total_assets < max_withdraw { total_assets } else { max_withdraw };
+    if request.is_zero() {
+        None
+    } else {
+        Some(request)
+    }
 }
 
 #[public]
@@ -111,7 +126,7 @@ impl VaultCore {
     /// lengths, non-empty, no duplicates, every target registered+enabled, no zero weights, and
     /// the sum is exactly 10000 (checked addition). Then clears bps for every currently-enabled
     /// adapter and writes the new set, so the on-chain allocation is exactly the passed set.
-    pub fn set_allocation(
+    fn set_allocation(
         &mut self,
         adapters: Vec<Address>,
         weights_bps: Vec<U256>,
@@ -310,6 +325,57 @@ impl VaultCore {
 
         self.vm().log(Redeem { user, shares, assets: paid });
         Ok(paid)
+    }
+
+    /// Owner-only allocation rebalance (VAULT-03, D-08): full-unwind every current position to the
+    /// core's USDC balance, write the new weights (the internal set_allocation step, D-13), then
+    /// re-split the REAL, complete core USDC balance across the new weights (D-09 — sweeps any capped
+    /// surplus/donation left by redeem, D-07). Atomic: any leg reverting reverts the whole tx (D-10).
+    /// With an empty pool this degenerates to just setting weights (D-13 bootstrap).
+    pub fn rebalance(
+        &mut self,
+        adapters: Vec<Address>,
+        new_weights: Vec<U256>,
+    ) -> Result<(), Vec<u8>> {
+        self.ensure_initialized()?;
+        self.only_owner()?;
+
+        // Snapshot the OLD active set BEFORE the weight write (Open Question 2): unwind the CURRENT
+        // allocation, not the new adapters[] param (which would miss unwinding an exited protocol).
+        let old_active = registry::active_adapters(self);
+
+        // Validate + write the new weights. set_allocation validates (D-11: sum 10000, no dups, no
+        // zeros, every target enabled) BEFORE writing, so an invalid rebalance reverts before any unwind.
+        self.set_allocation(adapters.clone(), new_weights.clone())?;
+
+        // UNWIND every OLD position to the core's own USDC balance (D-08), dust/throttle-tolerant (D-09b).
+        for (adapter, _bps) in old_active.iter() {
+            let total_assets = adapter_dispatch::total_assets(self.vm(), *adapter)?;
+            let max = adapter_dispatch::max_withdraw(self.vm(), *adapter)?;
+            if let Some(request) = unwind_request(total_assets, max) {
+                let withdraw_ctx = Call::new_mutating(self);
+                adapter_dispatch::withdraw(self.vm(), withdraw_ctx, *adapter, request)?; // bare ? = D-10
+            }
+        }
+
+        // RE-SPLIT the REAL, complete core USDC balance across the NEW weights (D-09 by construction).
+        let self_addr = self.vm().contract_address();
+        let core_balance = usdc::balance_of(self.vm(), USDC, self_addr)?;
+        let slices = share_math::split_by_bps(core_balance, &new_weights)?;
+        for (adapter, slice) in adapters.iter().zip(slices) {
+            // Skip zero slices: an empty pool (D-13 bootstrap) or a dust-sized slice would otherwise
+            // hit the adapter's ZeroAmount deposit guard and revert the whole rebalance.
+            if slice.is_zero() {
+                continue;
+            }
+            let approve_ctx = Call::new_mutating(self);
+            usdc::approve(self.vm(), approve_ctx, USDC, *adapter, slice)?;
+            let deposit_ctx = Call::new_mutating(self);
+            adapter_dispatch::deposit(self.vm(), deposit_ctx, *adapter, slice)?; // bare ? = D-10
+        }
+
+        self.vm().log(Rebalanced { redeposited: core_balance });
+        Ok(())
     }
 
     fn only_owner(&self) -> Result<(), Vec<u8>> {
