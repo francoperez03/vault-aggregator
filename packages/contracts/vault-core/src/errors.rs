@@ -23,6 +23,7 @@ sol! {
     error TransferFailed();
     error AdapterAlreadyRegistered();
     error AdapterNotRegistered();
+    error InsufficientShares();
 }
 
 pub fn already_initialized() -> Vec<u8> {
@@ -87,4 +88,8 @@ pub fn adapter_already_registered() -> Vec<u8> {
 
 pub fn adapter_not_registered() -> Vec<u8> {
     AdapterNotRegistered {}.abi_encode()
+}
+
+pub fn insufficient_shares() -> Vec<u8> {
+    InsufficientShares {}.abi_encode()
 }

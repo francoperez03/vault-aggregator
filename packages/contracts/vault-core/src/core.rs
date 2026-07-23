@@ -26,6 +26,7 @@ const TOTAL_BPS: U256 = U256::from_limbs([10_000u64, 0, 0, 0]);
 sol! {
     event Initialized(address indexed owner);
     event Deposit(address indexed user, uint256 assets, uint256 shares);
+    event Redeem(address indexed user, uint256 shares, uint256 assets);
     event AdapterAdded(address indexed adapter);
     event AdapterEnabled(address indexed adapter, bool enabled);
     event AdapterRemoved(address indexed adapter);
@@ -225,6 +226,70 @@ impl VaultCore {
             shares,
         });
         Ok(shares)
+    }
+
+    /// Basic redeem (D-04): burns `shares` from the caller, converts to USDC via
+    /// `convert_to_assets` (floor, always in the vault's favor), pulls the resulting amount
+    /// proportionally from every active adapter (same bps weights/D-10 remainder rule as
+    /// `deposit`'s split), and pays the caller.
+    ///
+    /// ponytail: proportional-by-allocation redeem is the simple correct model for Phase 11's
+    /// basic redeem (D-04). It relies on the deposit invariant that adapter balances track the
+    /// allocation; if a later rebalance (Phase 12) breaks that assumption, redeem-by-actual-
+    /// balance is the upgrade path. Not needed now.
+    pub fn redeem(&mut self, shares: U256) -> Result<U256, Vec<u8>> {
+        self.ensure_initialized()?;
+        if shares.is_zero() {
+            return Err(errors::zero_shares());
+        }
+        let user = self.vm().msg_sender();
+        if self.shares.get(user) < shares {
+            return Err(errors::insufficient_shares());
+        }
+
+        // Snapshot the registry + fresh aggregate total_assets BEFORE any mutation/external call
+        // (Pitfall 2/4): never convert against a cached/stored total.
+        let active = registry::active_adapters(self);
+        let mut total_assets_before = U256::ZERO;
+        for (adapter, _bps) in active.iter() {
+            total_assets_before += adapter_dispatch::total_assets(self.vm(), *adapter)?;
+        }
+
+        let usdc_out = share_math::convert_to_assets(
+            shares,
+            self.total_shares.get(),
+            total_assets_before,
+            share_math::OFFSET_POW,
+        )?;
+        if usdc_out.is_zero() {
+            return Err(errors::zero_amount());
+        }
+
+        // CEI: burn before any external call.
+        let new_user_shares = self.shares.get(user) - shares;
+        self.shares.setter(user).set(new_user_shares);
+        let new_total_shares = self.total_shares.get() - shares;
+        self.total_shares.set(new_total_shares);
+
+        let weights: Vec<U256> = active.iter().map(|(_, bps)| *bps).collect();
+        let slices = share_math::split_by_bps(usdc_out, &weights)?;
+
+        // Bare `?` per adapter: any revert unwinds the whole tx (D-09 atomicity carried into
+        // redeem); the adapter reverts `WithdrawExceedsMax` rather than partial-filling.
+        for ((adapter, _bps), slice) in active.iter().zip(slices) {
+            let withdraw_ctx = Call::new_mutating(self);
+            adapter_dispatch::withdraw(self.vm(), withdraw_ctx, *adapter, slice)?;
+        }
+
+        let transfer_ctx = Call::new_mutating(self);
+        usdc::transfer(self.vm(), transfer_ctx, USDC, user, usdc_out)?;
+
+        self.vm().log(Redeem {
+            user,
+            shares,
+            assets: usdc_out,
+        });
+        Ok(usdc_out)
     }
 
     fn only_owner(&self) -> Result<(), Vec<u8>> {
