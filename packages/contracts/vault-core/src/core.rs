@@ -198,6 +198,13 @@ impl VaultCore {
         // Bare `?` per adapter: any revert unwinds the whole tx atomically (D-09/T-11-09),
         // Stylus/EVM call-frame semantics give this for free, no manual rollback needed.
         for ((adapter, _bps), slice) in active.iter().zip(slices) {
+            // Skip 0-value legs: an enabled 0-bps adapter (add_adapter enables at 0 bps,
+            // set_allocation need not cover the full enabled set) would otherwise force a
+            // deposit(0) that some ERC-4626 adapters revert on -> self-inflicted deposit DoS.
+            // Guard on the slice, not bps, so the D-10 remainder-to-slot-0 leg still routes.
+            if slice.is_zero() {
+                continue;
+            }
             let approve_ctx = Call::new_mutating(self);
             usdc::approve(self.vm(), approve_ctx, USDC, *adapter, slice)?;
 
@@ -277,6 +284,11 @@ impl VaultCore {
         // Bare `?` per adapter: any revert unwinds the whole tx (D-09 atomicity carried into
         // redeem); the adapter reverts `WithdrawExceedsMax` rather than partial-filling.
         for ((adapter, _bps), slice) in active.iter().zip(slices) {
+            // Skip 0-value legs (same rationale as deposit): an enabled 0-bps adapter must not
+            // force a withdraw(0) that would revert and strand the user's redeem.
+            if slice.is_zero() {
+                continue;
+            }
             let withdraw_ctx = Call::new_mutating(self);
             adapter_dispatch::withdraw(self.vm(), withdraw_ctx, *adapter, slice)?;
         }
@@ -691,6 +703,60 @@ mod tests {
         assert!(err.is_err());
         assert!(contract.total_shares.get().is_zero());
         assert!(contract.shares.get(user_addr()).is_zero());
+    }
+
+    /// WR-02: an enabled adapter left at 0 bps must NOT receive a 0-value deposit/withdraw leg.
+    /// adapter_two stays enabled at 0 bps (add_adapter enables at 0; set_allocation gives 100% to
+    /// adapter one). Its deposit(0)/withdraw(0) are mocked to REVERT: if the 0-slice legs were
+    /// still routed (no `slice.is_zero()` skip), both deposit and redeem would revert (the
+    /// self-inflicted DoS). With the skip they never fire, so the round trip succeeds.
+    ///
+    /// Mock ordering follows Pitfall 3 (TestVM's shared return-data buffer): the LAST-registered
+    /// mock's bytes are what every call reads back, so the value the math/bool-decodes depend on
+    /// (the good adapter's leg) is registered last; the adapter_two revert mocks are registered
+    /// earlier and are only ever hit if the skip regresses.
+    #[test]
+    fn zero_bps_enabled_adapter_does_not_break_deposit_or_redeem() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+        vm.set_sender(owner_addr());
+        contract.add_adapter(adapter_two_addr()).unwrap(); // enabled, 0 bps
+        contract
+            .set_allocation(alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+
+        let amount = U256::from(1_000_000u64);
+
+        // --- deposit ---
+        mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        let transfer_from_calldata = transferFromCall {
+            from: user_addr(),
+            to: contract_addr(),
+            amount,
+        }
+        .abi_encode();
+        vm.mock_call(USDC, transfer_from_calldata, U256::ZERO, Ok(true.abi_encode()));
+        let deposit_zero = depositCall { usdcAmount: U256::ZERO }.abi_encode();
+        vm.mock_call(adapter_two_addr(), deposit_zero, U256::ZERO, Err(b"ZeroDeposit".to_vec()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), amount); // registered last -> return buffer
+
+        vm.set_sender(user_addr());
+        let shares = contract.deposit(amount).unwrap();
+        assert!(!shares.is_zero());
+
+        // --- redeem the whole position; adapter_two's withdraw(0) leg must likewise be skipped ---
+        let withdraw_zero = withdrawCall { usdcAmount: U256::ZERO }.abi_encode();
+        vm.mock_call(adapter_two_addr(), withdraw_zero, U256::ZERO, Err(b"ZeroWithdraw".to_vec()));
+        mock_adapter_withdraw_leg(&vm, adapter_addr(), amount);
+        mock_usdc_transfer(&vm, user_addr(), amount);
+        mock_total_assets(&vm, adapter_two_addr(), amount);
+        mock_total_assets(&vm, adapter_addr(), amount); // registered last -> return buffer
+
+        vm.set_sender(user_addr());
+        let usdc_out = contract.redeem(shares).unwrap();
+        assert!(!usdc_out.is_zero());
+        assert!(contract.total_shares.get().is_zero());
     }
 
     // --- redeem (Task 1/2) ---
