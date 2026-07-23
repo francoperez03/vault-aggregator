@@ -17,7 +17,15 @@ use crate::VaultAdapter;
 
 /// Native USDC on Arbitrum One (D-02: the aggregator is USDC-only). Compile-time constant, not
 /// a stored field or constructor argument — every deployed instance targets the same USDC.
+#[cfg(not(feature = "testnet"))]
 const USDC: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
+
+/// MockUsdc on Arbitrum Sepolia — the `testnet` build variant is a disposable test fixture and
+/// must NEVER be deployed to mainnet (default build is byte-identical to before this cfg split).
+/// `scripts/deploy-testnet-mocks.sh` greps this constant against the deployed MockUsdc address
+/// and stops if they diverge; update it after the script's step 1 prints the deployed address.
+#[cfg(feature = "testnet")]
+const USDC: Address = address!("00000000000000000000000000000000DeaDBeef");
 
 sol! {
     event Initialized(address indexed vault, address indexed core);

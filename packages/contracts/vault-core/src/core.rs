@@ -18,7 +18,15 @@ use crate::usdc;
 use crate::VaultCore;
 
 /// Native USDC on Arbitrum One (D-02: the aggregator is USDC-only). Compile-time constant.
+#[cfg(not(feature = "testnet"))]
 const USDC: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
+
+/// MockUsdc on Arbitrum Sepolia — the `testnet` build variant is a disposable test fixture and
+/// must NEVER be deployed to mainnet (default build is byte-identical to before this cfg split).
+/// `scripts/deploy-testnet-mocks.sh` greps this constant against the deployed MockUsdc address
+/// and stops if they diverge; update it after the script's step 1 prints the deployed address.
+#[cfg(feature = "testnet")]
+const USDC: Address = address!("00000000000000000000000000000000DeaDBeef");
 
 /// Total basis-points an allocation must sum to exactly (D-06).
 const TOTAL_BPS: U256 = U256::from_limbs([10_000u64, 0, 0, 0]);

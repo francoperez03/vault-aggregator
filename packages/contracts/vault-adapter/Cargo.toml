@@ -19,6 +19,9 @@ default = ["mini-alloc"]
 export-abi = ["stylus-sdk/export-abi"]
 debug = ["stylus-sdk/debug"]
 mini-alloc = ["stylus-sdk/mini-alloc"]
+# Swaps the compiled USDC constant to the Sepolia MockUsdc address. Testnet fixture builds only —
+# never deploy a `--features testnet` artifact to mainnet.
+testnet = []
 
 [lints]
 workspace = true
