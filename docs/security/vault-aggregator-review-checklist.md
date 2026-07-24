@@ -19,10 +19,10 @@ version of this plan's own instructions described the topology as core + `vault-
 Permit2 signature-substitution router for Lemon). That periphery contract has since been
 **deleted entirely** — see `PERMIT2-REMOVED` below and `docs/known-issues.md`. The topology
 actually deployed and reviewed here is a **single core contract**
-(`0x1e223295ef6d36b9125d28cdf2619937f473ba28` on Arbitrum Sepolia) + four adapters + four
-MockVaults, with **no periphery**. Every periphery-specific finding (P-I1/P-I2/P-I3, D-19
-residuals #1–#3) is recorded MOOT in §11 rather than dispositioned as if the periphery still
-existed.
+(`0xd38b38213ac17181c4b02c9c10422b691eab5626` on Arbitrum Sepolia, redeployed for the 13-11 C-M2/
+S-M1 gap closure — see `docs/TESTNET.md`) + four adapters + four MockVaults, with **no
+periphery**. Every periphery-specific finding (P-I1/P-I2/P-I3, D-19 residuals #1–#3) is recorded
+MOOT in §11 rather than dispositioned as if the periphery still existed.
 
 Legend: ✅ mitigated/verified · ⚠️ flagged/accepted, not a blind-✅ · MOOT superseded by a later
 change, no action possible or needed · NA not applicable (operational).
@@ -302,15 +302,16 @@ caller code returns `Ok(())` on zero proceeds — no revert, so that burn sticks
 cleared silently through a function whose own doc comment (`core.rs:175-179`) does not name it as
 an exit path.
 
-**Disposition: DEFERRED to a named follow-up (Phase 15).** This documentation-only checklist pass
-does not touch contract code (per this plan's own scope). The recommended fix
-(`cross-reference.md`'s proposal: distinguish "no position existed" from "a position existed and
-burned to a reconciled value of zero" in `redeem`'s zero-paid check) is cheap and
-non-architectural, but is not implemented in the code reviewed here — `core.rs:165-167` is
-unchanged. No funds are at risk either way (the user's economic outcome is correctly zero under
-both functions); the gap is discoverability of `rebalance` as the workaround exit path. Recorded
-as an explicit action item for Phase 15: either ship the one-line fix, or correct the code's own
-doc comments to name `rebalance` explicitly as the dust-clearing path until it is fixed.
+**Disposition: FIXED, with test (13-11 gap closure).** `redeem` (`core.rs:154-173`) no longer
+checks `paid.is_zero()` and reverts; it skips only the USDC `transfer` call when there is nothing
+to pay (`core.rs:165-169`) and always logs/returns the reconciled `paid` (possibly zero). The
+share burn and ledger cleanup inside `unwind_position` are unchanged — this fix touches only
+`redeem`'s post-unwind branch. Test:
+`core::tests::redeem_full_exit_on_dust_position_succeeds_and_clears_shares` (`core.rs`) seeds a
+1-wei position, devalues the adapter to zero, and asserts `redeem(TOTAL_BPS)` succeeds, pays out
+0, and clears both `sharesOf` and `adapterTotalShares` for that adapter. Redeployed and re-verified
+live on the Sepolia rig (`docs/TESTNET.md`'s 13-11 rig, 13/13 e2e green); `rebalance` remains an
+equally valid exit path for a dust position, now simply no longer the *only* one.
 
 ### S-M1 — `split_by_bps` on an empty `weights_bps` would silently drop the entire `amount`, but is unreachable via any live entrypoint today
 
@@ -323,13 +324,14 @@ slice fed to `split_by_bps`: an empty/mismatched-length adapters array is reject
 (`weights_reject_length_mismatch_and_empty`, `core.rs:1629`) before anything is written, so
 `read_weights(user)` can never hand `split_by_bps` an empty slice today via any live entrypoint.
 
-**Disposition: DEFERRED to a named follow-up (Phase 15), non-blocking.** Not reachable today, so
-this is a defense-in-depth hardening item, not a live gap — it does not block phase close. The
-recommended one-line fix (`if weights_bps.is_empty() { return Err(errors::allocation_invalid()); }`
-at the top of `split_by_bps`, per `cross-reference.md`) is not implemented in the code reviewed
-here — `share_math.rs:75-92` is unchanged. Recorded as an explicit action item for Phase 15, cheap
-enough to bundle with C-M2's fix in the same hardening pass, so a future refactor that loosens the
-"always non-empty" precondition upstream does not silently reintroduce a fund-accounting gap.
+**Disposition: FIXED, with test (13-11 gap closure).** `split_by_bps` (`share_math.rs:75-79`) now
+returns `Err(errors::allocation_invalid())` when `weights_bps` is empty and `amount` is non-zero,
+before entering the loop — the exact one-line fix `cross-reference.md` recommended. Tests:
+`share_math::tests::split_by_bps_empty_weights_with_nonzero_amount_errors` (asserts the new error)
+and `split_by_bps_empty_weights_with_zero_amount_is_ok` (the degenerate 0-amount case stays a
+no-op, invariant trivially holds). Still unreachable via any live entrypoint today (`write_weights`
+still rejects an empty adapters array upstream) — this closes the defense-in-depth gap so a future
+refactor that loosens that precondition cannot silently reintroduce a fund-accounting bug.
 
 ### S-M2 — entry vs exit pricing asymmetry (yield front-run), CONFIDENCE-LIMITED
 
@@ -463,9 +465,6 @@ way.
 
 ## Sign-off
 
-Reviewed by:
-Date:
-
-_(To be completed at Task 2 — Franco's sign-off. Every finding above ends in a written
-disposition: FIXED, RETIRED BY DELETION, ACCEPTED (WITH GUARD/RATIONALE), RESOLVED, DEFERRED to a
-named phase, MOOT, NA, or REFUTED/no action. No item is open without one.)_
+Signed off by: Franco Pérez (franco.perez03) — 2026-07-24. All four axes reviewed; every finding
+carries a written disposition; C-H1 fixed via constructor; C-M2 and S-M1 fixed with tests;
+workspace lib suite 154 passing, live Sepolia e2e 13 passing.

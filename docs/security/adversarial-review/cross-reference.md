@@ -116,15 +116,11 @@ dust-valued position; KI-02 is the closest neighbor but is about protocol-side t
 (`maxWithdraw() == 0` on a live, non-zero position), not about a position whose *reconciled owed
 value* itself floors to zero. This is a genuinely new observation.
 
-**Disposition: FIX NOW (cheap).** The user's economic outcome is correctly zero either way - no
-funds are at risk - but a frontend or user who only wires up `redeem()` has no way to clear a
-zeroed ledger entry, and the workaround (`rebalance`) is not documented or named as an exit
-mechanism. Recommended fix: change `redeem`'s zero-paid check to only revert when
-`unwind_position` burned nothing (i.e., distinguish "no position existed to redeem" from "a
-position existed and burned to a reconciled value of zero"), so the zero-valued-but-real burn
-commits instead of reverting. This is a small conditional change, not an architectural one. If
-deferred instead, the "always reachable via redeem/rebalance" claim in the code's own doc-comments
-must be corrected to name `rebalance` explicitly as the dust-clearing path.
+**Disposition: FIXED (13-11 gap closure).** `redeem` no longer reverts on a zero-paid unwind - it
+skips only the USDC `transfer` call and returns the reconciled (possibly zero) payout
+(`core.rs:154-173`). Proven by `core::tests::redeem_full_exit_on_dust_position_succeeds_and_clears_shares`
+and re-verified live on the redeployed Sepolia rig (`docs/TESTNET.md`, 13/13 e2e green). `rebalance`
+remains a valid dust-clearing path too, no longer the only one.
 
 ### C-H2 - Single illiquid adapter freezes a user's entire cross-adapter position
 
@@ -211,14 +207,12 @@ it from an isolated bundle. Verified now: the guard exists, is unconditional, an
 genuinely unreachable with this input via any live entrypoint. Not documented anywhere in the prior
 register - this is a novel defense-in-depth observation, not a novel live exploit.
 
-**Disposition: FIX NOW (cheap, non-blocking).** One-line change
-(`if weights_bps.is_empty() { return Err(errors::allocation_invalid()); }` at the top of
-`split_by_bps`) turns a silent-`Ok` footgun into an explicit revert, at effectively zero byte cost,
-and removes the fragility the three lenses flag (a future caller or refactor that loosens the
-"always non-empty" precondition would otherwise reintroduce a silent fund-accounting gap with zero
-observability). Not a gate - not reachable today, no severity escalation - but cheap enough that
-there is no reason to defer it past Phase 13's own hardening pass (the same pass that already
-closed WR-01/WR-04 pre-emptively).
+**Disposition: FIXED (13-11 gap closure).** `split_by_bps` now returns `Err(allocation_invalid())`
+when `weights_bps` is empty and `amount` is non-zero (`share_math.rs:75-79`), turning the silent-
+`Ok` footgun into an explicit revert. Proven by
+`share_math::tests::split_by_bps_empty_weights_with_nonzero_amount_errors`. Still unreachable via
+any live entrypoint today (`write_weights`'s guard is unchanged) - this closes the defense-in-depth
+gap so a future refactor cannot silently reintroduce it.
 
 ### S-M2 - `convert_to_shares` / `convert_to_assets` entry vs exit pricing asymmetry (yield front-run) - CONFIDENCE-LIMITED
 
@@ -320,7 +314,7 @@ further action. See `docs/known-issues.md`'s `PERMIT2-REMOVED` entry for the ful
 | State | Count | IDs |
 |---|---|---|
 | matches | 4 | C-M1 (WR-02), C-H2 (KI-02/AR-02/T-12.1-15), C-I1 (IN-04) |
-| novel | 6 | C-H1 (HIGH, gate — FIXED via `#[constructor]`), C-M2 (MEDIUM), S-M1 (MEDIUM, unreachable-today), P-I1 (INFO), P-I2 (INFO), P-I3 (INFO) |
+| novel | 6 | C-H1 (HIGH, gate — FIXED via `#[constructor]`), C-M2 (MEDIUM — FIXED with test), S-M1 (MEDIUM, unreachable-today — FIXED with test), P-I1 (INFO), P-I2 (INFO), P-I3 (INFO) |
 | noise (refuted) | 2 | S-H1 (donation zero-mint, refuted by `deposit_leg`'s zero-shares guard), S-M2 (yield-skim, refuted - both sides read live, no cached figure) |
 
 **Novel findings are what Phase 12.1's review, plus everything found empirically through Phase 13's
@@ -328,10 +322,10 @@ live e2e work, still missed.** One of them is HIGH:
 
 **C-H1 (unprotected `init`, permanent ownership takeover by front-running) was a blocking gate — now
 FIXED** via a real `#[constructor]` (see its disposition above, and `docs/known-issues.md`'s C-H1
-entry). Every other novel finding is
-medium or info and does not block; C-M2 and S-M1 have cheap, non-architectural fixes recommended
-for the same hardening pass that already closed WR-01/WR-04, while the periphery info items are
-scope/documentation decisions, not defects.
+entry). **C-M2 and S-M1 are now FIXED with tests too** (13-11 gap closure, redeployed and
+re-verified live on Sepolia — see their dispositions above), so all three MEDIUM-or-higher novel
+findings from the blind run are closed. The periphery info items remain scope/documentation
+decisions, not defects.
 
 This is not a case of "the blind run found nothing new" - had it been, that would also have been a
 valid, honest result per this plan's own instructions. It found one real, high-severity gap that a

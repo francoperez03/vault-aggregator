@@ -194,6 +194,36 @@ MockVaults — a new core invalidates the whole rig, per the one-shot `adapter.i
 binding and the periphery's constructor-wired `core` address), and all 16 live e2e tests
 (`sepolia_core_flow`, `sepolia_edge_cases`, `sepolia_periphery`) re-ran green against it.
 
+## C-M2 — `redeem()` permanently reverted on a zero/dust-valued position while `rebalance()` silently cleared it (blind adversarial review, 13-11 gap closure)
+
+**Status: FIXED.** `redeem`'s post-unwind check (`if paid.is_zero() { return Err(errors::zero_amount()) }`)
+ran AFTER `unwind_position`'s unconditional share burn, so a position whose reconciled `owed`
+floored to zero (total loss on that adapter, or a sufficiently small dust position) reverted the
+whole call, undoing the burn and leaving the position permanently stuck for that entrypoint —
+even though `rebalance` ran the identical `unwind_position` call and cleared the same position
+silently. See `docs/security/adversarial-review/cross-reference.md`'s C-M2 for the full finding.
+
+**Fix:** `redeem` (`core.rs:154-173`) skips only the USDC `transfer` call when `paid` is zero and
+always logs/returns the reconciled payout — the share burn and ledger cleanup inside
+`unwind_position` are unchanged. Verified: `redeem_full_exit_on_dust_position_succeeds_and_clears_shares`
+(`vault-core/src/core.rs`) seeds a 1-wei position, devalues the adapter to zero, and asserts
+`redeem(TOTAL_BPS)` succeeds, pays out 0, and clears both `sharesOf` and `adapterTotalShares`. The
+rig was fully redeployed on Arbitrum Sepolia (new core, 4 adapters, 4 MockVaults — see
+`docs/TESTNET.md`'s 13-11 rig) and all 13 live e2e tests re-ran green against it.
+
+## S-M1 — `split_by_bps` on an empty `weights_bps` silently dropped the entire `amount` (blind adversarial review, 13-11 gap closure)
+
+**Status: FIXED.** `split_by_bps` returned `Ok(vec![])` for an empty `weights_bps` and a non-zero
+`amount`, silently violating its own `Σ slices == amount` invariant. Confirmed unreachable via any
+live entrypoint today (`write_weights` rejects an empty adapters array before anything is
+written), so this was a defense-in-depth gap, not a live exploit. See
+`docs/security/adversarial-review/cross-reference.md`'s S-M1 for the full finding.
+
+**Fix:** `split_by_bps` (`share_math.rs:75-79`) now returns `Err(errors::allocation_invalid())`
+when `weights_bps` is empty and `amount` is non-zero, before entering the loop. Verified:
+`split_by_bps_empty_weights_with_nonzero_amount_errors` and
+`split_by_bps_empty_weights_with_zero_amount_is_ok` (`vault-core/src/share_math.rs`).
+
 ## WR-01 — `remove_adapter`'s guard read the wrong source (Phase 12.1 / retired by deletion in 13a)
 
 **Status: RETIRED BY DELETION, not mitigated.** The original fix re-pointed the guard at
