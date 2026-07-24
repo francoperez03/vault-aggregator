@@ -128,26 +128,35 @@ impl VaultCore {
         self.weight_bps.get(user).get(adapter)
     }
 
-    /// VAULT-01: splits the caller's deposit across THEIR OWN stored weights (D-01/D-02), minting
-    /// shares per adapter at that adapter's own price (D-06). Any leg reverting reverts the whole
-    /// tx (whole-tx atomicity, inherited F11 D-09).
-    pub fn deposit(&mut self, amount: U256) -> Result<U256, Vec<u8>> {
+    /// D-19: permissionless by design. The core PULLS the USDC from `msg.sender` and credits
+    /// `user`, so crediting a third party is a gift, never a theft: an unbacked call reverts at
+    /// the `transferFrom`. This is deliberately NOT CoinFlip's gated `betFor` — there a fabricated
+    /// bet is bounded by the pool and settled by VRF; here the ledger is title over other users'
+    /// custodied USDC, so no address gets the privilege of declaring an `amount` the core
+    /// believes. There is no gate and no `setPeriphery`: the Permit2 periphery is replaceable
+    /// without touching the core.
+    pub fn deposit_for(&mut self, user: Address, amount: U256) -> Result<U256, Vec<u8>> {
         self.ensure_initialized()?;
         if amount.is_zero() {
             return Err(errors::zero_amount());
         }
-        let user = self.vm().msg_sender();
+        if user.is_zero() {
+            return Err(errors::zero_address());
+        }
 
-        // D-01: no implicit fallback allocation exists. A user bootstraps by calling
+        // D-01: no implicit fallback allocation exists. `user` bootstraps by calling
         // `rebalance(adapters, bps)` with a zero position first, which just writes their weights.
+        // `user`'s OWN stored weights decide the split — never the caller's.
         let (targets, weights) = self.read_weights(user);
         if targets.is_empty() {
             return Err(errors::no_weights_set());
         }
 
-        // Guard + snapshot BEFORE any mutating call: an adapter disabled after the weights were
-        // written must not take new money (D-11), and minting against a post-deposit total_assets
-        // would dilute the depositor against their own funds.
+        // Guard + snapshot BEFORE any mutating call (guard-before-mutate): T-13-06/D-19 residual
+        // risk #2 requires that weights pointing at a disabled adapter revert with nothing having
+        // moved, so no funds can strand in a periphery mid-flow. Also protects against minting
+        // against a post-deposit total_assets, which would dilute the depositor against their own
+        // funds.
         let mut ta_before: Vec<U256> = Vec::with_capacity(targets.len());
         for adapter in targets.iter() {
             if !self.adapter_enabled.get(*adapter) {
@@ -157,8 +166,9 @@ impl VaultCore {
         }
 
         let self_addr = self.vm().contract_address();
+        let payer = self.vm().msg_sender(); // T-13-05: the only line whose semantics change vs the old caller-only deposit.
         let pull_ctx = Call::new_mutating(self);
-        usdc::transfer_from(self.vm(), pull_ctx, USDC, user, self_addr, amount)?;
+        usdc::transfer_from(self.vm(), pull_ctx, USDC, payer, self_addr, amount)?;
 
         let slices = share_math::split_by_bps(amount, &weights)?;
         let mut minted_total = U256::ZERO;
@@ -176,6 +186,13 @@ impl VaultCore {
 
         self.vm().log(Deposit { user, assets: amount, shares: minted_total });
         Ok(minted_total)
+    }
+
+    /// Sugar over `deposit_for`: pay for yourself, credit yourself. One extra ABI entry, zero new
+    /// logic.
+    pub fn deposit(&mut self, amount: U256) -> Result<U256, Vec<u8>> {
+        let caller = self.vm().msg_sender();
+        self.deposit_for(caller, amount)
     }
 
     /// D-07: withdrawal is denominated as a fraction of the caller's OWN position. `bps` = 10000 is
@@ -617,6 +634,103 @@ mod tests {
         assert!(!shares.is_zero());
         assert_eq!(contract.shares_of(user_addr(), adapter_addr()), shares);
         assert_eq!(contract.adapter_total_shares.get(adapter_addr()), shares);
+    }
+
+    // --- deposit_for (D-19 permissionless intake) ---
+
+    #[test]
+    fn deposit_for_credits_the_target_not_the_payer() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+        let payer = attacker_addr();
+        let credited = victim_addr();
+        contract
+            .write_weights(credited, alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+
+        let amount = U256::from(1_000_000u64);
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        let transfer_calldata = transferFromCall { from: payer, to: contract_addr(), amount }.abi_encode();
+        vm.mock_call(USDC, transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), amount);
+
+        vm.set_sender(payer);
+        let shares = contract.deposit_for(credited, amount).unwrap();
+        assert!(!shares.is_zero());
+        assert_eq!(contract.shares_of(credited, adapter_addr()), shares);
+        assert_eq!(contract.shares_of(payer, adapter_addr()), U256::ZERO);
+    }
+
+    #[test]
+    fn deposit_for_uses_the_targets_weights_not_the_callers() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm); // seeds payer weights 6000/4000
+        let payer = user_addr();
+        let credited = non_owner_addr();
+        contract
+            .write_weights(
+                credited,
+                alloc::vec![adapter_addr(), adapter_two_addr()],
+                alloc::vec![U256::from(2_000u64), U256::from(8_000u64)],
+            )
+            .unwrap();
+
+        let amount = U256::from(1_000u64);
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
+        let transfer_calldata = transferFromCall { from: payer, to: contract_addr(), amount }.abi_encode();
+        vm.mock_call(USDC, transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+        // credited's weights [2000,8000] -> slices [200,800], not payer's [6000,4000].
+        mock_adapter_deposit_leg(&vm, adapter_addr(), U256::from(200u64));
+        mock_adapter_deposit_leg(&vm, adapter_two_addr(), U256::from(800u64));
+
+        vm.set_sender(payer);
+        contract.deposit_for(credited, amount).unwrap();
+        assert!(!contract.shares_of(credited, adapter_addr()).is_zero());
+        assert!(!contract.shares_of(credited, adapter_two_addr()).is_zero());
+        assert_eq!(contract.shares_of(payer, adapter_addr()), U256::ZERO);
+        assert_eq!(contract.shares_of(payer, adapter_two_addr()), U256::ZERO);
+    }
+
+    #[test]
+    fn deposit_for_zero_user_reverts() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+
+        vm.set_sender(user_addr());
+        let err = contract.deposit_for(Address::ZERO, U256::from(1_000_000u64));
+        assert_eq!(err.unwrap_err(), errors::zero_address());
+    }
+
+    #[test]
+    fn deposit_for_with_no_weights_on_target_reverts_no_weights_set() {
+        let vm = TestVM::default();
+        let mut contract = deploy_and_init(&vm);
+
+        vm.set_sender(user_addr());
+        let err = contract.deposit_for(non_owner_addr(), U256::from(1_000_000u64));
+        assert_eq!(err.unwrap_err(), errors::no_weights_set());
+    }
+
+    /// D-19 residual risk #2 (T-13-06): weights pointing at a disabled adapter must revert BEFORE
+    /// any transfer — no unmocked `transferFrom` call is registered here, so if the guard order
+    /// regressed and the pull ran first, this would panic on an unmocked external call instead of
+    /// returning a clean `Err`.
+    #[test]
+    fn deposit_for_toward_disabled_adapter_reverts_before_any_transfer() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+        let credited = victim_addr();
+        contract
+            .write_weights(credited, alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+
+        vm.set_sender(owner_addr());
+        contract.set_enabled(adapter_addr(), false).unwrap();
+
+        vm.set_sender(attacker_addr());
+        let err = contract.deposit_for(credited, U256::from(1_000_000u64));
+        assert_eq!(err.unwrap_err(), errors::adapter_not_enabled());
     }
 
     // --- registry: add / remove / enable-disable ---

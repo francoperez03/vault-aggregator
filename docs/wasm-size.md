@@ -335,3 +335,11 @@ Command (both rows): `cd packages/contracts/vault-core && cargo stylus check --e
 |------|--------|------------------|-----------|-------|
 | 01-01 | Tier 1 trim (coded errors + admin events dropped) | 20,699 | 1 | −506 vs baseline 21,205 |
 | 01-02 | Tier 2 trim (remove_adapter dropped, scalar weightBpsOf, adapterTotalShares added) | 19,901 | 1 | −798 vs 01-01 |
+
+## Phase 13 Plan 02 — depositFor (D-19 permissionless intake) + WR-02/WR-03
+
+Command (both rows): `cd packages/contracts/vault-core && cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"`.
+
+| Task | Change | Compressed bytes | Fragments | Delta |
+|------|--------|------------------|-----------|-------|
+| 02-01 | depositFor (D-19 permissionless intake): `deposit_for(user, amount)` public, `deposit` reduced to delegation, five new TestVM tests | 20,167 | 1 | +266 vs 01-02 (19,901) |
