@@ -282,3 +282,51 @@ symmetrization (a second `total_assets()` read per leg) stands — the number he
 See `docs/known-issues.md` for the checklist-facing summary.
 
 ---
+
+### KI-01-DUST: MEASURED — 5 cycles left 0 units stranded in the core (~0 units/cycle); MockVaults round like a normal 4626 so the rounding-dust order of magnitude transfers to mainnet; donations and sandwiches bounded by written argument (`dust_accrual_over_n_cycles`, 2026-07-24)
+
+Measured live on the Arbitrum Sepolia rig (`adapter-e2e`'s `dust_accrual_over_n_cycles`,
+`packages/contracts/adapter-e2e/tests/sepolia_core_flow.rs`): one wallet, five full round-trips of
+`deposit(1 USDC)` → `rebalance` to a distinct 40/30/20/10-shaped allocation each cycle → full-bps
+`redeem(10000)`, reading `USDC.balanceOf(core)` before the first cycle and after every cycle.
+
+N = 5 was chosen over 10 or 20 (D-09's range): the series was flat at zero from the first cycle,
+so a longer run would only have burned more of the finite Sepolia faucet budget for the same
+answer. **The measured series: `[0, 0, 0, 0, 0]`, dust before the loop was also `0`. Total growth
+over 5 cycles: 0 units. Average per cycle: 0 units.**
+
+**Why exactly zero, not "a little."** `redeem(10000)` is a full exit of the caller's own position,
+and this test uses a single wallet with no other holder in any of the four adapters at any point
+during the run — `unwind_position`'s per-adapter reconciliation (`owed = shares *
+(total_assets + 1) / (total_shares + 10^6)`, `docs/known-issues.md` KI-03) burns exactly the shares
+it pays for when the caller is the adapter's only shareholder, so there is no leftover fractional
+claim for anyone else to strand. `deposit_leg`'s virtual-offset math is the same story in reverse:
+minted shares round down in the vault's favor, but with one shareholder that favor has nowhere to
+go but back to the same caller's own next full exit. Dust in this ledger requires a SECOND party
+(or a partial exit) sharing the same adapter to leave a fractional remainder behind — which is
+exactly the shape `WR-02-DILUTION` above already demonstrates for the deposit side (a donation
+inflating `total_assets()` while `ts` lags), just not something a single user's own clean
+deposit/rebalance/redeem cycle can produce on its own.
+
+**Decision on `sweep()` (KI-01, `docs/known-issues.md`).** The measured number is 0 for the
+single-user round-trip case this test isolates — as immaterial as a number can be.
+**`sweep()` stays closed**, per 12.1 D-10's original rejection, now backed by data rather than
+argument alone: single-user cycling contributes nothing to strand, and the donation/sandwich
+vectors below are bounded by argument, not measurement, and both cap out at ordinary rounding, not
+an accumulating leak.
+
+**Donations and sandwiches, bounded by written argument (D-09 does not ask these to be measured
+directly, only bounded).** A direct USDC donation to an adapter's underlying vault inflates that
+adapter's `total_assets()`, which inflates the `owed` every existing shareholder on that adapter
+computes on their next `redeem`/`rebalance` — the donation's value is captured by the position
+holders in that adapter, not stranded in the core (`WR-02-DILUTION` measures exactly this
+inflation from the deposit side; the redeem side is the same `convertToAssets`-style read, just
+inverted). A sandwich around a `deposit` or `redeem` can only extract the same rounding
+`reconcile_credit`/`deposit_leg` already tolerate (the 100 bps `DepositShortfall` floor on entry,
+the exact-delta reconciliation on exit, KI-03) — there is no code path where a surrounding
+transaction lets an attacker walk away with more than that floor, because every leg's `owed`/
+`minted` is computed from a snapshot taken inside the SAME transaction as the transfer it
+reconciles against (`core.rs`'s guard-before-mutate convention). Neither vector makes the core's
+own stranded-dust balance grow beyond ordinary per-leg rounding.
+
+---

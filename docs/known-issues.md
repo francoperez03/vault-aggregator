@@ -12,6 +12,19 @@ function that moves funds is exactly the surface a review scrutinises).
 **For Phase 13:** quantify how much dust actually accrues. If it is material, `sweep()` is the
 deferred candidate to reopen — with data.
 
+**KI-01: RESOLVED — `dust_accrual_over_n_cycles`, 2026-07-24, 0 units stranded over 5 cycles
+(`KI-01-DUST` in `docs/PROTOCOL-PROBES.md`).** A single wallet ran 5 full deposit → rebalance →
+full-bps-redeem cycles; `USDC.balanceOf(core)` never moved off zero. With one shareholder per
+adapter throughout the run, `unwind_position`'s reconciliation and `deposit_leg`'s virtual-offset
+math have no fractional remainder to leave behind — dust needs a second party (or a partial exit)
+sharing an adapter to strand anything, the same shape `WR-02-DILUTION` already demonstrates on the
+deposit side. **Decision: `sweep()` stays closed**, per the original 12.1 D-10 rejection, now with
+data instead of argument alone. Donations and sandwiches are bounded by written argument (not
+measured directly, per D-09): a donation's value is captured by that adapter's existing
+shareholders, never stranded in the core; a sandwich around `deposit`/`redeem` cannot extract more
+than the rounding `reconcile_credit`/`deposit_leg` already tolerate, since every leg reconciles
+against a same-transaction snapshot. Full derivation in `PROTOCOL-PROBES.md`'s `KI-01-DUST` entry.
+
 ## KI-02 — A throttled protocol blocks that user's whole exit (D-09, inherited F12 D-06)
 
 Whole-tx atomicity means one throttled adapter (FLUID-THROTTLE, see `PROTOCOL-PROBES.md`) reverts

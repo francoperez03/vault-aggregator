@@ -24,6 +24,16 @@ use adapter_e2e::sepolia::{
     wallet_key_b, IUsdc, IVaultCore, PROTOCOLS,
 };
 
+/// KI-01/D-09: five distinct full-bps allocations, one per cycle, so `dust_accrual_over_n_cycles`
+/// exercises a different rebalance split every time rather than repeating the same rounding.
+const DUST_CYCLE_WEIGHTS: [[u64; 4]; 5] = [
+    [4000, 3000, 2000, 1000],
+    [1000, 4000, 3000, 2000],
+    [2000, 1000, 4000, 3000],
+    [3000, 2000, 1000, 4000],
+    [2500, 2500, 2500, 2500],
+];
+
 /// The core fans out to four adapters, each of which does transferFrom + approve + vault.deposit —
 /// far heavier than the single-adapter mainnet round-trips, and `eth_estimateGas` under-reports
 /// Stylus calls (see `TX_GAS_LIMIT`'s note). Unused gas is refunded, so overshooting is free.
@@ -543,6 +553,145 @@ async fn two_users_exact_payout_with_different_weights() -> anyhow::Result<()> {
         payout_b, expected_b,
         "B's exact payout diverged from the off-chain convert_to_assets replica"
     );
+
+    Ok(())
+}
+
+/// KI-01/D-09: quantifies how much USDC actually strands in the core across repeated
+/// deposit/rebalance/redeem cycles, so `known-issues.md`'s "quantify it, then decide on `sweep()`"
+/// deferral gets a real number instead of staying open indefinitely.
+///
+/// N = 5 (D-09's range is 5/10/20): each cycle is a full round-trip (deposit -> rebalance to a
+/// distinct allocation -> full-bps redeem), and `USDC.balanceOf(core)` is read before the loop and
+/// after every cycle. Five cycles landed a clearly non-zero, non-exploding series on the first
+/// run (see the `KI-01-DUST` verdict this test's output feeds into `docs/PROTOCOL-PROBES.md`), so
+/// there was no need to burn more of the finite faucet budget on 10 or 20.
+///
+/// The dust is expected to be monotonic non-decreasing (nothing sweeps it) and small relative to
+/// the cycle amount (share-math rounding, not a leak): `DUST_CAP` below is a generous multiple of
+/// what floor-division rounding across 4 adapters x 2-3 legs per cycle can plausibly produce, not
+/// a tight bound -- its job is to catch an exploding regression, not to pin the exact number.
+#[tokio::test]
+async fn dust_accrual_over_n_cycles() -> anyhow::Result<()> {
+    let Some(rpc_url) = rpc_url() else {
+        eprintln!("ARB_SEPOLIA_RPC_URL not set, skipping Sepolia mock-rig test");
+        return Ok(());
+    };
+
+    let signer: PrivateKeySigner = wallet_key()?.parse()?;
+    let caller = signer.address();
+    let provider = ProviderBuilder::new()
+        .wallet(EthereumWallet::from(signer))
+        .connect_http(rpc_url.parse()?);
+
+    let usdc = IUsdc::new(usdc_addr()?, provider.clone());
+    let core_address = core_addr()?;
+    let core = IVaultCore::new(core_address, provider.clone());
+    let adapters: Vec<Address> = adapter_addrs()?;
+
+    const N: usize = 5;
+    const CYCLE_AMOUNT: u64 = 1_000_000; // 1 USDC per cycle.
+    /// Generous ceiling on TOTAL dust growth across all N cycles -- see the doc-comment above.
+    const DUST_CAP: u64 = 50_000; // 0.05 USDC total, i.e. 1% of one cycle's volume.
+
+    let amount = U256::from(CYCLE_AMOUNT);
+    let needed = amount * U256::from(N as u64);
+    let balance = usdc.balanceOf(caller).call().await?;
+    if balance < needed {
+        eprintln!(
+            "caller holds {balance} units of real Sepolia USDC, need {needed} for {N} dust \
+             cycles; skipping (fund via https://faucet.circle.com)"
+        );
+        return Ok(());
+    }
+
+    let dust_before = usdc.balanceOf(core_address).call().await?;
+    let mut dust_series = Vec::with_capacity(N);
+
+    for (i, weights) in DUST_CYCLE_WEIGHTS.iter().take(N).enumerate() {
+        usdc.approve(core_address, amount)
+            .gas(CORE_TX_GAS_LIMIT)
+            .send()
+            .await?
+            .get_receipt()
+            .await?;
+        let deposit_receipt = core
+            .deposit(amount)
+            .gas(CORE_TX_GAS_LIMIT)
+            .send()
+            .await?
+            .get_receipt()
+            .await?;
+        assert!(
+            deposit_receipt.status(),
+            "cycle {i}: deposit reverted: {}",
+            deposit_receipt.transaction_hash
+        );
+
+        let new_weights: Vec<U256> = weights.iter().map(|w| U256::from(*w)).collect();
+        let rebalance_receipt = core
+            .rebalance(adapters.clone(), new_weights)
+            .gas(CORE_TX_GAS_LIMIT)
+            .send()
+            .await?
+            .get_receipt()
+            .await?;
+        assert!(
+            rebalance_receipt.status(),
+            "cycle {i}: rebalance reverted: {}",
+            rebalance_receipt.transaction_hash
+        );
+
+        let redeem_receipt = core
+            .redeem(U256::from(10_000))
+            .gas(CORE_TX_GAS_LIMIT)
+            .send()
+            .await?
+            .get_receipt()
+            .await?;
+        assert!(
+            redeem_receipt.status(),
+            "cycle {i}: redeem(10000) reverted: {}",
+            redeem_receipt.transaction_hash
+        );
+
+        let dust_after_cycle = usdc.balanceOf(core_address).call().await?;
+        dust_series.push(dust_after_cycle);
+    }
+
+    eprintln!("dust before any cycle: {dust_before}");
+    eprintln!("dust series (after each cycle): {dust_series:?}");
+
+    // Monotonic non-decreasing: no code path sweeps it, so it can only hold steady or grow.
+    let mut previous = dust_before;
+    for (i, dust) in dust_series.iter().enumerate() {
+        assert!(
+            *dust >= previous,
+            "cycle {i}: dust dropped from {previous} to {dust} -- something is moving USDC out \
+             of the core with no accounting for it"
+        );
+        previous = *dust;
+    }
+
+    let total_growth = dust_series[N - 1] - dust_before;
+    let average_per_cycle = total_growth / U256::from(N as u64);
+    eprintln!(
+        "total dust growth over {N} cycles: {total_growth} units (~{average_per_cycle} units/cycle)"
+    );
+    assert!(
+        total_growth <= U256::from(DUST_CAP),
+        "dust grew by {total_growth} units over {N} cycles, above the {DUST_CAP}-unit sanity cap \
+         -- this looks like a leak, not rounding"
+    );
+
+    // Leave the rig on the canonical allocation for the next run (mirrors
+    // `core_deposit_rebalance_redeem_flow`'s cleanup at the end of its own test).
+    core.rebalance(adapters, bps_25())
+        .gas(CORE_TX_GAS_LIMIT)
+        .send()
+        .await?
+        .get_receipt()
+        .await?;
 
     Ok(())
 }
