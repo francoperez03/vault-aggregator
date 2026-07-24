@@ -55,17 +55,31 @@ finding. `VaultCore`'s owner role controls the entire adapter registry (`add_ada
 `set_enabled`) for the contract's lifetime with zero recovery path - there is no
 `transferOwnership`. A front-run `init` call is total, permanent, irreversible compromise.
 
-**Disposition: FIX NOW.** The minimal correct fix is to remove `owner` as a caller-supplied
-parameter and instead set `owner = self.vm().msg_sender()` inside `init` (self-claiming, standard
-Stylus/Solidity "first caller after deploy" pattern), paired with deploying `init` in the SAME
-transaction as `cargo stylus deploy` wherever the tooling allows it (removing the two-transaction
-race window entirely), or at minimum documenting in the deploy runbook that `init` MUST be the
-very next transaction sent from the deployer's own key, submitted with priority gas, before the
-contract address is publicized anywhere. The `self.vm().msg_sender()` fix alone does not remove the
-front-running window (an attacker's `init()` call still lands first if it beats the deployer's),
-so the runbook-level mitigation (fastest possible follow-up tx, private mempool / flashbots-style
-submission if available on Arbitrum, or an atomic deploy+init if `cargo-stylus` supports constructor
-args) is required in addition, not instead. This must close before Phase 13 sign-off.
+**Disposition: FIXED — via a real `#[constructor]`, not the `msg_sender()` self-claim originally
+written up here.** The write-up above proposed `owner = self.vm().msg_sender()` inside a still-public
+`init`, paired with runbook-level races (priority gas, private mempool submission) to narrow the
+front-running window. On reflection that fix does not close the gap, it only shrinks it: an
+attacker's transaction can still beat the deployer's `init` call, and "submit with priority gas" is
+an operational mitigation, not a guarantee, for a permanent, irreversible takeover with no
+`transferOwnership` recovery path.
+
+The fix actually shipped removes the caller-supplied `owner` parameter and the public `init`
+entrypoint entirely, replacing them with a real Stylus `#[constructor]` (`vault-core/src/core.rs`)
+that sets `owner` atomically as part of the deployment transaction itself — the exact pattern
+already proven in this workspace by `vault-periphery/src/router.rs`'s `#[constructor]`. Stylus
+constructors run exactly once, at deployment, before the contract address can receive any other
+call, so there is no live, callable, unauthenticated bootstrap path left to front-run. This closes
+the gap at the protocol level instead of narrowing a race window at the operational level — the
+stronger of the two remedies this finding named, and the one actually implemented.
+
+Verified: a new unit test (`no_public_method_other_than_constructor_can_set_owner`) proves no
+post-deploy method can set or reassign `owner`; `cargo test --workspace --lib` is green; measured
+WASM size is 20,681 bytes / 1 fragment, comfortably under the 22,528-byte Arbitrum One gate
+(`docs/wasm-size.md`). The Sepolia rig (core, periphery, 4 adapters, 4 MockVaults — a new core
+invalidates the whole rig under the one-shot adapter `init(vault, core)` binding and the
+periphery's constructor-wired `core` address) was fully redeployed against the fixed core, and all
+16 live e2e tests re-ran green against it. This closes before Phase 13 sign-off, per the gate this
+finding names.
 
 ### C-M1 - Entry-path "shortfall guard" (`DEPOSIT_TOLERANCE_BPS`) is a tautology
 
@@ -291,14 +305,15 @@ future plan touches `deposit_for`'s pull semantics, so it is not rediscovered fr
 | State | Count | IDs |
 |---|---|---|
 | matches | 4 | C-M1 (WR-02), C-H2 (KI-02/AR-02/T-12.1-15), C-I1 (IN-04) |
-| novel | 6 | C-H1 (HIGH, gate), C-M2 (MEDIUM), S-M1 (MEDIUM, unreachable-today), P-I1 (INFO), P-I2 (INFO), P-I3 (INFO) |
+| novel | 6 | C-H1 (HIGH, gate — FIXED via `#[constructor]`), C-M2 (MEDIUM), S-M1 (MEDIUM, unreachable-today), P-I1 (INFO), P-I2 (INFO), P-I3 (INFO) |
 | noise (refuted) | 2 | S-H1 (donation zero-mint, refuted by `deposit_leg`'s zero-shares guard), S-M2 (yield-skim, refuted - both sides read live, no cached figure) |
 
 **Novel findings are what Phase 12.1's review, plus everything found empirically through Phase 13's
 live e2e work, still missed.** One of them is HIGH:
 
-**C-H1 (unprotected `init`, permanent ownership takeover by front-running) is a blocking gate.** It
-must be fixed before this phase closes - see its disposition above. Every other novel finding is
+**C-H1 (unprotected `init`, permanent ownership takeover by front-running) was a blocking gate — now
+FIXED** via a real `#[constructor]` (see its disposition above, and `docs/known-issues.md`'s C-H1
+entry). Every other novel finding is
 medium or info and does not block; C-M2 and S-M1 have cheap, non-architectural fixes recommended
 for the same hardening pass that already closed WR-01/WR-04, while the periphery info items are
 scope/documentation decisions, not defects.

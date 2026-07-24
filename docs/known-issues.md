@@ -134,6 +134,30 @@ rig) and left it holding a small amount of permanently unclaimed donation dust (
 user. Harmless; documented here so a future reader of EULER's on-chain state isn't surprised by it.
 The test itself was moved to adapter index 3 (AAVE) for the version that ships.
 
+## C-H1 — Unprotected `init` allowed front-running to steal permanent contract ownership (blind adversarial review, D-14)
+
+**Status: FIXED.** `VaultCore::init(&mut self, owner: Address)` took `owner` as a caller-supplied
+parameter with no access control — anyone could front-run the deployer's bootstrap transaction,
+permanently claim the owner role (no `transferOwnership` recovery path), and register a malicious
+adapter through the owner-gated registry. See
+`docs/security/adversarial-review/cross-reference.md`'s C-H1 for the full finding.
+
+**Fix:** replaced the caller-supplied `init` entrypoint with a real Stylus `#[constructor]` that
+sets `owner` atomically at deploy time, matching the pattern already proven in this workspace
+(`vault-periphery/src/router.rs`'s `#[constructor]`). Stylus constructors run exactly once, as
+part of the deployment transaction itself, before the contract address can receive any other
+call — there is no window in which a separate transaction can race it. The weaker fix
+`cross-reference.md` originally wrote up (`owner = msg_sender()` inside a still-public `init`)
+was deliberately rejected: it only narrows the front-running race to "whoever's transaction lands
+first," it does not close it. The constructor closes the gap at the protocol level instead.
+
+Verified: `no_public_method_other_than_constructor_can_set_owner` (`vault-core/src/core.rs`)
+proves no post-deploy method can set or reassign `owner`. The rig was fully redeployed on
+Arbitrum Sepolia against the constructor-based core (new core, periphery, 4 adapters, 4
+MockVaults — a new core invalidates the whole rig, per the one-shot `adapter.init(vault, core)`
+binding and the periphery's constructor-wired `core` address), and all 16 live e2e tests
+(`sepolia_core_flow`, `sepolia_edge_cases`, `sepolia_periphery`) re-ran green against it.
+
 ## WR-01 — `remove_adapter`'s guard read the wrong source (Phase 12.1 / retired by deletion in 13a)
 
 **Status: RETIRED BY DELETION, not mitigated.** The original fix re-pointed the guard at
