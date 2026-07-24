@@ -4,6 +4,7 @@ import {
   ADAPTER_IDS,
   getAdapterAddresses,
   getCoreAddress,
+  getPeripheryAddress,
   getUsdcAddress,
   isContractConfigured,
 } from './config';
@@ -50,6 +51,19 @@ describe('contract config', () => {
     expect(getUsdcAddress()).toBeUndefined();
     vi.stubEnv('NEXT_PUBLIC_USDC_ADDRESS', USDC_ADDRESS);
     expect(getUsdcAddress()).toBe(USDC_ADDRESS);
+  });
+
+  it('getPeripheryAddress follows the same contract as getCoreAddress', () => {
+    vi.stubEnv('NEXT_PUBLIC_PERIPHERY_ADDRESS', '');
+    expect(getPeripheryAddress()).toBeUndefined();
+    vi.stubEnv('NEXT_PUBLIC_PERIPHERY_ADDRESS', CORE_ADDRESS);
+    expect(getPeripheryAddress()).toBe(CORE_ADDRESS);
+  });
+
+  it('isContractConfigured stays true without a periphery address (browser path is periphery-free)', () => {
+    stubAllValid();
+    vi.stubEnv('NEXT_PUBLIC_PERIPHERY_ADDRESS', '');
+    expect(isContractConfigured()).toBe(true);
   });
 
   it('ADAPTER_IDS lists the four adapters with the current protocol set', () => {

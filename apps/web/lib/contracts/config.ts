@@ -15,6 +15,12 @@ export function getUsdcAddress(): `0x${string}` | undefined {
   return readAddress(process.env.NEXT_PUBLIC_USDC_ADDRESS);
 }
 
+/** Not part of `isContractConfigured()`: the browser path never touches the periphery, only the
+ * Lemon `deposit()` branch needs it, and does its own local guard (D-A2). */
+export function getPeripheryAddress(): `0x${string}` | undefined {
+  return readAddress(process.env.NEXT_PUBLIC_PERIPHERY_ADDRESS);
+}
+
 function getMorphoAdapterAddress(): `0x${string}` | undefined {
   return readAddress(process.env.NEXT_PUBLIC_MORPHO_ADAPTER_ADDRESS);
 }
