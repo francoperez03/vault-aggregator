@@ -50,21 +50,3 @@ export function getVaults(): Vault[] {
   return VAULT_CATALOG.map((vault) => ({ ...vault, adapterAddress: adapters[vault.id] }))
 }
 
-// ponytail: kept for the pre-existing v0 components (portfolio-allocation.tsx,
-// yield-allocation-builder.tsx) still on the static-import shape; migrate them to getVaults()
-// when their route plan (03/04) touches them.
-export const VAULTS: Vault[] = getVaults()
-
-export function getWeightedApy(allocations: Record<string, number>): number {
-  let total = 0
-  for (const vault of getVaults()) {
-    const pct = allocations[vault.id] ?? 0
-    total += (vault.apy * pct) / 100
-  }
-  return total
-}
-
-export function getYieldPerSecond(balance: number, apy: number): number {
-  if (balance <= 0 || apy <= 0) return 0
-  return (balance * (apy / 100)) / (365 * 24 * 60 * 60)
-}

@@ -37,7 +37,7 @@
   --aave: #B6509E;
   --morpho: #5B8EFA;
   --fluid: #00D4FF;
-  --euler: #8A9BB8; /* TODO: replace with Euler's official brand hex from euler.finance brand kit */
+  --euler: #2AE5B9; /* Euler's official mint accent, confirmed from euler.finance/brand (logo SVG fill + UI accent) */
   /* Easing */
   --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
 
