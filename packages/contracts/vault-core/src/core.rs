@@ -34,12 +34,8 @@ const USDC: Address = address!("e26bd9f1f02e468093e1287f418bb79749a6ac92");
 const TOTAL_BPS: U256 = U256::from_limbs([10_000u64, 0, 0, 0]);
 
 sol! {
-    event Initialized(address indexed owner);
     event Deposit(address indexed user, uint256 assets, uint256 shares);
     event Redeem(address indexed user, uint256 bps, uint256 assets);
-    event AdapterAdded(address indexed adapter);
-    event AdapterEnabled(address indexed adapter, bool enabled);
-    event AdapterRemoved(address indexed adapter);
     event Rebalanced(address indexed user, uint256 redeposited);
 }
 
@@ -69,7 +65,6 @@ impl VaultCore {
         }
         self.owner.set(owner);
         self.initialized.set(true);
-        self.vm().log(Initialized { owner });
         Ok(())
     }
 
@@ -87,7 +82,6 @@ impl VaultCore {
         }
         self.adapters.push(adapter);
         self.adapter_enabled.setter(adapter).set(true);
-        self.vm().log(AdapterAdded { adapter });
         Ok(())
     }
 
@@ -104,7 +98,6 @@ impl VaultCore {
             return Err(errors::adapter_not_registered());
         }
         self.adapter_enabled.setter(adapter).set(enabled);
-        self.vm().log(AdapterEnabled { adapter, enabled });
         Ok(())
     }
 
@@ -130,7 +123,6 @@ impl VaultCore {
         }
         registry::swap_remove(self, idx);
         self.adapter_enabled.setter(adapter).set(false);
-        self.vm().log(AdapterRemoved { adapter });
         Ok(())
     }
 

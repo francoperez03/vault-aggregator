@@ -324,3 +324,13 @@ This is the floor, not a first draft to be optimised further.
 **Therefore: Plan B (separate periphery) is the design for 13a**, and the trims are worth keeping on
 their own merits — Tier 1 is free, and together they buy back 1,301 B in the core regardless of
 where Permit2 ends up.
+
+---
+
+## Phase 13 Plan 01 — real Tier 1 / Tier 2 trims (not the throwaway spike)
+
+Command (both rows): `cd packages/contracts/vault-core && cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"`.
+
+| Task | Change | Compressed bytes | Fragments | Delta |
+|------|--------|------------------|-----------|-------|
+| 01-01 | Tier 1 trim (coded errors + admin events dropped) | 20,699 | 1 | −506 vs baseline 21,205 |

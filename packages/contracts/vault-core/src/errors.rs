@@ -1,5 +1,34 @@
 //! Typed custom errors for `VaultCore`, `sol!`-declared and abi-encoded into the `Vec<u8>` revert
 //! payload — same idiom as `vault-adapter/src/errors.rs`.
+//!
+//! The 16 payload-less conditions this module used to declare as 16 separate `sol!` errors are
+//! collapsed into one coded error, `VaultError(uint8 code)`, to reclaim ABI-selector/dispatch
+//! bytes (Phase 13 D-18 spike, Tier 1 trim: −556 B measured). Codes are stable and are assigned in
+//! the declaration order the errors used to appear in, listed here so a consumer (frontend,
+//! e2e stubs, an auditor reading a revert) can decode `VaultError(uint8)` and look up what it
+//! means without re-deriving the mapping from git history:
+//!
+//! | Code | Condition               | Wrapper (unchanged name)   |
+//! |------|--------------------------|-----------------------------|
+//! | 1    | `AlreadyInitialized`    | `already_initialized()`     |
+//! | 2    | `NotInitialized`        | `not_initialized()`         |
+//! | 3    | `ZeroAddress`           | `zero_address()`            |
+//! | 4    | `NotOwner`              | `not_owner()`                |
+//! | 5    | `ZeroAmount`            | `zero_amount()`              |
+//! | 6    | `ZeroShares`            | `zero_shares()`              |
+//! | 7    | `AllocationInvalid`     | `allocation_invalid()`       |
+//! | 8    | `AdapterNotEnabled`     | `adapter_not_enabled()`      |
+//! | 9    | `DivisionByZero`        | `division_by_zero()`        |
+//! | 10   | `MulDivOverflow`        | `mul_div_overflow()`        |
+//! | 11   | `ShareMathOverflow`     | `share_math_overflow()`     |
+//! | 12   | `AdapterDecodeFailed`   | `adapter_decode_failed()`   |
+//! | 13   | `TransferFailed`        | `transfer_failed()`         |
+//! | 14   | `AdapterAlreadyRegistered` | `adapter_already_registered()` |
+//! | 15   | `AdapterNotRegistered`  | `adapter_not_registered()`  |
+//! | 16   | `NoWeightsSet`          | `no_weights_set()`          |
+//!
+//! `AdapterHasBalance(uint256)` and `RedeemShortfall(uint256, uint256)` carry diagnostic payload
+//! and stay typed — only the payload-less 16 are in scope for the collapse.
 
 use alloc::vec::Vec;
 
@@ -7,56 +36,45 @@ use alloy_primitives::U256;
 use alloy_sol_types::{sol, SolError};
 
 sol! {
-    error AlreadyInitialized();
-    error NotInitialized();
-    error ZeroAddress();
-    error NotOwner();
-    error ZeroAmount();
-    error ZeroShares();
-    error AllocationInvalid();
-    error AdapterNotEnabled();
+    error VaultError(uint8 code);
     error AdapterHasBalance(uint256 totalAssets);
-    error DivisionByZero();
-    error MulDivOverflow();
-    error ShareMathOverflow();
-    error AdapterDecodeFailed();
-    error TransferFailed();
-    error AdapterAlreadyRegistered();
-    error AdapterNotRegistered();
     error RedeemShortfall(uint256 owed, uint256 actual);
-    error NoWeightsSet();
+}
+
+fn coded(code: u8) -> Vec<u8> {
+    VaultError { code }.abi_encode()
 }
 
 pub fn already_initialized() -> Vec<u8> {
-    AlreadyInitialized {}.abi_encode()
+    coded(1)
 }
 
 pub fn not_initialized() -> Vec<u8> {
-    NotInitialized {}.abi_encode()
+    coded(2)
 }
 
 pub fn zero_address() -> Vec<u8> {
-    ZeroAddress {}.abi_encode()
+    coded(3)
 }
 
 pub fn not_owner() -> Vec<u8> {
-    NotOwner {}.abi_encode()
+    coded(4)
 }
 
 pub fn zero_amount() -> Vec<u8> {
-    ZeroAmount {}.abi_encode()
+    coded(5)
 }
 
 pub fn zero_shares() -> Vec<u8> {
-    ZeroShares {}.abi_encode()
+    coded(6)
 }
 
 pub fn allocation_invalid() -> Vec<u8> {
-    AllocationInvalid {}.abi_encode()
+    coded(7)
 }
 
 pub fn adapter_not_enabled() -> Vec<u8> {
-    AdapterNotEnabled {}.abi_encode()
+    coded(8)
 }
 
 pub fn adapter_has_balance(total_assets: U256) -> Vec<u8> {
@@ -64,31 +82,31 @@ pub fn adapter_has_balance(total_assets: U256) -> Vec<u8> {
 }
 
 pub fn division_by_zero() -> Vec<u8> {
-    DivisionByZero {}.abi_encode()
+    coded(9)
 }
 
 pub fn mul_div_overflow() -> Vec<u8> {
-    MulDivOverflow {}.abi_encode()
+    coded(10)
 }
 
 pub fn share_math_overflow() -> Vec<u8> {
-    ShareMathOverflow {}.abi_encode()
+    coded(11)
 }
 
 pub fn adapter_decode_failed() -> Vec<u8> {
-    AdapterDecodeFailed {}.abi_encode()
+    coded(12)
 }
 
 pub fn transfer_failed() -> Vec<u8> {
-    TransferFailed {}.abi_encode()
+    coded(13)
 }
 
 pub fn adapter_already_registered() -> Vec<u8> {
-    AdapterAlreadyRegistered {}.abi_encode()
+    coded(14)
 }
 
 pub fn adapter_not_registered() -> Vec<u8> {
-    AdapterNotRegistered {}.abi_encode()
+    coded(15)
 }
 
 pub fn redeem_shortfall(owed: U256, actual: U256) -> Vec<u8> {
@@ -96,5 +114,5 @@ pub fn redeem_shortfall(owed: U256, actual: U256) -> Vec<u8> {
 }
 
 pub fn no_weights_set() -> Vec<u8> {
-    NoWeightsSet {}.abi_encode()
+    coded(16)
 }
