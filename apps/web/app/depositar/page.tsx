@@ -7,18 +7,9 @@ import { AmountInput } from '@/components/vault-aggregator/amount-input'
 import { DepositApproveStep } from '@/components/vault-aggregator/deposit-approve-step'
 import { TransactionState, type TxPhase } from '@/components/vault-aggregator/transaction-state'
 import { formatUsdc } from '@/lib/format'
-import { MOCK_WEIGHTS_ONLY } from '@/lib/mock/position'
-
-const DEMO_PHASES: { key: string; phase: TxPhase }[] = [
-  { key: 'confirm', phase: { kind: 'confirm' } },
-  { key: 'signing', phase: { kind: 'signing' } },
-  { key: 'pending', phase: { kind: 'pending' } },
-  { key: 'success', phase: { kind: 'success' } },
-  { key: 'rejected', phase: { kind: 'rejected' } },
-  { key: 'reverted', phase: { kind: 'reverted', reason: 'slippage' } },
-  { key: 'timeout', phase: { kind: 'timeout' } },
-  { key: 'partial', phase: { kind: 'partial', requested: 100_000_000n, actual: 60_000_000n, remaining: 40_000_000n } },
-]
+import { useVaultPosition } from '@/hooks/useVaultPosition'
+import { useVaultWrite } from '@/hooks/useVaultWrite'
+import { isLemonWebView } from '@/lib/lemon/bridge'
 
 interface DepositViewProps {
   hasWeights: boolean
@@ -27,12 +18,14 @@ interface DepositViewProps {
 
 /** Gates on D-13/D-14 (bootstrap is two separate steps, weights-only-with-zero-shares is a
  * legitimate state), then walks the approve+deposit flow (D-09/D-11) through the shared
- * five-state machine. The `phase` selector below is a 14a-only mock; plan 09 swaps it for the
- * real write-hook state without touching the gating or the approve wiring. */
+ * five-state machine, fed by `useVaultWrite().deposit`: a real approve+deposit, never a mock
+ * selector. In browser the "Aprobando USDC" / "Depositando" copy makes the two signatures visible
+ * while `deposit` is in flight; Lemon shows the batched-signature copy instead (D-11). */
 export function DepositView({ hasWeights, isLemonRuntime }: DepositViewProps) {
   const [amount, setAmount] = useState(100_000_000n)
-  const [approved, setApproved] = useState(false)
-  const [phase, setPhase] = useState<TxPhase>({ kind: 'confirm' })
+  const [phase, setPhase] = useState<TxPhase | null>(null)
+  const { deposit, depositStep } = useVaultWrite()
+  const { refetch } = useVaultPosition()
 
   if (!hasWeights) {
     return (
@@ -47,69 +40,56 @@ export function DepositView({ hasWeights, isLemonRuntime }: DepositViewProps) {
     )
   }
 
-  const canDeposit = isLemonRuntime || approved
+  async function handleDeposit() {
+    setPhase({ kind: 'signing' })
+    const result = await deposit(amount)
+    setPhase(result)
+    if (result.kind === 'success') refetch()
+  }
+
+  const isBusy = phase?.kind === 'signing' || phase?.kind === 'pending'
 
   return (
     <div className="flex flex-col gap-6 p-4">
       <AmountInput value={amount} onChange={setAmount} />
 
-      <DepositApproveStep
-        isLemonRuntime={isLemonRuntime}
-        amount={amount}
-        approved={approved}
-        onApprove={() => setApproved(true)}
-      />
+      <DepositApproveStep isLemonRuntime={isLemonRuntime} amount={amount} />
 
       <Button
         type="button"
         size="lg"
         className="min-h-[44px]"
-        disabled={!canDeposit}
-        onClick={() => setPhase({ kind: 'signing' })}
+        disabled={isBusy}
+        onClick={handleDeposit}
       >
         Depositar USDC
       </Button>
 
-      <TransactionState
-        phase={phase}
-        onPrimary={() => setPhase({ kind: 'confirm' })}
-        onSecondary={() => setPhase({ kind: 'pending' })}
-        summary={<>Depositás ${formatUsdc(amount)} USDC</>}
-      />
-
-      {/* ponytail: 14a-only phase selector so every TxPhase is reachable for design QA without a
-          live wallet; plan 09 removes it once `phase` comes from the real write hook. */}
-      <div className="flex flex-wrap gap-1.5" aria-label="Selector de estado (solo desarrollo)">
-        {DEMO_PHASES.map(({ key, phase: demoPhase }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setPhase(demoPhase)}
-            className="rounded-full border border-[var(--border-subtle)] px-2.5 py-1 text-[10px] text-[var(--text-secondary)]"
-          >
-            {key}
-          </button>
+      {phase &&
+        (phase.kind === 'signing' && !isLemonRuntime ? (
+          <div className="flex flex-col items-center gap-4 p-4 text-center">
+            <p className="text-sm text-[var(--text-secondary)]">
+              {depositStep === 'approving' ? 'Aprobando USDC…' : 'Depositando…'}
+            </p>
+          </div>
+        ) : (
+          <TransactionState
+            phase={phase}
+            onPrimary={handleDeposit}
+            onSecondary={() => setPhase(null)}
+            summary={<>Depositás ${formatUsdc(amount)} USDC</>}
+          />
         ))}
-      </div>
     </div>
   )
 }
 
 export default function DepositPage() {
-  const [isLemonRuntime, setIsLemonRuntime] = useState(false)
+  const { hasWeights } = useVaultPosition()
 
   return (
     <main className="min-h-dvh bg-background">
-      <DepositView hasWeights={MOCK_WEIGHTS_ONLY.hasWeights} isLemonRuntime={isLemonRuntime} />
-      <div className="flex justify-center p-4">
-        <button
-          type="button"
-          onClick={() => setIsLemonRuntime((current) => !current)}
-          className="rounded-full border border-[var(--border-subtle)] px-2.5 py-1 text-[10px] text-[var(--text-secondary)]"
-        >
-          runtime: {isLemonRuntime ? 'lemon' : 'browser'}
-        </button>
-      </div>
+      <DepositView hasWeights={hasWeights} isLemonRuntime={isLemonWebView()} />
     </main>
   )
 }

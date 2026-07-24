@@ -1,46 +1,89 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DepositView } from './page'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+})
+
+const depositMock = vi.fn()
+const refetchMock = vi.fn()
+const useUsdcAllowanceMock = vi.fn()
+
+vi.mock('@/hooks/useVaultWrite', () => ({
+  useVaultWrite: () => ({ deposit: depositMock, depositStep: 'idle' }),
+}))
+
+vi.mock('@/hooks/useVaultPosition', () => ({
+  useVaultPosition: () => ({ refetch: refetchMock }),
+}))
+
+vi.mock('@/hooks/useUsdcAllowance', () => ({
+  useUsdcAllowance: (amount: bigint) => useUsdcAllowanceMock(amount),
+}))
+
+/** Never resolves within the test's own assertions — lets a test observe the "signing" phase. */
+function pendingForever() {
+  return new Promise(() => {})
+}
 
 describe('DepositView', () => {
   it('gates on hasWeights: no deposit CTA, links to /rebalancear (D-13)', () => {
+    useUsdcAllowanceMock.mockReturnValue({ needsApproval: true })
     render(<DepositView hasWeights={false} isLemonRuntime={false} />)
     expect(screen.getByRole('link', { name: 'Definí tu estrategia' })).toHaveAttribute('href', '/rebalancear')
     expect(screen.queryByRole('button', { name: 'Depositar USDC' })).not.toBeInTheDocument()
   })
 
-  it('browser runtime: shows the separate "Aprobar USDC" approve step (D-09)', () => {
+  it('browser runtime: shows the real allowance state, sourced from useUsdcAllowance (D-09)', () => {
+    useUsdcAllowanceMock.mockReturnValue({ needsApproval: true })
     render(<DepositView hasWeights isLemonRuntime={false} />)
-    expect(screen.getByRole('button', { name: 'Aprobar USDC' })).toBeInTheDocument()
     expect(screen.getByText(/Vas a firmar dos veces/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Depositar USDC' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Depositar USDC' })).toBeEnabled()
   })
 
-  it('Lemon runtime: no separate approve CTA, batching copy shown, deposit CTA enabled (D-11)', () => {
+  it('Lemon runtime: no separate approve copy, batching copy shown, deposit CTA enabled (D-11)', () => {
+    useUsdcAllowanceMock.mockReturnValue({ needsApproval: true })
     render(<DepositView hasWeights isLemonRuntime />)
-    expect(screen.queryByRole('button', { name: 'Aprobar USDC' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Vas a firmar dos veces/)).not.toBeInTheDocument()
     expect(screen.getByText('Lemon procesa la aprobación y el depósito juntos.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Depositar USDC' })).toBeEnabled()
   })
 
-  it('walks through all five transaction states via the 14a-only phase selector', () => {
-    render(<DepositView hasWeights isLemonRuntime />)
+  it('clicking Depositar USDC calls useVaultWrite().deposit with the current amount', async () => {
+    useUsdcAllowanceMock.mockReturnValue({ needsApproval: true })
+    depositMock.mockReturnValue(pendingForever())
+    render(<DepositView hasWeights isLemonRuntime={false} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'signing' }))
-    expect(screen.getByText('Confirmá en tu wallet…')).toBeInTheDocument()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Depositar USDC' }))
+    })
 
-    fireEvent.click(screen.getByRole('button', { name: 'pending' }))
-    expect(screen.getByText('Tu transacción está en curso.')).toBeInTheDocument()
+    expect(depositMock).toHaveBeenCalledWith(100_000_000n)
+    expect(screen.getByRole('button', { name: 'Depositar USDC' })).toBeDisabled()
+  })
 
-    fireEvent.click(screen.getByRole('button', { name: 'success' }))
-    expect(screen.getByText('¡Listo!')).toBeInTheDocument()
+  it('a successful deposit renders success and refetches the position', async () => {
+    useUsdcAllowanceMock.mockReturnValue({ needsApproval: false })
+    depositMock.mockResolvedValue({ kind: 'success', amount: 100_000_000n })
+    render(<DepositView hasWeights isLemonRuntime={false} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'rejected' }))
-    expect(screen.getByText('Cancelaste la firma. No pasó nada, no se movió plata.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Depositar USDC' }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'partial' }))
-    expect(screen.getByText(/Pediste \$100\.00, se movieron \$60\.00/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('¡Listo!')).toBeInTheDocument())
+    expect(refetchMock).toHaveBeenCalled()
+  })
+
+  it('a rejected signature renders the rejected copy, never the partial state', async () => {
+    useUsdcAllowanceMock.mockReturnValue({ needsApproval: true })
+    depositMock.mockResolvedValue({ kind: 'rejected' })
+    render(<DepositView hasWeights isLemonRuntime={false} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Depositar USDC' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('Cancelaste la firma. No pasó nada, no se movió plata.')).toBeInTheDocument(),
+    )
   })
 })
