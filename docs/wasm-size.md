@@ -343,3 +343,4 @@ Command (both rows): `cd packages/contracts/vault-core && cargo stylus check --e
 | Task | Change | Compressed bytes | Fragments | Delta |
 |------|--------|------------------|-----------|-------|
 | 02-01 | depositFor (D-19 permissionless intake): `deposit_for(user, amount)` public, `deposit` reduced to delegation, five new TestVM tests | 20,167 | 1 | +266 vs 01-02 (19,901) |
+| 02-02 | WR-02 cheap guard + WR-03 allowance zeroing: `deposit_leg` zeros the adapter's allowance post-deposit, reverts `DepositShortfall` when reconverted value falls under 99% of the requested slice; `DepositShortfall(uint256,uint256)` typed error added; three new TestVM tests; mandatory 12.1 inflation-attack test updated to assert the now-expected `DepositShortfall` revert instead of silent dilution | 20,483 | 1 | +316 vs 02-01 (20,167) |

@@ -39,6 +39,7 @@ sol! {
     error VaultError(uint8 code);
     error AdapterHasBalance(uint256 totalAssets);
     error RedeemShortfall(uint256 owed, uint256 actual);
+    error DepositShortfall(uint256 requested, uint256 credited);
 }
 
 fn coded(code: u8) -> Vec<u8> {
@@ -115,4 +116,12 @@ pub fn redeem_shortfall(owed: U256, actual: U256) -> Vec<u8> {
 
 pub fn no_weights_set() -> Vec<u8> {
     coded(16)
+}
+
+/// WR-02 (`deposit_leg`'s cheap guard): the shares minted for a deposit leg reconvert to less
+/// than the tolerated fraction of the requested slice. Carries diagnostic payload (the e2e suite,
+/// Plan 08, reads `credited` to measure the actual dilution), so this stays typed rather than
+/// folded into `VaultError`.
+pub fn deposit_shortfall(requested: U256, credited: U256) -> Vec<u8> {
+    DepositShortfall { requested, credited }.abi_encode()
 }

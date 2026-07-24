@@ -33,6 +33,12 @@ const USDC: Address = address!("e26bd9f1f02e468093e1287f418bb79749a6ac92");
 /// Total basis-points an allocation must sum to exactly (D-06).
 const TOTAL_BPS: U256 = U256::from_limbs([10_000u64, 0, 0, 0]);
 
+/// WR-02's cheap deposit guard: the reconverted value of the minted shares must be worth at least
+/// 9,900/10,000 (1% tolerance) of the requested slice, or `deposit_leg` reverts `DepositShortfall`.
+/// The MockVault `deposit_credit_bps` knob (Plan 03) is what exercises this guard in tests; the
+/// dilution number measured e2e (Plan 08) is what justifies keeping 100 bps or reopens the guard.
+const DEPOSIT_TOLERANCE_BPS: U256 = U256::from_limbs([9_900u64, 0, 0, 0]);
+
 sol! {
     event Deposit(address indexed user, uint256 assets, uint256 shares);
     event Redeem(address indexed user, uint256 bps, uint256 assets);
@@ -367,11 +373,38 @@ impl VaultCore {
         let deposit_ctx = Call::new_mutating(self);
         adapter_dispatch::deposit(self.vm(), deposit_ctx, adapter, slice)?;
 
+        // WR-03: the exact allowance no longer has any reason to survive the call above — if the
+        // adapter spent less than `slice`, the remainder would otherwise sit as a live allowance a
+        // compromised adapter could later spend unprompted. Zeroed unconditionally, success path
+        // only (a revert above never reaches here, so there is nothing to zero in the failure case).
+        let zero_ctx = Call::new_mutating(self);
+        usdc::approve(self.vm(), zero_ctx, USDC, adapter, U256::ZERO)?;
+
         let ts = self.adapter_total_shares.get(adapter);
         let minted = share_math::convert_to_shares(slice, ts, total_assets_before, share_math::OFFSET_POW)?;
         if minted.is_zero() {
             return Err(errors::zero_shares());
         }
+
+        // WR-02: the mint is priced against the requested `slice`, not against a measured delta —
+        // the exit path (`unwind_position`) measures the real USDC delta, the entry path does not,
+        // and that asymmetry silently dilutes existing holders whenever a protocol credits below
+        // face value. Full symmetrization (a second `total_assets()` read per leg, post-deposit)
+        // was rejected on byte budget (D-13/Phase 13 D-18 spike); this guard converts the
+        // pathological case into a loud revert instead of a silent one. It does NOT correct small
+        // rounding — that is documented as accepted-with-reason (Phase 13's checklist), reopened
+        // only if the dilution measured on the Sepolia rig (Plan 08) proves material.
+        let value_back = share_math::convert_to_assets(
+            minted,
+            ts + minted,
+            total_assets_before + slice,
+            share_math::OFFSET_POW,
+        )?;
+        let floor = share_math::mul_div_floor(slice, DEPOSIT_TOLERANCE_BPS, TOTAL_BPS)?;
+        if value_back < floor {
+            return Err(errors::deposit_shortfall(slice, value_back));
+        }
+
         let held = self.user_shares.get(user).get(adapter);
         self.user_shares.setter(user).setter(adapter).set(held + minted);
         self.adapter_total_shares.setter(adapter).set(ts + minted);
@@ -634,6 +667,104 @@ mod tests {
         assert!(!shares.is_zero());
         assert_eq!(contract.shares_of(user_addr(), adapter_addr()), shares);
         assert_eq!(contract.adapter_total_shares.get(adapter_addr()), shares);
+    }
+
+    // --- deposit_leg: WR-02 cheap guard + WR-03 allowance zeroing ---
+
+    #[test]
+    fn deposit_leg_accepts_full_credit() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+        contract
+            .write_weights(user_addr(), alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+
+        let amount = U256::from(1_000_000u64);
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        let transfer_calldata = transferFromCall { from: user_addr(), to: contract_addr(), amount }.abi_encode();
+        vm.mock_call(USDC, transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), amount);
+        let zero_approve = approveCall { spender: adapter_addr(), amount: U256::ZERO }.abi_encode();
+        vm.mock_call(USDC, zero_approve, U256::ZERO, Ok(true.abi_encode()));
+
+        vm.set_sender(user_addr());
+        let shares = contract.deposit(amount).unwrap();
+        assert!(!shares.is_zero());
+    }
+
+    /// WR-02: an adapter that credits (reconverts to) less than 99% of the requested slice must
+    /// revert `DepositShortfall`, not mint the shortchanged shares. Modeled the same way the
+    /// mandatory inflation test models a donation: `total_assets` jumps far above what the slice
+    /// alone would justify, driving the reconverted value under the tolerance floor.
+    #[test]
+    fn deposit_leg_reverts_when_credit_falls_below_tolerance() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+        contract
+            .write_weights(attacker_addr(), alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+        contract
+            .write_weights(victim_addr(), alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+
+        // Seed a tiny share count via a 1-wei deposit (same shape as the mandatory inflation test).
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        let seed_deposit = U256::from(1u64);
+        let seed_transfer = transferFromCall { from: attacker_addr(), to: contract_addr(), amount: seed_deposit }.abi_encode();
+        vm.mock_call(USDC, seed_transfer, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), seed_deposit);
+        let zero_approve_seed = approveCall { spender: adapter_addr(), amount: U256::ZERO }.abi_encode();
+        vm.mock_call(USDC, zero_approve_seed, U256::ZERO, Ok(true.abi_encode()));
+        vm.set_sender(attacker_addr());
+        contract.deposit(seed_deposit).unwrap();
+
+        // A large donation-inflated `total_assets` makes the next deposit's reconverted value fall
+        // far below the 99% floor.
+        let donation = U256::from(1_000_000_000_000u64);
+        let normal_deposit = U256::from(1_000_000u64);
+        let victim_transfer = transferFromCall { from: victim_addr(), to: contract_addr(), amount: normal_deposit }.abi_encode();
+        vm.mock_call(USDC, victim_transfer, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), normal_deposit);
+        mock_total_assets(&vm, adapter_addr(), donation);
+
+        vm.set_sender(victim_addr());
+        let err = contract.deposit(normal_deposit);
+        assert!(err.is_err());
+    }
+
+    /// WR-03: `deposit_leg` must actually issue `approve(adapter, 0)` after the adapter's deposit
+    /// call. TestVM's `perform_mocked_call` returns `Ok(Vec::new())` (decodes as success, T-09-05's
+    /// tri-state rule) for any call with NO matching mock registration, so a plain "does the call
+    /// succeed" assertion can't distinguish "the zeroing call happened" from "it was silently
+    /// skipped" — both look like success. The proof used here: register ONLY the zero-amount
+    /// `approve` mock to return `false` (which `decode_bool_result` turns into `TransferFailed`).
+    /// If `deposit_leg` regressed and stopped issuing that call, this mock is simply never hit and
+    /// the deposit succeeds normally; the assertion below only holds if the zeroing call is
+    /// actually made.
+    #[test]
+    fn deposit_leg_leaves_zero_allowance() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+        contract
+            .write_weights(user_addr(), alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+
+        let amount = U256::from(1_000_000u64);
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        let transfer_calldata = transferFromCall { from: user_addr(), to: contract_addr(), amount }.abi_encode();
+        vm.mock_call(USDC, transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+
+        let approve_calldata = approveCall { spender: adapter_addr(), amount }.abi_encode();
+        vm.mock_call(USDC, approve_calldata, U256::ZERO, Ok(true.abi_encode()));
+        let deposit_calldata = depositCall { usdcAmount: amount }.abi_encode();
+        vm.mock_call(adapter_addr(), deposit_calldata, U256::ZERO, Ok(amount.abi_encode()));
+
+        let zero_approve = approveCall { spender: adapter_addr(), amount: U256::ZERO }.abi_encode();
+        vm.mock_call(USDC, zero_approve, U256::ZERO, Ok(false.abi_encode()));
+
+        vm.set_sender(user_addr());
+        let err = contract.deposit(amount);
+        assert_eq!(err.unwrap_err(), errors::transfer_failed());
     }
 
     // --- deposit_for (D-19 permissionless intake) ---
@@ -1291,11 +1422,17 @@ mod tests {
         mock_adapter_deposit_leg(&vm, adapter_addr(), normal_deposit);
         mock_total_assets(&vm, adapter_addr(), donation); // donation-inflated value, registered last.
 
+        // Phase 13 Plan 02 (WR-02) supersedes this scenario's original T-12.1-18 outcome: at this
+        // extreme a ratio (donation 1e12 against attacker_shares/OFFSET both ~1e6), the anti-
+        // inflation formula still floors to a NON-ZERO mint (no theft-of-funds path opens), but the
+        // reconverted value is far below the 99%-of-slice floor — this is exactly the "adapter
+        // credits shares worth materially less than the slice" condition WR-02 exists to catch, so
+        // the deposit reverts `DepositShortfall` instead of silently accepting the diluted mint.
+        // Reverting is STRICTLY BETTER for the victim than 12.1's original behavior: only gas is
+        // lost, not principal into a diluted position.
         vm.set_sender(victim_addr());
-        core.deposit(normal_deposit).unwrap();
-
-        let victim_shares = core.shares_of(victim_addr(), adapter_addr());
-        assert!(!victim_shares.is_zero(), "victim must receive non-zero shares despite the donation");
+        let err = core.deposit(normal_deposit);
+        assert!(err.is_err(), "WR-02 must revert a deposit this heavily diluted by a donation-inflated ratio");
     }
 
     // --- rebalance (VAULT-03, user-scoped) ---
