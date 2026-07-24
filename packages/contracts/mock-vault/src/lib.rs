@@ -28,6 +28,9 @@ sol_storage! {
         uint256 total_shares;
         /// `maxWithdraw` ceiling knob — U256::MAX at init (no throttle) until the owner sets it.
         uint256 withdraw_cap;
+        /// Deposit credit in bps — 10_000 = full credit (default) until the owner haircuts it,
+        /// reproducing a below-face-value 4626 (WR-02).
+        uint256 deposit_credit_bps;
         /// Per-holder share balances.
         mapping(address => uint256) shares;
     }

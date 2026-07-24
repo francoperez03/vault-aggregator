@@ -55,6 +55,7 @@ impl MockVault {
         self.asset.set(asset);
         self.owner.set(owner);
         self.withdraw_cap.set(U256::MAX);
+        self.deposit_credit_bps.set(U256::from(10_000u64)); // 10_000 = full credit, no haircut
         self.initialized.set(true);
         Ok(())
     }
@@ -122,6 +123,27 @@ impl MockVault {
         Ok(())
     }
 
+    /// Current deposit-credit knob, in bps (10_000 = full credit).
+    pub fn deposit_credit_bps(&self) -> U256 {
+        self.deposit_credit_bps.get()
+    }
+
+    /// Owner-only fault-injection knob: mints only `bps/10_000` of the shares a conformant 4626
+    /// would mint for the same assets, without touching the assets transferred in. This is the
+    /// WR-02 vector — a vault that credits below face value — expressed in the same bps unit the
+    /// rest of the repo uses (`weights_bps`, `redeem(bps)`). Set 10_000 to clear.
+    pub fn set_deposit_credit_bps(&mut self, bps: U256) -> Result<(), Vec<u8>> {
+        self.ensure_initialized()?;
+        if self.vm().msg_sender() != self.owner.get() {
+            return Err(b"OnlyOwner".to_vec());
+        }
+        if bps > U256::from(10_000u64) {
+            return Err(b"BpsOutOfRange".to_vec());
+        }
+        self.deposit_credit_bps.set(bps);
+        Ok(())
+    }
+
     /// Pulls `assets` from the caller (pre-approved) and mints shares to `receiver`, priced
     /// against the balance BEFORE the pull. May mint zero shares after a donation has inflated
     /// the share price — that is deliberate (the adapter's ZeroShares guard is under test).
@@ -132,7 +154,11 @@ impl MockVault {
         let self_addr = self.vm().contract_address();
 
         let pre_balance = self.vault_balance()?;
-        let minted = shares_for_deposit(assets, self.total_shares.get(), pre_balance)
+        let raw_minted = shares_for_deposit(assets, self.total_shares.get(), pre_balance)
+            .ok_or_else(|| b"Overflow".to_vec())?;
+        let minted = raw_minted
+            .checked_mul(self.deposit_credit_bps.get())
+            .and_then(|p| p.checked_div(U256::from(10_000u64)))
             .ok_or_else(|| b"Overflow".to_vec())?;
 
         let pull_ctx = Call::new_mutating(self);
@@ -259,6 +285,7 @@ mod tests {
     // `vault-adapter/src/adapter.rs` tests).
     alloy_sol_types::sol! {
         function balanceOf(address account) external view returns (uint256);
+        function transferFrom(address from, address to, uint256 amount) external returns (bool);
     }
 
     fn asset_addr() -> Address {
@@ -404,6 +431,76 @@ mod tests {
                 .withdraw(U256::from(1u64), owner_addr(), owner_addr())
                 .unwrap_err(),
             b"NotShareOwner".to_vec()
+        );
+    }
+
+    fn mock_transfer_from(vm: &TestVM, depositor: Address, amount: U256) {
+        let calldata = transferFromCall {
+            from: depositor,
+            to: vault_addr(),
+            amount,
+        }
+        .abi_encode();
+        vm.mock_call(asset_addr(), calldata, U256::ZERO, Ok(true.abi_encode()));
+    }
+
+    #[test]
+    fn deposit_credit_bps_defaults_to_full_credit() {
+        let vm = TestVM::default();
+        let mut vault = deploy_and_init(&vm);
+        assert_eq!(vault.deposit_credit_bps(), U256::from(10_000u64));
+
+        let depositor = Address::from([0x44; 20]);
+        vm.set_sender(depositor);
+        mock_vault_balance(&vm, U256::ZERO);
+        mock_transfer_from(&vm, depositor, U256::from(1_000_000u64));
+
+        let minted = vault
+            .deposit(U256::from(1_000_000u64), owner_addr())
+            .unwrap();
+        assert_eq!(minted, U256::from(1_000_000u64));
+    }
+
+    #[test]
+    fn deposit_credit_bps_haircut_reduces_minted_shares() {
+        let vm = TestVM::default();
+        let mut vault = deploy_and_init(&vm);
+
+        vm.set_sender(owner_addr());
+        vault.set_deposit_credit_bps(U256::from(9_000u64)).unwrap();
+
+        let depositor = Address::from([0x44; 20]);
+        vm.set_sender(depositor);
+        mock_vault_balance(&vm, U256::ZERO);
+        mock_transfer_from(&vm, depositor, U256::from(1_000_000u64));
+
+        let minted = vault
+            .deposit(U256::from(1_000_000u64), owner_addr())
+            .unwrap();
+        assert_eq!(minted, U256::from(900_000u64));
+    }
+
+    #[test]
+    fn set_deposit_credit_bps_is_owner_only() {
+        let vm = TestVM::default();
+        let mut vault = deploy_and_init(&vm);
+
+        vm.set_sender(Address::from([0x33; 20]));
+        assert_eq!(
+            vault.set_deposit_credit_bps(U256::from(9_000u64)).unwrap_err(),
+            b"OnlyOwner".to_vec()
+        );
+    }
+
+    #[test]
+    fn set_deposit_credit_bps_rejects_above_10000() {
+        let vm = TestVM::default();
+        let mut vault = deploy_and_init(&vm);
+
+        vm.set_sender(owner_addr());
+        assert_eq!(
+            vault.set_deposit_credit_bps(U256::from(10_001u64)).unwrap_err(),
+            b"BpsOutOfRange".to_vec()
         );
     }
 
