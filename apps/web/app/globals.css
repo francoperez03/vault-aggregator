@@ -1,0 +1,261 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── Vault Aggregator Design System ── */
+:root {
+  /* Backgrounds */
+  --bg-base: #0A0C0F;
+  --bg-surface: #111418;
+  --bg-elevated: #181D24;
+  --bg-overlay: #1E242E;
+  /* Borders */
+  --border-subtle: #1F2733;
+  --border-default: #2A3444;
+  --border-strong: #3A4A60;
+  /* Brand — Arbitrum Blue */
+  --brand: #12AAFF;
+  --brand-light: #4DC4FF;
+  --brand-dim: #0D7FBE;
+  --brand-ghost: rgba(18, 170, 255, 0.12);
+  --brand-glow: rgba(18, 170, 255, 0.25);
+  /* Yield — USDC Green */
+  --yield: #26D48A;
+  --yield-light: #4DEBB0;
+  --yield-dim: #1A9962;
+  --yield-ghost: rgba(38, 212, 138, 0.10);
+  --yield-glow: rgba(38, 212, 138, 0.20);
+  /* Semantic */
+  --error: #FF4D6A;
+  --warning: #FFB020;
+  /* Text */
+  --text-primary: #F0F4FF;
+  --text-secondary: #8A9BB8;
+  --text-tertiary: #4A5A72;
+  /* Protocols */
+  --aave: #B6509E;
+  --morpho: #5B8EFA;
+  --fluid: #00D4FF;
+  --beefy: #F5A623;
+  /* Easing */
+  --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* shadcn semantic mapping */
+  --background: var(--bg-base);
+  --foreground: var(--text-primary);
+  --card: var(--bg-surface);
+  --card-foreground: var(--text-primary);
+  --popover: var(--bg-elevated);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--brand);
+  --primary-foreground: #0A0C0F;
+  --secondary: var(--bg-elevated);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--bg-overlay);
+  --muted-foreground: var(--text-secondary);
+  --accent: var(--bg-overlay);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--error);
+  --destructive-foreground: var(--text-primary);
+  --border: var(--border-default);
+  --input: var(--border-default);
+  --ring: var(--brand);
+  /* Charts */
+  --chart-1: var(--aave);
+  --chart-2: var(--morpho);
+  --chart-3: var(--fluid);
+  --chart-4: var(--beefy);
+  --chart-5: var(--yield);
+  /* Radius (design system: 6, 10, 14, 20, 28px) */
+  --radius: 0.625rem;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  /* Sidebar */
+  --sidebar: var(--bg-surface);
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: #0A0C0F;
+  --sidebar-accent: var(--bg-overlay);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border-subtle);
+  --sidebar-ring: var(--brand);
+}
+
+.dark {
+  --background: var(--bg-base);
+  --foreground: var(--text-primary);
+  --card: var(--bg-surface);
+  --card-foreground: var(--text-primary);
+  --popover: var(--bg-elevated);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--brand);
+  --primary-foreground: #0A0C0F;
+  --secondary: var(--bg-elevated);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--bg-overlay);
+  --muted-foreground: var(--text-secondary);
+  --accent: var(--bg-overlay);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--error);
+  --destructive-foreground: var(--text-primary);
+  --border: var(--border-default);
+  --input: var(--border-default);
+  --ring: var(--brand);
+}
+
+@theme inline {
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  /* Design system extras */
+  --color-yield: var(--yield);
+  --color-brand-ghost: var(--brand-ghost);
+  --color-yield-ghost: var(--yield-ghost);
+  --color-aave: var(--aave);
+  --color-morpho: var(--morpho);
+  --color-fluid: var(--fluid);
+  --color-beefy: var(--beefy);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-2xl: var(--radius-2xl);
+}
+
+@keyframes apyPulse {
+  0%, 100% { box-shadow: 0 0 0 transparent; }
+  50% { box-shadow: 0 0 14px var(--yield-glow); }
+}
+@keyframes dotBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+/* Degradado que se mueve sobre el botón — vivo y dinámico */
+@keyframes gradientSweep {
+  0% { background-position: 0% 50%; }
+  20% { background-position: 45% 50%; }
+  50% { background-position: 70% 50%; }
+  80% { background-position: 95% 50%; }
+  100% { background-position: 100% 50%; }
+}
+
+/* Destello diagonal que cruza el CTA */
+@keyframes ctaShine {
+  0% { transform: translate(-120%, -120%) skewX(-15deg); opacity: 0; }
+  20% { opacity: 0.2; }
+  40% { transform: translate(0%, 0%) skewX(-15deg); opacity: 0.8; }
+  60% { opacity: 0.5; }
+  80% { transform: translate(120%, 120%) skewX(-15deg); opacity: 0.15; }
+  100% { transform: translate(150%, 150%) skewX(-15deg); opacity: 0; }
+}
+
+/* Destello que recorre todo el botón (gradiente ancho + background-position) */
+@keyframes ctaShineFull {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Círculo verde que se mueve en varias direcciones sobre el botón Deposit */
+@keyframes depositCircleMove {
+  0%, 100% {
+    left: 10%;
+    top: 20%;
+    transform: translate(-50%, -50%);
+  }
+  20% {
+    left: 85%;
+    top: 15%;
+    transform: translate(-50%, -50%);
+  }
+  40% {
+    left: 80%;
+    top: 80%;
+    transform: translate(-50%, -50%);
+  }
+  60% {
+    left: 15%;
+    top: 85%;
+    transform: translate(-50%, -50%);
+  }
+  80% {
+    left: 5%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* Borde animado con gradiente conic (estilo aurora) */
+@property --border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes borderGradientRotate {
+  to { --border-angle: 360deg; }
+}
+
+/* Glow pulse suave para el CTA Deposit */
+@keyframes depositGlowPulse {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(0, 192, 255, 0.15), 0 0 24px rgba(60, 199, 128, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(0, 192, 255, 0.28), 0 0 40px rgba(60, 199, 128, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  body {
+    @apply bg-background text-foreground overflow-x-hidden overflow-y-auto;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    min-height: 100dvh;
+    -webkit-overflow-scrolling: touch; /* scroll suave en iOS */
+  }
+}
