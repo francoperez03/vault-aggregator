@@ -142,68 +142,10 @@ impl VaultCore {
         self.weight_bps.get(user).get(adapter)
     }
 
-    /// D-19: permissionless by design. The core PULLS the USDC from `msg.sender` and credits
-    /// `user`, so crediting a third party is a gift, never a theft: an unbacked call reverts at
-    /// the `transferFrom`. This is deliberately NOT CoinFlip's gated `betFor` — there a fabricated
-    /// bet is bounded by the pool and settled by VRF; here the ledger is title over other users'
-    /// custodied USDC, so no address gets the privilege of declaring an `amount` the core
-    /// believes. There is no gate and no `setPeriphery`: the Permit2 periphery is replaceable
-    /// without touching the core.
-    pub fn deposit_for(&mut self, user: Address, amount: U256) -> Result<U256, Vec<u8>> {
-        self.ensure_initialized()?;
-        if amount.is_zero() {
-            return Err(errors::zero_amount());
-        }
-        if user.is_zero() {
-            return Err(errors::zero_address());
-        }
-
-        // D-01: no implicit fallback allocation exists. `user` bootstraps by calling
-        // `rebalance(adapters, bps)` with a zero position first, which just writes their weights.
-        // `user`'s OWN stored weights decide the split — never the caller's.
-        let (targets, weights) = self.read_weights(user);
-        if targets.is_empty() {
-            return Err(errors::no_weights_set());
-        }
-
-        // Guard + snapshot BEFORE any mutating call (guard-before-mutate): T-13-06/D-19 residual
-        // risk #2 requires that weights pointing at a disabled adapter revert with nothing having
-        // moved, so no funds can strand in a periphery mid-flow. Also protects against minting
-        // against a post-deposit total_assets, which would dilute the depositor against their own
-        // funds.
-        let mut ta_before: Vec<U256> = Vec::with_capacity(targets.len());
-        for adapter in targets.iter() {
-            if !self.adapter_enabled.get(*adapter) {
-                return Err(errors::adapter_not_enabled());
-            }
-            ta_before.push(adapter_dispatch::total_assets(self.vm(), *adapter)?);
-        }
-
-        let self_addr = self.vm().contract_address();
-        let payer = self.vm().msg_sender(); // T-13-05: the only line whose semantics change vs the old caller-only deposit.
-        let pull_ctx = Call::new_mutating(self);
-        usdc::transfer_from(self.vm(), pull_ctx, USDC, payer, self_addr, amount)?;
-
-        let slices = share_math::split_by_bps(amount, &weights)?;
-        let mut minted_total = U256::ZERO;
-        for i in 0..targets.len() {
-            // Skip 0-value legs: a dust-sized slice would hit the adapter's ZeroAmount guard and
-            // revert an otherwise valid deposit.
-            if slices[i].is_zero() {
-                continue;
-            }
-            minted_total += self.deposit_leg(user, targets[i], slices[i], ta_before[i])?;
-        }
-        if minted_total.is_zero() {
-            return Err(errors::zero_shares());
-        }
-
-        self.vm().log(Deposit { user, assets: amount, shares: minted_total });
-        Ok(minted_total)
-    }
-
-    /// Sugar over `deposit_for`: pay for yourself, credit yourself. One extra ABI entry, zero new
-    /// logic.
+    /// Sugar over the private `deposit_for` helper: pay for yourself, credit yourself. Kept as its
+    /// own ABI entry so `rebalance`'s re-split (which credits an arbitrary `user`, always
+    /// `msg.sender`, never a caller-supplied target) and `deposit` can share the same split/mint
+    /// logic without duplicating it.
     pub fn deposit(&mut self, amount: U256) -> Result<U256, Vec<u8>> {
         let caller = self.vm().msg_sender();
         self.deposit_for(caller, amount)
@@ -298,6 +240,66 @@ impl VaultCore {
 /// IS the only way to keep `unwind_position`, `deposit_leg`, `write_weights` and `read_weights`
 /// callable internally while keeping them off the exported ABI surface.
 impl VaultCore {
+    /// The core PULLS the USDC from `msg.sender` and credits `user` (always `msg.sender` itself —
+    /// `deposit`'s only caller passes `caller`, never a third party). Off the exported ABI (D-13:
+    /// a plain `impl` block, not `#[public]`) since the periphery that used to call this
+    /// permissionlessly (crediting a third party from a Permit2-pulled deposit) has been removed —
+    /// Lemon cannot do signature substitution against this contract (empirically proven by
+    /// CoinFlip's identical Permit2 attempt), so there is no consumer left for a permissionless
+    /// deposit-on-behalf entrypoint, and removing it from the ABI shrinks the attack surface.
+    fn deposit_for(&mut self, user: Address, amount: U256) -> Result<U256, Vec<u8>> {
+        self.ensure_initialized()?;
+        if amount.is_zero() {
+            return Err(errors::zero_amount());
+        }
+        if user.is_zero() {
+            return Err(errors::zero_address());
+        }
+
+        // D-01: no implicit fallback allocation exists. `user` bootstraps by calling
+        // `rebalance(adapters, bps)` with a zero position first, which just writes their weights.
+        // `user`'s OWN stored weights decide the split — never the caller's.
+        let (targets, weights) = self.read_weights(user);
+        if targets.is_empty() {
+            return Err(errors::no_weights_set());
+        }
+
+        // Guard + snapshot BEFORE any mutating call (guard-before-mutate): T-13-06/D-19 residual
+        // risk #2 requires that weights pointing at a disabled adapter revert with nothing having
+        // moved, so no funds can strand in a periphery mid-flow. Also protects against minting
+        // against a post-deposit total_assets, which would dilute the depositor against their own
+        // funds.
+        let mut ta_before: Vec<U256> = Vec::with_capacity(targets.len());
+        for adapter in targets.iter() {
+            if !self.adapter_enabled.get(*adapter) {
+                return Err(errors::adapter_not_enabled());
+            }
+            ta_before.push(adapter_dispatch::total_assets(self.vm(), *adapter)?);
+        }
+
+        let self_addr = self.vm().contract_address();
+        let payer = self.vm().msg_sender(); // T-13-05: the only line whose semantics change vs the old caller-only deposit.
+        let pull_ctx = Call::new_mutating(self);
+        usdc::transfer_from(self.vm(), pull_ctx, USDC, payer, self_addr, amount)?;
+
+        let slices = share_math::split_by_bps(amount, &weights)?;
+        let mut minted_total = U256::ZERO;
+        for i in 0..targets.len() {
+            // Skip 0-value legs: a dust-sized slice would hit the adapter's ZeroAmount guard and
+            // revert an otherwise valid deposit.
+            if slices[i].is_zero() {
+                continue;
+            }
+            minted_total += self.deposit_leg(user, targets[i], slices[i], ta_before[i])?;
+        }
+        if minted_total.is_zero() {
+            return Err(errors::zero_shares());
+        }
+
+        self.vm().log(Deposit { user, assets: amount, shares: minted_total });
+        Ok(minted_total)
+    }
+
     /// Shared exit primitive for `redeem` and `rebalance` (D-07/D-09). Withdraws `bps_fraction`
     /// /10000 of `user`'s position, burns those shares, and returns the reconciled USDC the core
     /// actually gained.
