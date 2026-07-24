@@ -1213,4 +1213,186 @@ mod tests {
             Some(U256::from(50u64))
         );
     }
+
+    // --- write_weights / read_weights / shares_of / weights_of (D-04/D-08, Plan 02) ---
+
+    #[test]
+    fn weights_sum_must_be_exactly_10000() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        let err = contract.write_weights(
+            user_addr(),
+            alloc::vec![adapter_addr(), adapter_two_addr()],
+            alloc::vec![U256::from(6_000u64), U256::from(3_999u64)], // sums to 9999
+        );
+        assert_eq!(err.unwrap_err(), errors::allocation_invalid());
+
+        let err = contract.write_weights(
+            user_addr(),
+            alloc::vec![adapter_addr(), adapter_two_addr()],
+            alloc::vec![U256::from(6_000u64), U256::from(4_001u64)], // sums to 10001
+        );
+        assert_eq!(err.unwrap_err(), errors::allocation_invalid());
+
+        assert!(contract
+            .write_weights(
+                user_addr(),
+                alloc::vec![adapter_addr(), adapter_two_addr()],
+                alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
+            )
+            .is_ok());
+    }
+
+    #[test]
+    fn weights_reject_duplicate_target() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        let err = contract.write_weights(
+            user_addr(),
+            alloc::vec![adapter_addr(), adapter_addr()],
+            alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
+        );
+        assert_eq!(err.unwrap_err(), errors::allocation_invalid());
+    }
+
+    #[test]
+    fn weights_reject_zero_weight() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        let err = contract.write_weights(
+            user_addr(),
+            alloc::vec![adapter_addr(), adapter_two_addr()],
+            alloc::vec![U256::from(10_000u64), U256::ZERO],
+        );
+        assert_eq!(err.unwrap_err(), errors::allocation_invalid());
+    }
+
+    #[test]
+    fn weights_reject_length_mismatch_and_empty() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        let err = contract.write_weights(
+            user_addr(),
+            alloc::vec![adapter_addr()],
+            alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
+        );
+        assert_eq!(err.unwrap_err(), errors::allocation_invalid());
+
+        let err = contract.write_weights(user_addr(), alloc::vec![], alloc::vec![]);
+        assert_eq!(err.unwrap_err(), errors::allocation_invalid());
+    }
+
+    #[test]
+    fn weights_reject_unregistered_target() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        let unregistered = Address::from([0x55; 20]);
+        let err = contract.write_weights(
+            user_addr(),
+            alloc::vec![adapter_addr(), unregistered],
+            alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
+        );
+        assert_eq!(err.unwrap_err(), errors::adapter_not_registered());
+    }
+
+    #[test]
+    fn weights_reject_disabled_target() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        vm.set_sender(owner_addr());
+        mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
+        contract.set_enabled(adapter_two_addr(), false).unwrap();
+
+        let err = contract.write_weights(
+            user_addr(),
+            alloc::vec![adapter_addr(), adapter_two_addr()],
+            alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
+        );
+        assert_eq!(err.unwrap_err(), errors::adapter_not_enabled());
+    }
+
+    #[test]
+    fn weights_of_round_trips_what_was_written() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        contract
+            .write_weights(
+                user_addr(),
+                alloc::vec![adapter_addr(), adapter_two_addr()],
+                alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
+            )
+            .unwrap();
+
+        let (targets, bps) = contract.weights_of(user_addr());
+        assert_eq!(targets, alloc::vec![adapter_addr(), adapter_two_addr()]);
+        assert_eq!(bps, alloc::vec![U256::from(6_000u64), U256::from(4_000u64)]);
+    }
+
+    #[test]
+    fn weights_rewrite_clears_the_omitted_adapter() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        contract
+            .write_weights(
+                user_addr(),
+                alloc::vec![adapter_addr(), adapter_two_addr()],
+                alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
+            )
+            .unwrap();
+
+        contract
+            .write_weights(
+                user_addr(),
+                alloc::vec![adapter_addr()],
+                alloc::vec![U256::from(10_000u64)],
+            )
+            .unwrap();
+
+        let (targets, bps) = contract.weights_of(user_addr());
+        assert_eq!(targets, alloc::vec![adapter_addr()]);
+        assert_eq!(bps, alloc::vec![U256::from(10_000u64)]);
+        assert_eq!(
+            contract.weight_bps.get(user_addr()).get(adapter_two_addr()),
+            U256::ZERO
+        );
+    }
+
+    #[test]
+    fn weights_of_two_users_are_independent() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm);
+
+        contract
+            .write_weights(
+                user_addr(),
+                alloc::vec![adapter_addr()],
+                alloc::vec![U256::from(10_000u64)],
+            )
+            .unwrap();
+        contract
+            .write_weights(
+                non_owner_addr(),
+                alloc::vec![adapter_two_addr()],
+                alloc::vec![U256::from(10_000u64)],
+            )
+            .unwrap();
+
+        assert_ne!(contract.weights_of(user_addr()), contract.weights_of(non_owner_addr()));
+    }
+
+    #[test]
+    fn shares_of_is_zero_without_position() {
+        let vm = TestVM::default();
+        let contract = deploy_init_and_seed_two_adapters(&vm);
+
+        assert_eq!(contract.shares_of(user_addr(), adapter_addr()), U256::ZERO);
+    }
 }
