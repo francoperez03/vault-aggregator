@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Deploys the full testnet mock rig to Arbitrum Sepolia: MockUsdc, four MockVault instances
-# (stand-ins for Morpho/Fluid/Euler/Aave-Stata), the real vault-core, and four real
+# Deploys the full testnet rig to Arbitrum Sepolia: four MockVault instances (stand-ins for
+# Morpho/Fluid/Euler/Aave-Stata), the real vault-core, the real vault-periphery, and four real
 # vault-adapter instances wired vault->adapter->core — everything the Sepolia e2e needs to
 # exercise the production deposit/rebalance/redeem plumbing with controllable on-chain state.
 #
-# vault-core and vault-adapter are built with `--features testnet`, which swaps their compiled
-# USDC constant to the deployed MockUsdc address. **The testnet artifacts must never be deployed
-# to mainnet.** The mainnet rig (`scripts/deploy-adapters.sh`, docs/RUNBOOK-M2.md) is untouched.
+# vault-core and vault-adapter are built with `--features testnet`, which compiles in the real
+# Arbitrum Sepolia USDC address (0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d) as their USDC
+# constant. **The testnet artifacts must never be deployed to mainnet.** The mainnet rig
+# (`scripts/deploy-adapters.sh`, docs/RUNBOOK-M2.md) is untouched.
 #
-# Two-step bootstrap: the MockUsdc address only exists after its own deploy, and the adapter/core
-# carry it as a compile-time constant. First run deploys MockUsdc, then STOPS with instructions to
-# update the `testnet` constants; the second run verifies the constants match and continues. The
-# env file makes re-runs resume instead of redeploying.
+# The USDC address is a known constant (real Sepolia USDC, not a mock this script deploys), so
+# there is no bootstrap step for it. The rig cannot mint its own USDC: the deployer must be
+# funded ahead of time via the Circle faucet (https://faucet.circle.com). The env file makes
+# re-runs resume instead of redeploying.
 #
 # Required env vars:
 #   ARB_SEPOLIA_RPC_URL  - Arbitrum Sepolia RPC endpoint
@@ -19,7 +20,8 @@
 # Optional env vars:
 #   KEY_PATH             - file holding the Sepolia deployer key (default: ~/.wakeup-sepolia.key)
 #   MAX_FEE_GWEI         - gas-price ceiling (default: 0.1)
-#   MOCK_USDC_ADDR etc.  - any address already recorded in docs/.sepolia-env is reused
+#   MIN_USDC_UNITS       - preflight minimum deployer USDC balance (default: 20000000 = 20 USDC)
+#   TESTNET_CORE_ADDR etc. - any address already recorded in docs/.sepolia-env is reused
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,8 +34,15 @@ ENV_OUT="$ROOT/docs/.sepolia-env"
 ADAPTER_CONST_FILE="$ROOT/packages/contracts/vault-adapter/src/adapter.rs"
 CORE_CONST_FILE="$ROOT/packages/contracts/vault-core/src/core.rs"
 
-# 1,000 mock USDC (6 decimals) minted to the deployer so the e2e always has balance.
-MINT_UNITS=1000000000
+# Real USDC on Arbitrum Sepolia (Circle-issued, faucet-fundable). Fixed, not deployed by this
+# script.
+SEPOLIA_USDC_ADDR=0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d
+# Canonical Permit2, identical address on Arbitrum One and Sepolia.
+PERMIT2_ADDR=0x000000000022D473030F116dDEE9F6B43aC78BA3
+
+# Preflight minimum: 20 USDC (6 decimals). The Circle faucet drips ~10 USDC/hour, so funding may
+# take two passes; see docs/TESTNET.md for the faucet flow.
+MIN_USDC_UNITS="${MIN_USDC_UNITS:-20000000}"
 
 # --- Preflight ------------------------------------------------------------------------------
 
@@ -49,6 +58,34 @@ ETH_BAL="$(cast balance "$DEPLOYER" --rpc-url "$ARB_SEPOLIA_RPC_URL")"
 [ "$ETH_BAL" != "0" ] || { echo "Deployer has no Sepolia ETH for gas" >&2; exit 1; }
 
 echo "Preflight OK: $ETH_BAL wei ETH"
+
+USDC_BAL="$(cast call "$SEPOLIA_USDC_ADDR" "balanceOf(address)(uint256)" "$DEPLOYER" --rpc-url "$ARB_SEPOLIA_RPC_URL" | cut -d' ' -f1)"
+if [ "$USDC_BAL" -lt "$MIN_USDC_UNITS" ]; then
+  echo "Deployer holds only $USDC_BAL units of Sepolia USDC, need >= $MIN_USDC_UNITS." >&2
+  echo "Fund $DEPLOYER via the Circle faucet: https://faucet.circle.com (select Arbitrum Sepolia)." >&2
+  echo "The faucet drips ~10 USDC/hour, so this may take two passes." >&2
+  exit 1
+fi
+echo "Preflight OK: $USDC_BAL units of Sepolia USDC (SEPOLIA_USDC_ADDR=$SEPOLIA_USDC_ADDR)"
+
+# The adapter/core `testnet` USDC constant must equal real Sepolia USDC — a mismatch would point
+# the whole rig at the wrong token. Grep the line under the #[cfg(feature = "testnet")] gate.
+check_const() {
+  local file="$1" have
+  have="$(grep -A1 '#\[cfg(feature = "testnet")\]' "$file" | grep -oE 'address!\("[0-9a-fA-F]{40}"\)' | grep -oE '[0-9a-fA-F]{40}' | head -1)"
+  if [ "$(echo "$have" | tr 'A-F' 'a-f')" != "$(echo "${SEPOLIA_USDC_ADDR#0x}" | tr 'A-F' 'a-f')" ]; then
+    echo "" >&2
+    echo "STOP: the testnet USDC constant in $file is 0x$have but real Sepolia USDC is $SEPOLIA_USDC_ADDR." >&2
+    echo "Update the #[cfg(feature = \"testnet\")] USDC constant in BOTH files to:" >&2
+    echo "    const USDC: Address = address!(\"${SEPOLIA_USDC_ADDR#0x}\");" >&2
+    echo "  - $ADAPTER_CONST_FILE" >&2
+    echo "  - $CORE_CONST_FILE" >&2
+    exit 1
+  fi
+}
+check_const "$ADAPTER_CONST_FILE"
+check_const "$CORE_CONST_FILE"
+echo "testnet USDC constants match $SEPOLIA_USDC_ADDR"
 
 # --no-verify below skips the reproducible Docker build: these are disposable testnet fixtures,
 # Arbiscan source verification is not a deliverable here. The key still needs to be repo-local
@@ -87,12 +124,13 @@ send() {
 # Persist incrementally so any mid-run failure resumes instead of redeploying.
 save_env() {
   {
-    echo "export MOCK_USDC_ADDR=${MOCK_USDC_ADDR:-}"
+    echo "export SEPOLIA_USDC_ADDR=$SEPOLIA_USDC_ADDR"
     echo "export MOCK_MORPHO_VAULT=${MOCK_MORPHO_VAULT:-}"
     echo "export MOCK_FLUID_VAULT=${MOCK_FLUID_VAULT:-}"
     echo "export MOCK_EULER_VAULT=${MOCK_EULER_VAULT:-}"
     echo "export MOCK_AAVE_VAULT=${MOCK_AAVE_VAULT:-}"
     echo "export TESTNET_CORE_ADDR=${TESTNET_CORE_ADDR:-}"
+    echo "export TESTNET_PERIPHERY_ADDR=${TESTNET_PERIPHERY_ADDR:-}"
     echo "export TESTNET_MORPHO_ADAPTER_ADDR=${TESTNET_MORPHO_ADAPTER_ADDR:-}"
     echo "export TESTNET_FLUID_ADAPTER_ADDR=${TESTNET_FLUID_ADAPTER_ADDR:-}"
     echo "export TESTNET_EULER_ADAPTER_ADDR=${TESTNET_EULER_ADAPTER_ADDR:-}"
@@ -102,37 +140,7 @@ save_env() {
 
 [ -r "$ENV_OUT" ] && . "$ENV_OUT"
 
-# --- Step 1: MockUsdc -----------------------------------------------------------------------
-
-if [ -n "${MOCK_USDC_ADDR:-}" ]; then
-  echo "MockUsdc: reusing $MOCK_USDC_ADDR"
-else
-  deploy_one mock-usdc
-  MOCK_USDC_ADDR="$DEPLOYED_ADDR"
-  save_env
-fi
-
-# The adapter/core `testnet` USDC constant must equal the deployed MockUsdc — a mismatch would
-# point the whole rig at a dead address. Grep the line under the #[cfg(feature = "testnet")] gate.
-check_const() {
-  local file="$1" have
-  have="$(grep -A1 '#\[cfg(feature = "testnet")\]' "$file" | grep -oE 'address!\("[0-9a-fA-F]{40}"\)' | grep -oE '[0-9a-fA-F]{40}' | head -1)"
-  if [ "$(echo "$have" | tr 'A-F' 'a-f')" != "$(echo "${MOCK_USDC_ADDR#0x}" | tr 'A-F' 'a-f')" ]; then
-    echo "" >&2
-    echo "STOP: the testnet USDC constant in $file is 0x$have but MockUsdc deployed at $MOCK_USDC_ADDR." >&2
-    echo "Update the #[cfg(feature = \"testnet\")] USDC constant in BOTH files to:" >&2
-    echo "    const USDC: Address = address!(\"${MOCK_USDC_ADDR#0x}\");" >&2
-    echo "  - $ADAPTER_CONST_FILE" >&2
-    echo "  - $CORE_CONST_FILE" >&2
-    echo "then re-run this script (it resumes from $ENV_OUT, nothing is redeployed)." >&2
-    exit 1
-  fi
-}
-check_const "$ADAPTER_CONST_FILE"
-check_const "$CORE_CONST_FILE"
-echo "testnet USDC constants match $MOCK_USDC_ADDR"
-
-# --- Step 2: four MockVault instances -------------------------------------------------------
+# --- Step 1: four MockVault instances -------------------------------------------------------
 
 # Idempotent init: maxWithdraw(address) is behind ensure_initialized, so it answers iff init took.
 init_mock_vault() {
@@ -140,8 +148,8 @@ init_mock_vault() {
   if cast call "$vault" "maxWithdraw(address)(uint256)" "$DEPLOYER" --rpc-url "$ARB_SEPOLIA_RPC_URL" >/dev/null 2>&1; then
     echo "$name: already initialised"
   else
-    echo "$name: init(asset=$MOCK_USDC_ADDR, owner=$DEPLOYER)"
-    send "$vault" "init(address,address)" "$MOCK_USDC_ADDR" "$DEPLOYER"
+    echo "$name: init(asset=$SEPOLIA_USDC_ADDR, owner=$DEPLOYER)"
+    send "$vault" "init(address,address)" "$SEPOLIA_USDC_ADDR" "$DEPLOYER"
   fi
 }
 
@@ -157,7 +165,7 @@ for name in MORPHO FLUID EULER AAVE; do
   init_mock_vault "MockVault[$name]" "${!var}"
 done
 
-# --- Step 3: vault-core (testnet build) -----------------------------------------------------
+# --- Step 2: vault-core (testnet build) -----------------------------------------------------
 
 if [ -n "${TESTNET_CORE_ADDR:-}" ]; then
   echo "vault-core: reusing $TESTNET_CORE_ADDR"
@@ -167,6 +175,18 @@ else
   save_env
   echo "vault-core: init(owner=$DEPLOYER)"
   send "$TESTNET_CORE_ADDR" "init(address)" "$DEPLOYER"
+fi
+
+# --- Step 3: vault-periphery -----------------------------------------------------------------
+
+if [ -n "${TESTNET_PERIPHERY_ADDR:-}" ]; then
+  echo "vault-periphery: reusing $TESTNET_PERIPHERY_ADDR"
+else
+  # #[constructor] is baked into the deploy transaction by cargo-stylus (--constructor-args), not
+  # a separate cast send afterward — same pattern as coinflip-periphery's deploy.sh.
+  deploy_one vault-periphery --constructor-args "$TESTNET_CORE_ADDR" "$PERMIT2_ADDR" "$SEPOLIA_USDC_ADDR"
+  TESTNET_PERIPHERY_ADDR="$DEPLOYED_ADDR"
+  save_env
 fi
 
 # --- Step 4: four vault-adapter instances (testnet build) -----------------------------------
@@ -214,16 +234,6 @@ echo "core.rebalance -> 2500 bps x4"
 send "$TESTNET_CORE_ADDR" "rebalance(address[],uint256[])" \
   "[$TESTNET_MORPHO_ADAPTER_ADDR,$TESTNET_FLUID_ADAPTER_ADDR,$TESTNET_EULER_ADAPTER_ADDR,$TESTNET_AAVE_ADAPTER_ADDR]" \
   "[2500,2500,2500,2500]"
-
-# --- Step 6: mint mock USDC to the deployer -------------------------------------------------
-
-USDC_BAL="$(cast call "$MOCK_USDC_ADDR" "balanceOf(address)(uint256)" "$DEPLOYER" --rpc-url "$ARB_SEPOLIA_RPC_URL" | cut -d' ' -f1)"
-if [ "$USDC_BAL" -lt "$MINT_UNITS" ]; then
-  echo "MockUsdc.mint($DEPLOYER, $MINT_UNITS)"
-  send "$MOCK_USDC_ADDR" "mint(address,uint256)" "$DEPLOYER" "$MINT_UNITS"
-else
-  echo "MockUsdc: deployer already holds $USDC_BAL units"
-fi
 
 save_env
 echo

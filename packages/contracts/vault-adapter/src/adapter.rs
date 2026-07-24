@@ -20,13 +20,14 @@ use crate::VaultAdapter;
 #[cfg(not(feature = "testnet"))]
 const USDC: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
 
-/// MockUsdc on Arbitrum Sepolia — the `testnet` build variant is a disposable test fixture and
-/// must NEVER be deployed to mainnet. With the feature off this crate's release wasm is
-/// byte-identical to before the cfg split (measured, see docs/TESTNET.md).
-/// `scripts/deploy-testnet-mocks.sh` greps this constant against the deployed MockUsdc address
-/// and stops if they diverge; update it after the script's step 1 prints the deployed address.
+/// Real USDC on Arbitrum Sepolia — the `testnet` build variant targets this canonical testnet
+/// token (Circle-issued, faucet-fundable), not a disposable mock. It must still NEVER be
+/// deployed to mainnet: the constant points at the wrong network's token entirely, so a
+/// `testnet` artifact deployed to Arbitrum One would simply be wired to a foreign address.
+/// `scripts/deploy-testnet-mocks.sh`'s `check_const` greps this constant in both this file and
+/// `vault-core/src/core.rs` and stops before spending gas if either diverges from it.
 #[cfg(feature = "testnet")]
-const USDC: Address = address!("e26bd9f1f02e468093e1287f418bb79749a6ac92");
+const USDC: Address = address!("75faf114eafb1BDbe2F0316DF893fd58CE46AA4d");
 
 sol! {
     event Initialized(address indexed vault, address indexed core);

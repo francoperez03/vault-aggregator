@@ -21,14 +21,14 @@ use crate::VaultCore;
 #[cfg(not(feature = "testnet"))]
 const USDC: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
 
-/// MockUsdc on Arbitrum Sepolia — the `testnet` build variant is a disposable test fixture and
-/// must NEVER be deployed to mainnet. With the feature off the default build is unchanged in size
-/// and behaviour; the only byte-level delta versus before this cfg split is two embedded panic
-/// line numbers shifted by the 8 lines added here (measured, see docs/TESTNET.md).
-/// `scripts/deploy-testnet-mocks.sh` greps this constant against the deployed MockUsdc address
-/// and stops if they diverge; update it after the script's step 1 prints the deployed address.
+/// Real USDC on Arbitrum Sepolia — the `testnet` build variant targets this canonical testnet
+/// token (Circle-issued, faucet-fundable), not a disposable mock. It must still NEVER be
+/// deployed to mainnet: the constant points at the wrong network's token entirely, so a
+/// `testnet` artifact deployed to Arbitrum One would simply be wired to a foreign address.
+/// `scripts/deploy-testnet-mocks.sh`'s `check_const` greps this constant in both this file and
+/// `vault-adapter/src/adapter.rs` and stops before spending gas if either diverges from it.
 #[cfg(feature = "testnet")]
-const USDC: Address = address!("e26bd9f1f02e468093e1287f418bb79749a6ac92");
+const USDC: Address = address!("75faf114eafb1BDbe2F0316DF893fd58CE46AA4d");
 
 /// Total basis-points an allocation must sum to exactly (D-06).
 const TOTAL_BPS: U256 = U256::from_limbs([10_000u64, 0, 0, 0]);
