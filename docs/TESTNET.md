@@ -1,9 +1,16 @@
 # Testnet mock rig (Arbitrum Sepolia)
 
-A disposable rig that runs the **real** `vault-core`, **real** `vault-adapter` and **real**
-`vault-periphery` against four **mock** ERC-4626 vaults and the **real** Arbitrum Sepolia USDC, so
-the core's plumbing (including the Permit2 intake path) can be exercised on-chain with
-controllable adapter state.
+A disposable rig that runs the **real** `vault-core` and **real** `vault-adapter` against four
+**mock** ERC-4626 vaults and the **real** Arbitrum Sepolia USDC, so the core's plumbing can be
+exercised on-chain with controllable adapter state.
+
+**There is no `vault-periphery` anymore.** CoinFlip (M1) empirically proved Lemon cannot perform
+Permit2 signature substitution (the server-side placeholder mechanism fails, Permit2 is not an
+allowed entrypoint inside Lemon's sandbox) — the periphery's only method, `depositWithPermit2`,
+existed solely for that mechanism and had no working consumer. The periphery crate and the core's
+orphaned permissionless `depositFor` entrypoint were both deleted; Lemon integrates via the
+CoinFlip fallback instead: one-time `USDC.approve(core, amount)`, then `core.deposit(amount)` per
+deposit. See `docs/known-issues.md`'s `PERMIT2-REMOVED` entry.
 
 Deployed by [`scripts/deploy-testnet-mocks.sh`](../scripts/deploy-testnet-mocks.sh); addresses land
 in `docs/.sepolia-env`. The mainnet rig ([RUNBOOK-M2.md](./RUNBOOK-M2.md)) is untouched by any of
@@ -34,27 +41,66 @@ by construction — no Fluid throttle, no Aave Stata wrapping/rebasing, no Morph
 A green Sepolia run says nothing about whether an adapter handles the real thing. **These tests
 never substitute for the Arbitrum One round-trips.**
 
-## Deployed rig (Arbitrum Sepolia, 2026-07-24, post-C-H1 redeploy)
+## Deployed rig (Arbitrum Sepolia, 2026-07-24, post-Permit2-removal redeploy)
 
-Fully redeployed (core, periphery, all 4 adapters, all 4 MockVaults — every contract, not just
-the core) as the C-H1 gap-closure fix: the blind adversarial review found `VaultCore::init(owner)`
-had no access control (front-runnable, permanent ownership takeover, no recovery path — see
-`docs/known-issues.md`'s C-H1 entry and `docs/security/adversarial-review/cross-reference.md`).
-`init` is replaced by a real Stylus `#[constructor]` that sets `owner` atomically at deploy time.
-A new core invalidates the whole rig (each adapter's `init(vault, core)` is one-shot, and the
-periphery's `core` address is fixed at its own constructor), so every contract below is fresh —
-the MockVaults too, since an old rig's orphaned adapters would otherwise still hold real shares in
-a reused MockVault and silently break the "sole shareholder" invariant several edge-case tests
-assume (found the hard way: reusing the old MockVaults on the first redeploy attempt broke 3 of 9
-`sepolia_edge_cases` tests with stale-balance assertions; redeploying the MockVaults too fixed all
-3). Deployer/owner: `0xD245710638f66A16386df955D45e65d13B0C0E3e` (the M1 Sepolia wallet, key
+Fully redeployed (core, all 4 adapters, all 4 MockVaults) as the Permit2-removal gap closure:
+CoinFlip (M1) empirically proved Lemon cannot substitute a Permit2 signature, so `vault-periphery`
+(the only consumer of that mechanism) and the core's orphaned permissionless `depositFor` were both
+deleted — see `docs/known-issues.md`'s `PERMIT2-REMOVED` entry. A new core invalidates the whole
+rig (each adapter's `init(vault, core)` is one-shot), so every contract below is fresh — the
+MockVaults too, matching the same "sole shareholder" precaution the prior C-H1 redeploy needed.
+Deployer/owner: `0xD245710638f66A16386df955D45e65d13B0C0E3e` (the M1 Sepolia wallet, key
 `~/.wakeup-sepolia.key`).
 
 | Role | Address |
 |---|---|
 | USDC (real, Circle-issued, faucet-fundable) | `0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d` |
-| Permit2 (canonical, identical on One and Sepolia) | `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
-| vault-core (`--features testnet`, `#[constructor]`) | `0x813f2112107c87a4583d9f1ce22d63c3274e2209` |
+| vault-core (`--features testnet`, `#[constructor]`) | `0x1e223295ef6d36b9125d28cdf2619937f473ba28` |
+| MockVault — Morpho slot | `0x8bbb9576af205c481d177bd03653cdeaf5ad41ae` |
+| MockVault — Fluid slot | `0x704d336f09b67835000bc2554cdc595edf94caea` |
+| MockVault — Euler slot | `0x6aca4e2fcb1532bbd0b51980c44b34fd3cca3453` |
+| MockVault — Aave slot | `0x65d13bbb205c6a87728e32c17801dfdff6ae3e2a` |
+| Adapter — Morpho slot | `0x1b56374d5026e354615ccfc10373f2a9459ff9a3` |
+| Adapter — Fluid slot | `0x1dbc8816f6271c53e23fb995d4d5cf51e6673ffa` |
+| Adapter — Euler slot | `0x000ce6d89a227c975c7d3c130aece43bb0d978ba` |
+| Adapter — Aave slot | `0x718566ae22dd5ffe5186d88d524e748adaf554f4` |
+
+`owner` is set by the `vault-core` deploy transaction's own `#[constructor]`. All eight new
+contracts, plus `addAdapter` ×4 and the bootstrap 25/25/25/25 `rebalance`, deployed cleanly in a
+single pass — no periphery step, and there is no `TESTNET_PERIPHERY_ADDR` anymore.
+
+### ABI as deployed
+
+There is no `vault-periphery` and no `depositFor` on this rig at all. The core exposes:
+`deposit(uint256)`, `redeem(uint256 bps)`, `rebalance(address[],uint256[])`,
+`sharesOf(address,address)`, `weightBpsOf(address,address)`, `adapterTotalShares(address)`,
+`addAdapter(address)`, `setEnabled(address,bool)`. `init(address)`, `removeAdapter`, `weightsOf`
+and `depositFor` are all gone from this ABI; ownership is set exclusively by the deploy-time
+`#[constructor]`, and `deposit(uint256)` is the only intake entrypoint (always self-deposit).
+
+**Full live e2e re-run against this rig (2026-07-24): 13/13 tests green** —
+`sepolia_core_flow` (4/4), `sepolia_edge_cases` (9/9). `sepolia_periphery.rs` no longer exists (the
+periphery it tested is gone). `--test-threads=1`. Final balances: wallet A ~13.9 USDC, wallet B
+~17.8 USDC — the drop from the pre-run ~20.9/12.8 split (after a 2 USDC A-topup transfer) reflects
+the several tests that deposit real USDC without a matching redeem (donation, dust and WR-02
+credit-shortfall tests deliberately leave a position open); no USDC left the wallet pair as a
+whole beyond what those tests intentionally park in the rig.
+
+## Retired rigs (superseded 2026-07-24)
+
+Three prior rigs are retired by this redeploy (the C-H1 rig below, plus the two it already
+retired). None can be re-pointed at the new core: each adapter's `init(vault, core)` is one-shot
+with no setter (F9 D-01).
+
+**Rig 3 (C-H1 fix, superseded by the Permit2 removal):** the C-H1 gap-closure rig, live-verified
+16/16 green (`sepolia_core_flow` 4/4, `sepolia_edge_cases` 9/9, `sepolia_periphery` 3/3) before this
+redeploy. Retired ONLY because it still carries `vault-periphery` and the public `depositFor` —
+the core's constructor-based ownership fix and the rest of the ABI are otherwise identical to the
+rig above.
+
+| Role | Address |
+|---|---|
+| vault-core (`--features testnet`) | `0x813f2112107c87a4583d9f1ce22d63c3274e2209` |
 | vault-periphery | `0xc01feceacc7ba14e6d7a45c66ab40f3774afa49d` |
 | MockVault — Morpho slot | `0x3e2353aeb1e566f5f0b46533be6e611733e8865c` |
 | MockVault — Fluid slot | `0x6629e5085f006d1c36906d42c9ddcff7be33cfec` |
@@ -65,47 +111,10 @@ assume (found the hard way: reusing the old MockVaults on the first redeploy att
 | Adapter — Euler slot | `0xca124be152be53cc825e65a604c8de8f4b330a6b` |
 | Adapter — Aave slot | `0xf1cf7ee1ab7732281c420f01264a9fba1f384941` |
 
-`owner` is now set by the `vault-core` deploy transaction's own `#[constructor]` (no separate
-`init` call); `vault-periphery`'s deploy transaction similarly bakes in `(core, permit2, usdc)` as
-constructor args. All ten new contracts, plus `addAdapter` ×4 and the bootstrap 25/25/25/25
-`rebalance`, deployed cleanly. Total redeploy cost across the two attempts (first with reused
-MockVaults, retried fully fresh once the stale-balance issue was found): ~0.003 Sepolia ETH.
-
-### ABI as deployed
-
-Verified on-chain immediately after the redeploy:
-
-- `cast call $TESTNET_CORE_ADDR "init(address)" 0x1111111111111111111111111111111111111111` →
-  **reverts** (`0x` data, no such selector) — the C-H1 fix's whole point: there is no live,
-  callable, unauthenticated bootstrap entrypoint left on this ABI.
-- `cast call $TESTNET_CORE_ADDR "weightBpsOf(address,address)(uint256)" $DEPLOYER $TESTNET_MORPHO_ADAPTER_ADDR`
-  → `2500` (the bootstrap 25% weight).
-- `cast call $TESTNET_PERIPHERY_ADDR "core()(address)"` → `$TESTNET_CORE_ADDR`.
-- `cast call $TESTNET_CORE_ADDR "removeAdapter(address)" <adapter>` → **reverts** (`0x` data, no
-  such selector). `removeAdapter`, `weightsOf` and now `init(address)` are gone from this ABI; use
-  `setEnabled`, `weightBpsOf`, and the deploy-time `#[constructor]` instead.
-
-The core exposes, and this redeploy verified: `deposit(uint256)`, `depositFor(address,uint256)`,
-`redeem(uint256 bps)`, `rebalance(address[],uint256[])`, `sharesOf(address,address)`,
-`weightBpsOf(address,address)`, `adapterTotalShares(address)`, `addAdapter(address)`,
-`setEnabled(address,bool)`. `init(address)` is gone — ownership is set exclusively by the
-`#[constructor]` baked into the deploy transaction.
-
-**Full live e2e re-run against this rig (2026-07-24): 16/16 tests green** —
-`sepolia_core_flow` (4/4), `sepolia_edge_cases` (9/9, including 4 that self-skipped on a first pass
-for insufficient deployer USDC and then genuinely passed once wallet A was topped up from wallet
-B's balance), `sepolia_periphery` (3/3). `--test-threads=1`, zero net USDC lost across the run
-(final balances: wallet A ~18.9 USDC, wallet B ~14.8 USDC, both healthy).
-
-## Retired rigs (superseded 2026-07-24)
-
-Two prior rigs are retired by this redeploy. Both cannot be re-pointed at the new core: each
-adapter's `init(vault, core)` is one-shot with no setter (F9 D-01).
-
 **Rig 2 (13a/13b, superseded by the C-H1 fix):** the frozen 13a ABI rig, live-verified 16/16 green
-against the pooled 13a/13b test suite before this gap closure. Retired ONLY because its core still
+against the pooled 13a/13b test suite before that gap closure. Retired ONLY because its core still
 carries the unprotected `init(address)` C-H1 vulnerability — the ABI shape and test coverage are
-otherwise identical to the rig above.
+otherwise identical to Rig 3 above.
 
 | Role | Address |
 |---|---|
@@ -122,7 +131,7 @@ otherwise identical to the rig above.
 
 **Rig 1 (Phase 12.1-era, superseded 2026-07-24):** exported the old pooled-allocation ABI
 (`redeem(shares)`, `weightsOf(address)`, owner-only `rebalance`) and used MockUsdc as its asset;
-MockUsdc has no role in either later rig at all.
+MockUsdc has no role in any later rig at all.
 
 | Role | Address |
 |---|---|
