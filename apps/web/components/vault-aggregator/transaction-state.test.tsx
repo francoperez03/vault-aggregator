@@ -72,12 +72,12 @@ describe('TransactionState', () => {
   it('partial: uses the warning token class, shows the three amounts and a single "Entendido, continuar" CTA', () => {
     const { container } = render(
       <TransactionState
-        phase={{ kind: 'partial', requested: 100n, actual: 60n, remaining: 40n }}
+        phase={{ kind: 'partial', requested: 100_000000n, actual: 60_000000n, remaining: 40_000000n }}
         onPrimary={noop}
       />,
     );
     expect(container.innerHTML).toMatch(/--warning/);
-    expect(screen.getByText(/Pediste \$100, se movieron \$60, quedan \$40/)).toBeInTheDocument();
+    expect(screen.getByText(/Pediste \$100\.00, se movieron \$60\.00, quedan \$40\.00/)).toBeInTheDocument();
     const buttons = screen.getAllByRole('button');
     expect(buttons).toHaveLength(1);
     expect(buttons[0]).toHaveTextContent('Entendido, continuar');

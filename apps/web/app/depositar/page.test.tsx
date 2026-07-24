@@ -41,6 +41,6 @@ describe('DepositView', () => {
     expect(screen.getByText('Cancelaste la firma. No pasó nada, no se movió plata.')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'partial' }))
-    expect(screen.getByText(/Pediste \$100000000, se movieron \$60000000/)).toBeInTheDocument()
+    expect(screen.getByText(/Pediste \$100\.00, se movieron \$60\.00/)).toBeInTheDocument()
   })
 })

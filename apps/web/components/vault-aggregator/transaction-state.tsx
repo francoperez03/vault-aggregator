@@ -1,6 +1,7 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
+import { formatUsdc } from '@/lib/format'
 
 // ponytail: hardcoded until lib/wagmi/chain.ts (14b, on-chain plans) exposes the active chain's
 // block explorer; both target chains for this phase share the same Arbiscan family of explorers.
@@ -115,8 +116,8 @@ export function TransactionState({ phase, onPrimary, onSecondary, summary }: Tra
       return (
         <div className="flex flex-col gap-4 p-4">
           <p className="text-sm text-[var(--warning)]">
-            Pediste ${phase.requested.toString()}, se movieron ${phase.actual.toString()}, quedan $
-            {phase.remaining.toString()} en el saldo de la app.
+            Pediste ${formatUsdc(phase.requested)}, se movieron ${formatUsdc(phase.actual)}, quedan $
+            {formatUsdc(phase.remaining)} en el saldo de la app.
           </p>
           <Button onClick={onPrimary}>Entendido, continuar</Button>
         </div>
