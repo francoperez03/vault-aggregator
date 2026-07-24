@@ -1,7 +1,19 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { HomePositionView } from './page'
+import Page from './page'
 import { MOCK_EMPTY, MOCK_FUNDED, MOCK_WEIGHTS_ONLY } from '@/lib/mock/position'
+
+const useAccountMock = vi.fn()
+vi.mock('wagmi', () => ({ useAccount: () => useAccountMock() }))
+
+const useNetworkGuardMock = vi.fn()
+vi.mock('@/hooks/useNetworkGuard', () => ({ useNetworkGuard: () => useNetworkGuardMock() }))
+
+const useVaultPositionMock = vi.fn()
+vi.mock('@/hooks/useVaultPosition', () => ({ useVaultPosition: () => useVaultPositionMock() }))
+
+vi.mock('@/components/wallet-bar', () => ({ WalletBar: () => null }))
 
 afterEach(cleanup)
 
@@ -31,5 +43,49 @@ describe('HomePositionView', () => {
   it('shows the persistent pending-withdrawal banner (D-19) when set, never as a toast', () => {
     render(<HomePositionView position={{ ...MOCK_FUNDED, pendingWithdrawalUsdc: 500_000_000n }} />)
     expect(screen.getByText(/Moviste \$500.00 USDC al saldo de la app/)).toBeInTheDocument()
+  })
+})
+
+describe('Page (default export)', () => {
+  afterEach(() => vi.clearAllMocks())
+
+  it('sin wallet conectada muestra la CTA de conectar, no ceros', () => {
+    useAccountMock.mockReturnValue({ isConnected: false })
+    useNetworkGuardMock.mockReturnValue({ isWrongNetwork: false, expectedName: 'Sepolia', switchNetwork: vi.fn() })
+    useVaultPositionMock.mockReturnValue({ perAdapter: {}, totalUsdc: 0n, hasWeights: false, isLoading: false, refetch: vi.fn() })
+
+    render(<Page />)
+
+    expect(screen.getByText('Conectá tu wallet')).toBeInTheDocument()
+    expect(screen.queryByText('Todavía no tenés posición')).not.toBeInTheDocument()
+  })
+
+  it('en la red equivocada muestra el copy exacto y no arma HomePositionView', () => {
+    const switchNetwork = vi.fn()
+    useAccountMock.mockReturnValue({ isConnected: true })
+    useNetworkGuardMock.mockReturnValue({ isWrongNetwork: true, expectedName: 'Sepolia', switchNetwork })
+    useVaultPositionMock.mockReturnValue({ perAdapter: {}, totalUsdc: 0n, hasWeights: false, isLoading: false, refetch: vi.fn() })
+
+    render(<Page />)
+
+    expect(screen.getByText('Cambiá a Arbitrum Sepolia para continuar.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar de red' }))
+    expect(switchNetwork).toHaveBeenCalledTimes(1)
+  })
+
+  it('conectada y en la red correcta, arma la posición desde useVaultPosition', () => {
+    useAccountMock.mockReturnValue({ isConnected: true })
+    useNetworkGuardMock.mockReturnValue({ isWrongNetwork: false, expectedName: 'Sepolia', switchNetwork: vi.fn() })
+    useVaultPositionMock.mockReturnValue({
+      perAdapter: { morpho: { shares: 1n, adapterTotalShares: 1n, totalAssets: 10_000_000n, valueUsdc: 10_000_000n, weightBps: 10000 } },
+      totalUsdc: 10_000_000n,
+      hasWeights: true,
+      isLoading: false,
+      refetch: vi.fn(),
+    })
+
+    render(<Page />)
+
+    expect(screen.getAllByText('$10.00').length).toBeGreaterThan(0)
   })
 })
