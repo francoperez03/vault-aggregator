@@ -244,3 +244,41 @@ selector dispatch, not that it bounced off a missing entry.
 unexercised fallback — same status it had before this probe.
 
 ---
+
+### WR-02-DILUTION: MEASURED — a 50 bps deposit-credit haircut mints 1,000 fewer vault shares than face value for a 200,000-unit deposit (199,000 minted vs 200,000 fair); the `deposit_leg` guard reverts `DepositShortfall` beyond 100 bps in isolation (`vault-core`'s own unit test WR-02/T-12.1-18, using a mocked `total_assets()`), 2026-07-24
+
+Measured live on the Arbitrum Sepolia rig (`adapter-e2e`'s
+`deposit_credit_shortfall_within_tolerance_is_absorbed_and_measured`, `packages/contracts/adapter-e2e/tests/sepolia_edge_cases.rs`):
+`MockVault::setDepositCreditBps(9950)` (a 50 bps entry fee, inside the guard's 100 bps tolerance),
+then a 200,000-unit (0.2 USDC) deposit through `core.deposit()`. `vault.totalSupply()`'s growth for
+that one deposit was 1,000 shares short of what `vault.convertToShares()` reported moments before
+the haircut armed — exactly 50 bps, matching the knob.
+
+**Where the loss lands, and where it does not.** `deposit_leg`'s own `sharesOf`/`adapterTotalShares`/
+`adapter.total_assets()` reads show **no measurable loss** for this deposit (asserted, not just
+noted, in the same test) — because each `MockVault` on this rig has exactly one shareholder (its
+adapter), `adapter.total_assets() = convertToAssets(balanceOf(adapter))` is pinned to
+`100% × totalAssets()` regardless of how few of the vault's own shares were minted. The haircut is
+real (the vault's own share ledger proves it), but it is invisible to the core's ledger until a
+SECOND real shareholder exists in the same vault to be diluted against.
+
+**Companion finding, from `deposit_credit_shortfall_beyond_tolerance_reverts` in the same file.**
+Reproducing that second-shareholder condition (via a direct USDC donation, mirroring the
+`vault-core` unit test's `mock_total_assets` donation) does make the core ledger's `ts`/real-balance
+ratio extreme enough to matter — but at that ratio, the underlying `MockVault`'s OWN raw
+share-minting (`vault-adapter`'s `ZeroShares` guard, evaluated inside `adapter_dispatch::deposit`,
+BEFORE `deposit_leg`'s own math runs) floors to zero first, every time. This is not incidental: with
+the adapter as the vault's sole shareholder, a bootstrap small enough to keep the core ledger's `ts`
+affordable to skew also leaves the vault holding too few raw shares to survive a small slice's own
+share-minting arithmetic. `DepositShortfall` itself is proven correct in isolation by its own unit
+test; on this rig's actual adapter+MockVault topology, `ZeroShares` is the guard that reaches the
+donation-inflated vector first, live.
+
+**Verdict.** WR-02 is accepted with the existing 100 bps `deposit_leg` guard (`DepositShortfall`)
+plus the `ZeroShares` backstop it was found to defer to on-chain; the measured rounding loss below
+100 bps (50 bps → 1,000-of-200,000 shares, i.e. 0.5%) is small, proportional, and does not compound
+across unrelated deposits (it is scoped to the single deposit it affects). D-13's rejection of full
+symmetrization (a second `total_assets()` read per leg) stands — the number here does not reopen it.
+See `docs/known-issues.md` for the checklist-facing summary.
+
+---

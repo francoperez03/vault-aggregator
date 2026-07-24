@@ -95,3 +95,39 @@ and the owed amount) and `full_throttle_skips_the_leg_but_still_reverts` (D-07.2
 repeated on a second adapter so it carries no state dependency on the KI-04 test). All three assert
 `sharesOf(caller, adapter)` byte-identical across the reverted attempt on every adapter, and accept
 either `WithdrawExceedsMax` or `RedeemShortfall` by name, never a bare "reverted".
+
+## WR-02 — Deposit shortfall (Phase 13 Plan 08)
+
+**Status: ACCEPTED WITH GUARD.** `deposit_leg`'s 100 bps `DepositShortfall` floor
+(`vault-core/src/core.rs`) is proven correct in isolation by its own `vault-core` unit test
+(WR-02/T-12.1-18, a mocked `total_assets()` donation). The measured dilution below that floor is
+small (50 bps haircut → 0.5% fewer vault shares, `WR-02-DILUTION` in `docs/PROTOCOL-PROBES.md`) and
+does not reopen D-13's rejection of full per-leg symmetrization.
+
+**Live-chain addendum, discovered in Plan 08:** reproducing the guard's donation-inflated trigger
+condition live (`deposit_credit_shortfall_beyond_tolerance_reverts`,
+`packages/contracts/adapter-e2e/tests/sepolia_edge_cases.rs`) shows the underlying `MockVault`'s own
+`ZeroShares` guard (on the real, raw vault shares minted, evaluated INSIDE
+`adapter_dispatch::deposit` before `deposit_leg`'s own math runs) fires first, not
+`DepositShortfall`. This is mathematically forced given the adapter is each vault's sole
+shareholder — see the doc-comment on that test and the `WR-02-DILUTION` verdict in
+`docs/PROTOCOL-PROBES.md` for the full derivation. Net effect: WR-02's real vector is caught by a
+STRICTER guard than the one written for it, live. No action needed — a stricter guard catching the
+same condition earlier is not a gap.
+
+**Side effect of developing this test:** the first iteration used adapter index 2 (EULER on this
+rig) and left it holding a small amount of permanently unclaimed donation dust (`totalAssets() > 0`,
+`totalSupply() == 0`) — per D-10, no path may sweep it, and it does not affect any other adapter or
+user. Harmless; documented here so a future reader of EULER's on-chain state isn't surprised by it.
+The test itself was moved to adapter index 3 (AAVE) for the version that ships.
+
+## WR-01 — `remove_adapter`'s guard read the wrong source (Phase 12.1 / retired by deletion in 13a)
+
+**Status: RETIRED BY DELETION, not mitigated.** The original fix re-pointed the guard at
+`adapterTotalShares` (the ledger) instead of `totalAssets()` (external, spoofable) — but 13a then
+deleted `remove_adapter` entirely (Tier 2 byte-budget trim), so there is no "now it can be removed"
+outcome left to verify. What remains testable is the invariant the fix depended on: a fully redeemed
+position leaves the ledger at zero even when the underlying vault keeps dust
+(`full_exit_zeroes_the_ledger_even_when_the_vault_keeps_dust`,
+`packages/contracts/adapter-e2e/tests/sepolia_edge_cases.rs`, live-green). The Plan 11 checklist
+should record WR-01 as retired-by-deletion, not as "fixed and re-verified".
