@@ -33,6 +33,65 @@ by construction — no Fluid throttle, no Aave Stata wrapping/rebasing, no Morph
 A green Sepolia run says nothing about whether an adapter handles the real thing. **These tests
 never substitute for the Arbitrum One round-trips.**
 
+## ⚠️ Status: superseded by Phase 12.1
+
+The rig below is **deployed and green** (5/5 e2e on Arbitrum Sepolia, 2026-07-23). But Phase 12.1
+replaces the core's accounting model — global pooled allocation becomes per-user weights plus a
+per-user-per-adapter share ledger — so:
+
+- **The two e2e test files assert the OLD model and must be rewritten in 12.1.**
+  `sepolia_core_flow` drives an owner-only `rebalance(adapters, weights)` over a global 25/25/25/25
+  split; `sepolia_edge_cases`'s redeem test depends on `split_by_position` over the shared pool.
+  Both concepts disappear. Their *green run recorded here* is evidence about the pooled model, not
+  about whatever 12.1 ships.
+- **`vault-core` and all four adapters must be redeployed** for 12.1. The core changes bytecode;
+  the adapters' `init(vault, core)` is one-shot with no setter (D-01), so they cannot be re-pointed
+  at a new core.
+- **MockUsdc and the four MockVaults survive untouched** — they are model-agnostic, and so are the
+  `testnet` feature, `scripts/deploy-testnet-mocks.sh` and the `sepolia` module's helpers. Re-running
+  the deploy script with only `MOCK_USDC_ADDR` + the four `MOCK_*_VAULT` lines kept in
+  `docs/.sepolia-env` redeploys just the core and adapters.
+
+Everything below describes the rig as built. Treat the addresses as current and the test
+descriptions as pending a 12.1 rewrite.
+
+## Deployed rig (Arbitrum Sepolia, 2026-07-23)
+
+Deployer/owner: `0xD245710638f66A16386df955D45e65d13B0C0E3e` (the M1 Sepolia wallet).
+
+| Role | Address |
+|---|---|
+| MockUsdc | `0xe26bd9f1f02e468093e1287f418bb79749a6ac92` |
+| vault-core (`--features testnet`) | `0x27a7beb767996da72b8e93088fd7affe30a7dadf` |
+| MockVault — Morpho slot | `0x4271b6b81fa0c12908d2240438eca2c95dfeba21` |
+| MockVault — Fluid slot | `0xc7b2d9dedcc02c61fbe74fd09e0b7a9bf00ef1c7` |
+| MockVault — Euler slot | `0x5aa5420a2b9ea8689cb6d8f02406590d128979f5` |
+| MockVault — Aave slot | `0xe677d5020fe7e5bededb7512a6a4a09831dcd4e2` |
+| Adapter — Morpho slot | `0x3ae8c718f261cfbe8dfc2e6a678117d7a3fec9bd` |
+| Adapter — Fluid slot | `0x9022f19e7987465f7d2b015bf9587c2600d54989` |
+| Adapter — Euler slot | `0x9e56af544590f1b5b67d53ce23e3079089ab336c` |
+| Adapter — Aave slot | `0x56e17eca6e0f21a8aa19b7a4ddc4eea111291cdc` |
+
+Total deploy + full test-suite cost: **~0.0016 Sepolia ETH**.
+
+### First on-chain run (2026-07-23) — 5/5 green
+
+This is the first time `vault-core` executed anywhere outside TestVM.
+
+- `core_deposit_rebalance_redeem_flow` — $100 deposited and split four ways, rebalanced to
+  40/30/20/10, fully redeemed for **exactly 100,000,000 units back, zero rounding loss**.
+- `withdraw_cap_propagates_to_adapter_max_withdraw` — vault throttle visible through the adapter.
+- `throttled_adapter_reverts_whole_redeem_and_burns_nothing` — **D-06/D-10 whole-tx atomicity proven
+  on-chain**: one fully throttled leg reverts the entire redeem, and the identical redeem succeeds
+  once the throttle clears, so the failed attempt burned nothing.
+- `donation_inflates_pool_without_breaking_deposits` — the virtual-offset defence holds against a
+  real on-chain donation.
+- `zero_amount_deposit_reverts` — `ZeroAmount` guard.
+
+One transient `error: tx failed to complete` hit the first deploy run mid-way. An unchanged re-run
+completed cleanly, which is exactly what the env-file resume exists for — no contract was
+redeployed and nothing was lost.
+
 ## Mainnet ↔ testnet mapping
 
 Native USDC on Arbitrum One is `0xaf88d065e77c8cC2239327C5EDb3A432268e5831`; on Sepolia its
