@@ -132,3 +132,48 @@ VaultCore` block, placed after the `#[public]` block closes. Rust does not requi
 locality for method calls within the same type/module, so `rebalance`'s `self.set_allocation(...)`
 call compiles unchanged. `only_owner`/`ensure_initialized` remaining exported is a pre-existing
 F11 condition, out of this plan's scope — logged to `deferred-items.md`.
+
+## Phase 12.1 — Per-user allocation & per-adapter share ledger
+
+### Baseline (before any 12.1 code)
+
+- **Compressed size: 21,164 bytes**
+- **Fragment count: 1**
+- **Gate: 22,528 bytes**
+- **Headroom: 1,364 bytes**
+- `cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"` exit code: 0
+
+**Note on the 119-byte gap vs the 21,045-byte figure recorded at the end of Phase 12:** this is
+measurement noise, not toolchain drift. `docs/TESTNET.md` already measured and attributed this
+exact class of variance while adding the `testnet` feature cfg branch: re-running
+`cargo stylus check` against what is understood to be the same F12-final source produced 21,142
+bytes (not 21,045), and the subsequent testnet-cfg branch measured 21,161 — a ~100-150 byte spread
+across runs attributed to brotli compression non-determinism on an otherwise byte-identical (or
+near-identical) uncompressed artifact (`cmp -l` showed only 2 embedded panic-line-number bytes
+differ for that change). 21,164 falls inside that already-documented band, so this baseline is
+treated as reproducible and the phase proceeds without escalating to the user.
+
+### D-13 STOP rule (binding for every 12.1 task)
+
+Every task that touches `vault-core` source MUST, before closing, run
+`cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"` from
+`packages/contracts/vault-core/` and append a row below with the measured compressed size and
+fragment count.
+
+**STOP condition:** compressed size > 22,528 bytes **OR** fragment count > 1.
+
+On STOP the phase halts. The executor does NOT pick a mitigation on its own. It reports the
+measured size, the fragment count and D-14's ordered plan B, and waits for a decision:
+
+1. `wasm-opt -Oz` (Binaryen) — cheapest lever, no design change. Watch reproducibility for
+   `cargo stylus verify` (see ADR-001's `-Zbuild-std` risk; this deepens it).
+2. Surface trim, in this order: drop the `sharesOf`/`weightsOf` views (D-08), collapse the typed
+   errors into one generic error, drop `remove_adapter` (D-11's `set_enabled(false)` already
+   covers the operational case). These are product decisions, not silent refactors.
+3. Core/periphery split — last resort only, out of this phase's scope if reached.
+
+### Measurements
+
+| Task | Change | Compressed bytes | Fragments | Delta |
+|------|--------|------------------|-----------|-------|
+| 01-01 | baseline (no 12.1 code) | 21,164 | 1 | — |
