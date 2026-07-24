@@ -34,6 +34,3 @@ jobs:
 
       - run: cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"
         working-directory: packages/contracts/vault-core
-
-      - run: cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"
-        working-directory: packages/contracts/vault-periphery
