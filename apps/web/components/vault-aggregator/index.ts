@@ -1,3 +1,5 @@
+export { AllocationSliders } from './allocation-sliders'
+export { RebalanceCostDisclosure } from './rebalance-cost-disclosure'
 export { BalanceCounter } from './balance-counter'
 export { YieldAllocationBuilder } from './yield-allocation-builder'
 export { PortfolioAllocation } from './portfolio-allocation'
