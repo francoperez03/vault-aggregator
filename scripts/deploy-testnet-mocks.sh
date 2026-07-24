@@ -170,11 +170,13 @@ done
 if [ -n "${TESTNET_CORE_ADDR:-}" ]; then
   echo "vault-core: reusing $TESTNET_CORE_ADDR"
 else
-  deploy_one vault-core --features testnet
+  # C-H1 fix: owner is now set by a real #[constructor], baked into the deploy transaction by
+  # cargo-stylus (--constructor-args), the same pattern vault-periphery already uses below. There
+  # is no more separate post-deploy `init` call — that unauthenticated bootstrap tx was exactly
+  # the front-runnable window the fix closes.
+  deploy_one vault-core --features testnet --constructor-args "$DEPLOYER"
   TESTNET_CORE_ADDR="$DEPLOYED_ADDR"
   save_env
-  echo "vault-core: init(owner=$DEPLOYER)"
-  send "$TESTNET_CORE_ADDR" "init(address)" "$DEPLOYER"
 fi
 
 # --- Step 3: vault-periphery -----------------------------------------------------------------

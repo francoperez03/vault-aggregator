@@ -91,7 +91,10 @@ pub mod sepolia {
     sol! {
         #[sol(rpc)]
         interface IVaultCore {
-            function init(address owner) external;
+            // C-H1 fix: owner is now set by a real #[constructor] at deploy time, not a
+            // post-deploy `init(address)` call — there is no such entrypoint on the exported ABI
+            // anymore (Stylus constructors are invoked once, at deployment, never via a regular
+            // transaction), so no ABI stub exists for it here.
             function addAdapter(address adapter) external;
             function setEnabled(address adapter, bool enabled) external;
             function deposit(uint256 amount) external returns (uint256);
