@@ -4,13 +4,15 @@ A disposable rig that runs the **real** `vault-core` and **real** `vault-adapter
 **mock** ERC-4626 vaults and the **real** Arbitrum Sepolia USDC, so the core's plumbing can be
 exercised on-chain with controllable adapter state.
 
-**There is no `vault-periphery` anymore.** CoinFlip (M1) empirically proved Lemon cannot perform
-Permit2 signature substitution (the server-side placeholder mechanism fails, Permit2 is not an
-allowed entrypoint inside Lemon's sandbox) — the periphery's only method, `depositWithPermit2`,
-existed solely for that mechanism and had no working consumer. The periphery crate and the core's
-orphaned permissionless `depositFor` entrypoint were both deleted; Lemon integrates via the
-CoinFlip fallback instead: one-time `USDC.approve(core, amount)`, then `core.deposit(amount)` per
-deposit. See `docs/known-issues.md`'s `PERMIT2-REMOVED` entry.
+**`vault-periphery` is back (Phase 14.1, D-A1).** It was deleted in Phase 13 on the belief that
+Lemon could not perform any Permit2 signature substitution — that belief was wrong: the failure
+was in a hand-rolled server-side substitution scheme, not in Permit2-inside-Lemon as a concept.
+Lemon's `callSmartContract` natively signs a real Permit2 `SignatureTransfer` EIP-712 struct
+client-side (inside the app, with the user's own key) via its `permits[]` field, exactly the same
+mechanism CoinFlip's own `betWithPermit2` already relies on. The periphery's `depositWithPermit`
+pulls USDC via that signature and forwards to the core's permissionless `depositFor`. The old
+`docs/known-issues.md` `PERMIT2-REMOVED` entry is superseded — see
+`.planning/phases/14.1-lemon-permit2-write-path/` for the restore.
 
 Deployed by [`scripts/deploy-testnet-mocks.sh`](../scripts/deploy-testnet-mocks.sh); addresses land
 in `docs/.sepolia-env`. The mainnet rig ([RUNBOOK-M2.md](./RUNBOOK-M2.md)) is untouched by any of
@@ -41,23 +43,59 @@ by construction — no Fluid throttle, no Aave Stata wrapping/rebasing, no Morph
 A green Sepolia run says nothing about whether an adapter handles the real thing. **These tests
 never substitute for the Arbitrum One round-trips.**
 
-## Deployed rig (Arbitrum Sepolia, 2026-07-24, 13-11 gap-closure redeploy)
+## Deployed rig (Arbitrum Sepolia, 2026-07-24, Phase 14.1 Permit2-periphery redeploy)
 
-Fully redeployed (core, all 4 adapters, all 4 MockVaults) for the 13-11 sign-off gap closure:
-C-M2 (`redeem` no longer reverts on a dust position) and S-M1 (`split_by_bps` errors instead of
-silently dropping an amount on an empty weight set). A new core invalidates the whole rig (each
-adapter's `init(vault, core)` is one-shot), and the MockVaults were redeployed fresh too — a prior
-redeploy that reused MockVaults across rig generations left the *old* rig's adapters still holding
-shares in those same vaults, which desyncs an adapter's `totalAssets()` from its vault's raw
-balance (the adapter's position is `adapter_shares / vault_total_shares * vault_total_assets`, not
-the vault's balance directly, so a leftover foreign shareholder dilutes every later donation/yield
-reading against the new adapter). Redeploying all four MockVaults alongside the core avoids that
-trap. Deployer/owner: `0xD245710638f66A16386df955D45e65d13B0C0E3e` (the M1 Sepolia wallet, key
+Fully redeployed (core, `vault-periphery`, all 4 adapters, all 4 MockVaults) to restore the
+Permit2 write path (D-A1): `vault-periphery` re-added with its `depositWithPermit` entrypoint, and
+`vault-core::deposit_for` re-exposed on the public ABI as its consumer. A new core invalidates the
+whole rig (each adapter's `init(vault, core)` is one-shot), and the MockVaults were redeployed
+fresh too — a prior redeploy that reused MockVaults across rig generations left the *old* rig's
+adapters still holding shares in those same vaults, which desyncs an adapter's `totalAssets()`
+from its vault's raw balance. Redeploying all four MockVaults alongside the core avoids that trap.
+Deployer/owner: `0xD245710638f66A16386df955D45e65d13B0C0E3e` (the M1 Sepolia wallet, key
 `~/.wakeup-sepolia.key`).
 
 | Role | Address |
 |---|---|
 | USDC (real, Circle-issued, faucet-fundable) | `0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d` |
+| Permit2 (canonical, same on every EVM chain) | `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
+| vault-core (`--features testnet`, `#[constructor]`) | `0xdf558fb62b5ca7139aa53d65f0d8dc3805117754` |
+| vault-periphery (constructor `(core, permit2, usdc)`) | `0x8d0b46b7466e45803d96f0bba838f9c39d511367` |
+| MockVault — Morpho slot | `0x09135d78253449c5f0df675b6b6e18582bdcfbab` |
+| MockVault — Fluid slot | `0x65ab69fa086fa134b1645f81be64f15ed5793464` |
+| MockVault — Euler slot | `0x2d368ef0746c75e87ca1768284fbe7adb827ca98` |
+| MockVault — Aave slot | `0x2325bbea0b93ecd9c6c3a8a9f680af5cd99a0230` |
+| Adapter — Morpho slot | `0xa1c816ed5baf2f2e00ef97304669d0db021638e6` |
+| Adapter — Fluid slot | `0xde30f459e69e9ad3794902eb1bb56f29c28d51a0` |
+| Adapter — Euler slot | `0x337b4e1ab360eddeb8f8e25633bae5ca8ea0463c` |
+| Adapter — Aave slot | `0x7fbcc12f0b088ea832bd5108682cedfe502d3d36` |
+
+`owner` is set by the `vault-core` deploy transaction's own `#[constructor]`. All ten new
+contracts (core, periphery, 4 adapters, 4 MockVaults), plus `addAdapter` ×4 and the bootstrap
+25/25/25/25 `rebalance`, deployed cleanly. `TESTNET_PERIPHERY_ADDR` is back in `docs/.sepolia-env`.
+
+### ABI as deployed
+
+Adds `vault-periphery`'s `depositWithPermit(uint256,uint256,uint256,bytes)` and re-exposes the
+core's `depositFor(address,uint256)` (both absent from the retired 13-11 rig). Everything else
+unchanged: `deposit(uint256)`, `redeem(uint256 bps)`, `rebalance(address[],uint256[])`,
+`sharesOf(address,address)`, `weightBpsOf(address,address)`, `adapterTotalShares(address)`,
+`addAdapter(address)`, `setEnabled(address,bool)`.
+
+**Live Permit2 deposit proof (2026-07-24):** see
+`.planning/phases/14.1-lemon-permit2-write-path/14.1-RIG-VERIFICATION.md` for the `export-abi`
+output and the on-chain tx hash + before/after `sharesOf`. `sepolia_periphery.rs` is restored and
+green against this rig (`--test-threads=1`).
+
+## Retired rigs (superseded 2026-07-24)
+
+**Rig 5 (13-11 gap closure, superseded by the Phase 14.1 Permit2-periphery restore):** identical
+core-only ABI, no `vault-periphery`, no `depositFor`. Retired only because D-A1 restores the
+periphery and a new core (needed to re-expose `depositFor`) requires a full MockVault redeploy too
+(see the desync note above).
+
+| Role | Address |
+|---|---|
 | vault-core (`--features testnet`, `#[constructor]`) | `0xd38b38213ac17181c4b02c9c10422b691eab5626` |
 | MockVault — Morpho slot | `0x67c1a85dc2fcce7a6efbc40cd3fc7c7b17e4ee5b` |
 | MockVault — Fluid slot | `0xd9cf011fb4064512cd87d92edc6b06e4b9a0e798` |
@@ -68,28 +106,10 @@ trap. Deployer/owner: `0xD245710638f66A16386df955D45e65d13B0C0E3e` (the M1 Sepol
 | Adapter — Euler slot | `0x2ba4158df4dd03a4ec18691a0f649b947de6db88` |
 | Adapter — Aave slot | `0x62124bd637c6fc46cb13e5903b46c25b83e08b9a` |
 
-`owner` is set by the `vault-core` deploy transaction's own `#[constructor]`. All nine new
-contracts, plus `addAdapter` ×4 and the bootstrap 25/25/25/25 `rebalance`, deployed cleanly — no
-periphery step, and there is no `TESTNET_PERIPHERY_ADDR`.
+Its 13/13 green e2e run (2026-07-24, pre-14.1) predates the Permit2-periphery restore and does not
+stand in for the new rig's evidence.
 
-### ABI as deployed
-
-Same ABI shape as the retired Permit2-removal rig — no `vault-periphery`, no `depositFor`. The
-core exposes: `deposit(uint256)`, `redeem(uint256 bps)`, `rebalance(address[],uint256[])`,
-`sharesOf(address,address)`, `weightBpsOf(address,address)`, `adapterTotalShares(address)`,
-`addAdapter(address)`, `setEnabled(address,bool)`. No logic change to the ABI surface from C-M2/
-S-M1 — both fixes change internal behavior (`redeem`'s zero-payout path, `split_by_bps`'s empty-
-weights guard), not the exported selectors.
-
-**Full live e2e re-run against this rig (2026-07-24): 13/13 tests green** —
-`sepolia_core_flow` (4/4), `sepolia_edge_cases` (9/9), including
-`donation_inflates_one_adapter_without_breaking_deposits_or_touching_the_others` (the test that
-caught the reused-MockVault desync above, on the first redeploy attempt that reused MockVaults —
-retried clean with fresh MockVaults). `sepolia_periphery.rs` no longer exists. `--test-threads=1`.
-
-## Retired rigs (superseded 2026-07-24)
-
-**Rig 4 (Permit2 removal, superseded by the 13-11 gap closure):** identical ABI to the rig above;
+**Rig 4 (Permit2 removal, superseded by the 13-11 gap closure):** identical ABI to Rig 5 above;
 retired only because C-M2/S-M1 changed `vault-core`'s internal behavior, and a new core requires a
 full MockVault redeploy too (see the desync note above).
 
@@ -192,10 +212,12 @@ Sepolia reuses the M1 deployer `0xD245710638f66A16386df955D45e65d13B0C0E3e`
 ## Contracts
 
 - **`vault-periphery`** — Permit2 intake front-door. Immutable constructor `(core, permit2, usdc)`;
-  `depositWithPermit2` pulls USDC via a Permit2 `SignatureTransfer` then calls `core.depositFor`,
+  `depositWithPermit` pulls USDC via a Permit2 `SignatureTransfer` then calls `core.depositFor`,
   crediting the signer, not the periphery (D-19: the core pulls the exact amount it measures via
   `transferFrom`, so a compromised periphery cannot mint unbacked shares). No privileged role on the
-  core — `depositFor` stays permissionless.
+  core — `depositFor` stays permissionless. No fixed signature-length guard: Permit2 itself accepts
+  both 65/64-byte ECDSA (EOA owners) and arbitrary-length ERC-1271 `isValidSignature` (smart-account
+  owners, e.g. Lemon's Safe-style wallet).
 - **`mock-vault`** — ERC-4626 implementing exactly the surface the adapter calls
   (`deposit`/`withdraw`/`redeem`/`convertToAssets`/`convertToShares`/`maxWithdraw`/`maxRedeem`/
   `asset`/`totalAssets`/`balanceOf`). `totalAssets` reads the vault's real asset balance, so a
