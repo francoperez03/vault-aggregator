@@ -72,7 +72,17 @@ const TOTAL_BPS: U256 = U256::from_limbs([10_000u64, 0, 0, 0]);
 /// (`amount * bps / 10000`, `checked_mul` so a compromised/misconfigured USDC-like supply reverts
 /// instead of silently wrapping — RESEARCH.md A4). The integer-division remainder is added to
 /// `slices[0]` (D-10: "first active adapter"), so `Σ slices == amount` exactly.
+///
+/// S-M1: an empty `weights_bps` with a non-zero `amount` would otherwise return `Ok(vec![])`,
+/// silently dropping `amount` and breaking the `Σ slices == amount` invariant this function
+/// documents above. Both current callers already validate a non-empty weight set before reaching
+/// here (`write_weights`'s D-04 guard runs first), so this is unreachable in practice — but a
+/// silent no-op on a broken invariant is exactly the kind of defensive gap that should be a loud
+/// revert instead, should a future caller skip that validation.
 pub fn split_by_bps(amount: U256, weights_bps: &[U256]) -> Result<Vec<U256>, Vec<u8>> {
+    if weights_bps.is_empty() && !amount.is_zero() {
+        return Err(errors::allocation_invalid());
+    }
     let mut slices: Vec<U256> = Vec::with_capacity(weights_bps.len());
     let mut allocated = U256::ZERO;
     for bps in weights_bps {
@@ -183,6 +193,20 @@ mod tests {
     fn split_by_bps_single_adapter_full_amount() {
         let slices = split_by_bps(U256::from(1u64), &[U256::from(10_000u64)]).unwrap();
         assert_eq!(slices, alloc::vec![U256::from(1u64)]);
+    }
+
+    #[test]
+    fn split_by_bps_empty_weights_with_nonzero_amount_errors() {
+        // S-M1: an empty weight set must never silently drop a non-zero amount.
+        let err = split_by_bps(U256::from(100u64), &[]);
+        assert_eq!(err.unwrap_err(), errors::allocation_invalid());
+    }
+
+    #[test]
+    fn split_by_bps_empty_weights_with_zero_amount_is_ok() {
+        // Degenerate but invariant-preserving: 0 == 0, nothing to drop.
+        let slices = split_by_bps(U256::ZERO, &[]).unwrap();
+        assert!(slices.is_empty());
     }
 
     #[test]
