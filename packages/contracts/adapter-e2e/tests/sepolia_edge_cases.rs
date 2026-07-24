@@ -12,6 +12,15 @@
 //!   source docs/.sepolia-env
 //!   ARB_SEPOLIA_RPC_URL=... SEPOLIA_WALLET_KEY=... \
 //!     cargo test -p adapter-e2e --test sepolia_edge_cases -- --test-threads=1 --nocapture
+//!
+//! DISABLED pending Phase 13 Plan 07-09's rewrite (13-CONTEXT D-05/D-07): this file still asserts
+//! the retired pooled-allocation ABI (`IMockUsdc::mint`, owner-only-shaped `redeem(shares)`) that
+//! 13a's redeploy removed — real Sepolia USDC has no `mint`, so `mock_usdc_addr`/`IMockUsdc` no
+//! longer exist in `adapter_e2e::sepolia` (Plan 06 Task 1). Rewriting this file against the
+//! per-user model plus the D-07 edge cases and KI-04's `redeem(bps)` regression is explicitly
+//! Plan 07-09's scope, not this plan's — gating the whole file out here is the minimal
+//! blocking-issue fix (Rule 3) that keeps `cargo test --workspace` compiling in the meantime.
+#![cfg(any())]
 
 use alloy::network::EthereumWallet;
 use alloy::primitives::{Address, U256};

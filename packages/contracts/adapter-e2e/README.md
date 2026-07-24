@@ -22,6 +22,11 @@ D-06).** With `ARB_ONE_RPC_URL` unset they skip cleanly and cost nothing — thi
 | `FLUID_ADAPTER_ADDR` | `fluid_roundtrip.rs` | Deployed adapter instance wired to Fluid `fUSDC`. |
 | `EULER_ADAPTER_ADDR` | `euler_roundtrip.rs` | Deployed adapter instance wired to Euler `eUSDC-2`. |
 | `AAVE_ADAPTER_ADDR` | `aave_roundtrip.rs` | Deployed adapter instance wired to Stata (`stataArbUSDCn`). |
+| `ARB_SEPOLIA_RPC_URL` | any `sepolia_*` test to run at all | Arbitrum Sepolia RPC endpoint. Unset -> every Sepolia test early-returns `Ok(())` and skips. |
+| `SEPOLIA_WALLET_KEY` | every Sepolia test's tx (user A / deployer / owner) | Private key of the Sepolia deployer, funded with real Sepolia USDC + ETH gas. |
+| `SEPOLIA_WALLET_KEY_2` | `two_users_exact_payout_with_different_weights` (KI-03) | Private key of the second funded Sepolia wallet (user B). Missing -> that test skips with an explicit `eprintln!`, other Sepolia tests are unaffected. |
+| `SEPOLIA_USDC_ADDR` | every Sepolia test | Real Circle-issued Sepolia USDC (13a D-21). The asset is **not mintable** — fund via the Circle faucet (https://faucet.circle.com), never `IUsdc::mint` (it does not exist). |
+| `TESTNET_CORE_ADDR`, `TESTNET_PERIPHERY_ADDR`, `TESTNET_{MORPHO,FLUID,EULER,AAVE}_ADAPTER_ADDR`, `MOCK_{MORPHO,FLUID,EULER,AAVE}_VAULT` | every Sepolia test | The rig's addresses. All written by `scripts/deploy-testnet-mocks.sh` to `docs/.sepolia-env` — `source` it before running. |
 
 USDC and the three vault addresses are compile-time constants in `src/lib.rs`, not env vars —
 they are fixed and putting them behind env invites a typo pointing real money at the wrong

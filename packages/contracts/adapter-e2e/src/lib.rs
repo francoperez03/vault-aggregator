@@ -94,23 +94,38 @@ pub mod sepolia {
             function init(address owner) external;
             function addAdapter(address adapter) external;
             function setEnabled(address adapter, bool enabled) external;
-            function removeAdapter(address adapter) external;
             function deposit(uint256 amount) external returns (uint256);
-            function redeem(uint256 shares) external returns (uint256);
+            function depositFor(address user, uint256 amount) external returns (uint256);
+            function redeem(uint256 bps) external returns (uint256);
             function rebalance(address[] adapters, uint256[] newWeights) external;
+            function sharesOf(address user, address adapter) external view returns (uint256);
+            function weightBpsOf(address user, address adapter) external view returns (uint256);
+            function adapterTotalShares(address adapter) external view returns (uint256);
         }
 
         #[sol(rpc)]
-        interface IMockUsdc {
-            function mint(address account, uint256 value) external;
+        interface IVaultPeriphery {
+            function depositWithPermit2(uint256 amount, uint256 nonce, uint256 deadline, bytes signature) external returns (uint256);
+            function core() external view returns (address);
+            function permit2() external view returns (address);
+            function usdc() external view returns (address);
+        }
+
+        /// The asset is real Circle-issued Sepolia USDC (13a D-21), not a mock — there is no
+        /// `mint`. Funded only via the Circle faucet (https://faucet.circle.com).
+        #[sol(rpc)]
+        interface IUsdc {
             function transfer(address to, uint256 value) external returns (bool);
             function approve(address spender, uint256 value) external returns (bool);
             function balanceOf(address account) external view returns (uint256);
+            function allowance(address owner, address spender) external view returns (uint256);
         }
 
         #[sol(rpc)]
         interface IMockVault {
             function setWithdrawCap(uint256 cap) external;
+            function setDepositCreditBps(uint256 bps) external;
+            function depositCreditBps() external view returns (uint256);
             function totalAssets() external view returns (uint256);
             function totalSupply() external view returns (uint256);
             function maxWithdraw(address owner) external view returns (uint256);
@@ -121,6 +136,11 @@ pub mod sepolia {
     /// Each is a mock stand-in for the same-named real protocol on Arbitrum One.
     pub const PROTOCOLS: [&str; 4] = ["MORPHO", "FLUID", "EULER", "AAVE"];
 
+    /// `cast sig "VaultError(uint8)"` = `0xc5e49f01`. The core collapsed its 16 payload-less
+    /// errors into one coded error (Phase 13 D-18 Tier 1 trim), so a selector match alone no
+    /// longer identifies WHICH condition fired — see `assert_reverts_with_vault_error` below.
+    pub const VAULT_ERROR_SELECTOR: [u8; 4] = [0xc5, 0xe4, 0x9f, 0x01];
+
     /// Reads `ARB_SEPOLIA_RPC_URL`. `None` when unset — the caller early-returns `Ok(())`, the
     /// same env-gated skip idiom the Arbitrum One tests use, so `cargo test --workspace` stays
     /// green and touches no network for anyone who has not deployed the rig.
@@ -128,10 +148,22 @@ pub mod sepolia {
         std::env::var("ARB_SEPOLIA_RPC_URL").ok()
     }
 
-    /// Sepolia deployer/owner key. Testnet-only funds; still env-only, never a source literal.
+    /// Sepolia deployer/owner key (user A). Testnet-only funds; still env-only, never a source
+    /// literal.
     pub fn wallet_key() -> anyhow::Result<String> {
         std::env::var("SEPOLIA_WALLET_KEY")
             .map_err(|_| anyhow::anyhow!("SEPOLIA_WALLET_KEY not set"))
+    }
+
+    /// The second funded Sepolia wallet (user B), needed for KI-03's two-user exact-payout test.
+    /// `Result`, not `Option`: same convention as `wallet_key()` — past the `rpc_url()` skip
+    /// gate, a missing key is a configuration error, not a reason to skip silently. Tests that
+    /// specifically need user B still print an explicit `eprintln!` before returning early, since
+    /// "rig not deployed" and "second wallet not funded" are different setup states worth telling
+    /// apart.
+    pub fn wallet_key_b() -> anyhow::Result<String> {
+        std::env::var("SEPOLIA_WALLET_KEY_2")
+            .map_err(|_| anyhow::anyhow!("SEPOLIA_WALLET_KEY_2 not set"))
     }
 
     /// Reads and parses one address from the environment. `Result`, not `Option`: past the
@@ -144,14 +176,20 @@ pub mod sepolia {
             .map_err(|e| anyhow::anyhow!("bad {var}: {e}"))
     }
 
-    /// MockUsdc, the asset both the core and every adapter are compiled against in `testnet` builds.
-    pub fn mock_usdc_addr() -> anyhow::Result<Address> {
-        env_addr("MOCK_USDC_ADDR")
+    /// Real Circle-issued Sepolia USDC — the asset both the core and every adapter are compiled
+    /// against in `testnet` builds (13a D-21 dropped MockUsdc entirely).
+    pub fn usdc_addr() -> anyhow::Result<Address> {
+        env_addr("SEPOLIA_USDC_ADDR")
     }
 
     /// The testnet-build vault-core.
     pub fn core_addr() -> anyhow::Result<Address> {
         env_addr("TESTNET_CORE_ADDR")
+    }
+
+    /// The Permit2 intake periphery (13a).
+    pub fn periphery_addr() -> anyhow::Result<Address> {
+        env_addr("TESTNET_PERIPHERY_ADDR")
     }
 
     /// The four adapter instances, in `PROTOCOLS` order.
@@ -168,6 +206,42 @@ pub mod sepolia {
             .iter()
             .map(|p| env_addr(&format!("MOCK_{p}_VAULT")))
             .collect()
+    }
+
+    /// The core collapsed its 16 payload-less errors into `VaultError(uint8 code)` (13a Tier 1),
+    /// so a selector match alone no longer identifies WHICH condition fired. This asserts both
+    /// the selector AND the abi-decoded `uint8` code in the payload, using the table in
+    /// `vault-core/src/errors.rs`'s module doc-comment.
+    pub fn assert_reverts_with_vault_error<T>(
+        result: Result<T, alloy::contract::Error>,
+        expected_code: u8,
+        context: &str,
+    ) {
+        let err = match result {
+            Ok(_) => panic!(
+                "{context}: expected a VaultError(code={expected_code}) revert, but the call \
+                 succeeded"
+            ),
+            Err(e) => e,
+        };
+        let data = err.as_revert_data().unwrap_or_else(|| {
+            panic!(
+                "{context}: expected VaultError(code={expected_code}) but the RPC error carries \
+                 no structured revert data: {err}"
+            )
+        });
+        assert!(
+            data.starts_with(&VAULT_ERROR_SELECTOR),
+            "{context}: expected VaultError selector 0x{}, got revert data 0x{}",
+            alloy::hex::encode(VAULT_ERROR_SELECTOR),
+            alloy::hex::encode(&data)
+        );
+        // VaultError(uint8) payload: 4-byte selector + a left-padded 32-byte word holding the code.
+        let code = *data.last().unwrap_or(&0);
+        assert_eq!(
+            code, expected_code,
+            "{context}: VaultError fired with code {code}, expected {expected_code}"
+        );
     }
 }
 
