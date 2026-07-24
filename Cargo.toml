@@ -27,3 +27,7 @@ lto = true
 panic = "abort"
 codegen-units = 1
 strip = true
+# WR-04: money-path arithmetic (ledger burn/mint, owed accumulation) must revert on overflow,
+# never wrap silently. The explicit checked_* calls stay for the paths that need a typed error;
+# this is the safety net for everything else. Byte cost measured in docs/wasm-size.md.
+overflow-checks = true

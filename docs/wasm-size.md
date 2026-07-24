@@ -254,3 +254,16 @@ scope up. The D-13 STOP rule did not trigger. Headroom under the 22,528-byte gat
   memory, uint256[] memory)`, `sharesOf(address, address)`, `weightsOf(address)` are exported, and
   `setAllocation` is absent, matching the ABI `docs/TESTNET.md` records for the pending Sepolia
   redeploy.
+
+**Post-phase hardening (WR-01 + WR-04, pre-Phase-13 sweep):** 21,265 bytes, 1 fragment, +304 bytes
+vs the 12.1 final (20,961). Command: `cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"`
+(exit 0, activation fee computed). Two changes measured together:
+
+- WR-01: `remove_adapter` now guards on the core's own `adapter_total_shares` ledger instead of the
+  adapter's external `totalAssets()` — a storage read replacing a staticcall (slightly byte-negative
+  on its own).
+- WR-04: `overflow-checks = true` added to `[profile.release]` — this is where the +304 bytes come
+  from (wrap-check branches on every non-`checked_*` arithmetic site). Accepted deliberately: on a
+  custody contract, ledger burn/mint arithmetic must revert on overflow, never wrap.
+
+Headroom under the 22,528-byte gate: **1,263 bytes (~5.6%)**. The D-13 STOP rule did not trigger.

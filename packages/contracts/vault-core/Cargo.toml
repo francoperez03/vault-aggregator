@@ -15,6 +15,10 @@ crate-type = ["lib", "cdylib"]
 stylus-sdk = { version = "0.10.7", features = ["stylus-test"] }
 
 [features]
+# SECURITY (IN-04): never enable `stylus-sdk/reentrant`. The contract's reentrancy safety is
+# load-bearing on cross-contract reentrancy being impossible: `deposit` snapshots each adapter's
+# `total_assets` BEFORE any mutating call and mints against that snapshot, which a reentrant
+# callback could skew. There is no reentrancy guard because, with the feature off, none is needed.
 default = ["mini-alloc"]
 export-abi = ["stylus-sdk/export-abi"]
 debug = ["stylus-sdk/debug"]

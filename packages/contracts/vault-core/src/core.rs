@@ -113,13 +113,20 @@ impl VaultCore {
     /// `set_enabled`, this permanently drops the adapter from the registry, so a position left
     /// inside it would become permanently unreachable (D-11 only relaxed the disable guard, not
     /// this one).
+    ///
+    /// WR-01: the guard reads the core's OWN ledger (`adapter_total_shares`), not the adapter's
+    /// `totalAssets()`. A drained protocol can report 0 assets while users still hold ledger
+    /// shares; removing on that external read would strand those entries, and re-adding the same
+    /// address later would price new deposits against the stale share supply. The ledger is the
+    /// source of truth for "someone still has a position here" — and the storage read is also
+    /// cheaper than the external staticcall it replaces.
     pub fn remove_adapter(&mut self, adapter: Address) -> Result<(), Vec<u8>> {
         self.ensure_initialized()?;
         self.only_owner()?;
         let idx = registry::index_of(self, adapter).ok_or_else(errors::adapter_not_registered)?;
-        let total_assets = adapter_dispatch::total_assets(self.vm(), adapter)?;
-        if !total_assets.is_zero() {
-            return Err(errors::adapter_has_balance(total_assets));
+        let ledger_shares = self.adapter_total_shares.get(adapter);
+        if !ledger_shares.is_zero() {
+            return Err(errors::adapter_has_balance(ledger_shares));
         }
         registry::swap_remove(self, idx);
         self.adapter_enabled.setter(adapter).set(false);
@@ -665,17 +672,22 @@ mod tests {
         assert_eq!(err.unwrap_err(), errors::adapter_already_registered());
     }
 
+    /// WR-01: the guard reads the core's own ledger, not the adapter's `totalAssets()`. A drained
+    /// protocol (0 assets, live ledger shares) must still block removal — otherwise re-adding the
+    /// address later prices new deposits against the stale share supply.
     #[test]
-    fn registry_remove_reverts_with_balance() {
+    fn registry_remove_reverts_while_ledger_shares_exist() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_adapter(&vm);
 
         vm.set_sender(owner_addr());
-        mock_total_assets(&vm, adapter_addr(), U256::from(500u64));
+        // Simulate a drained protocol: the external read says empty while users hold shares.
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        contract.adapter_total_shares.setter(adapter_addr()).set(U256::from(500u64));
         let err = contract.remove_adapter(adapter_addr());
         assert_eq!(err.unwrap_err(), errors::adapter_has_balance(U256::from(500u64)));
 
-        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        contract.adapter_total_shares.setter(adapter_addr()).set(U256::ZERO);
         assert!(contract.remove_adapter(adapter_addr()).is_ok());
         assert!(!registry::is_registered(&contract, adapter_addr()));
     }
