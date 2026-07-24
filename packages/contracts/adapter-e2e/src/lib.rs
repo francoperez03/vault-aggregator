@@ -96,19 +96,30 @@ pub mod sepolia {
             // anymore (Stylus constructors are invoked once, at deployment, never via a regular
             // transaction), so no ABI stub exists for it here.
             //
-            // No `depositFor` either: `vault-periphery` (the only external caller of the
-            // permissionless deposit-on-behalf entrypoint) has been removed — Lemon cannot do
-            // Permit2 signature substitution against this contract (the same finding CoinFlip made
-            // against its own periphery), so there is no consumer left. `deposit_for` is now a
-            // private helper in `vault-core`, off the exported ABI.
+            // `depositFor` IS on the exported ABI again (Phase 14.1 D-A1): `vault-periphery` is
+            // restored as its consumer, pulling USDC via Permit2 and forwarding to this
+            // permissionless deposit-on-behalf entrypoint.
             function addAdapter(address adapter) external;
             function setEnabled(address adapter, bool enabled) external;
             function deposit(uint256 amount) external returns (uint256);
+            function depositFor(address user, uint256 amount) external returns (uint256);
             function redeem(uint256 bps) external returns (uint256);
             function rebalance(address[] adapters, uint256[] newWeights) external;
             function sharesOf(address user, address adapter) external view returns (uint256);
             function weightBpsOf(address user, address adapter) external view returns (uint256);
             function adapterTotalShares(address adapter) external view returns (uint256);
+        }
+
+        /// Permit2 intake front-door for Lemon deposits (Phase 14.1 D-A1), restored after having
+        /// been deleted in Phase 13 on the mistaken belief that Lemon could not perform any
+        /// Permit2 signature substitution. `depositWithPermit` pulls USDC via Permit2
+        /// `SignatureTransfer`, then forwards to `IVaultCore::depositFor`.
+        #[sol(rpc)]
+        interface IVaultPeriphery {
+            function depositWithPermit(uint256 amount, uint256 nonce, uint256 deadline, bytes signature) external returns (uint256);
+            function core() external view returns (address);
+            function permit2() external view returns (address);
+            function usdc() external view returns (address);
         }
 
         /// The asset is real Circle-issued Sepolia USDC (13a D-21), not a mock — there is no
@@ -186,6 +197,11 @@ pub mod sepolia {
     /// The testnet-build vault-core.
     pub fn core_addr() -> anyhow::Result<Address> {
         env_addr("TESTNET_CORE_ADDR")
+    }
+
+    /// The restored vault-periphery (Phase 14.1 D-A1), wired to `core_addr()` at deploy time.
+    pub fn periphery_addr() -> anyhow::Result<Address> {
+        env_addr("TESTNET_PERIPHERY_ADDR")
     }
 
     /// The four adapter instances, in `PROTOCOLS` order.
