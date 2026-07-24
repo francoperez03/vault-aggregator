@@ -6,6 +6,7 @@ import type { LemonTxOutcome } from '@/lib/lemon/bridge';
 
 const CORE_ADDRESS = '0x1234567890123456789012345678901234567890';
 const USDC_ADDRESS = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+const PERIPHERY_ADDRESS = '0x5555555555555555555555555555555555555e5e';
 const MORPHO_ADDRESS = '0x1111111111111111111111111111111111111a1a';
 const FLUID_ADDRESS = '0x2222222222222222222222222222222222222b2b';
 const EULER_ADDRESS = '0x3333333333333333333333333333333333333c3c';
@@ -15,6 +16,7 @@ const USER_ADDRESS = '0x9999999999999999999999999999999999999999';
 function stubEnv() {
   vi.stubEnv('NEXT_PUBLIC_CORE_ADDRESS', CORE_ADDRESS);
   vi.stubEnv('NEXT_PUBLIC_USDC_ADDRESS', USDC_ADDRESS);
+  vi.stubEnv('NEXT_PUBLIC_PERIPHERY_ADDRESS', PERIPHERY_ADDRESS);
   vi.stubEnv('NEXT_PUBLIC_MORPHO_ADAPTER_ADDRESS', MORPHO_ADDRESS);
   vi.stubEnv('NEXT_PUBLIC_FLUID_ADAPTER_ADDRESS', FLUID_ADDRESS);
   vi.stubEnv('NEXT_PUBLIC_EULER_ADAPTER_ADDRESS', EULER_ADDRESS);
@@ -118,7 +120,7 @@ describe('useVaultWrite.deposit', () => {
     expect(writeContractAsyncMock).toHaveBeenCalledTimes(1);
   });
 
-  it('lemon: batchea [approve, deposit] en un solo callSmartContract, monto exacto', async () => {
+  it('lemon: manda un solo callSmartContract a periphery.depositWithPermit con permits[], monto exacto', async () => {
     stubEnv();
     isLemonWebViewMock.mockReturnValue(true);
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
@@ -128,13 +130,41 @@ describe('useVaultWrite.deposit', () => {
     const phase = await result.current.deposit(500n);
 
     expect(phase).toEqual({ kind: 'success' });
-    expect(callSmartContractMock).toHaveBeenCalledWith({
-      contracts: [
-        { address: USDC_ADDRESS, functionName: 'approve', functionParams: [CORE_ADDRESS, 500n] },
-        { address: CORE_ADDRESS, functionName: 'deposit', functionParams: [500n] },
-      ],
-    });
+    expect(callSmartContractMock).toHaveBeenCalledTimes(1);
+    const request = callSmartContractMock.mock.calls[0][0];
+    expect(request.contracts).toHaveLength(1);
+    const call = request.contracts[0];
+    expect(call.address).toBe(PERIPHERY_ADDRESS);
+    expect(call.functionName).toBe('depositWithPermit');
+    expect(call.functionParams[0]).toBe(500n);
+    const [, nonce, deadline, placeholder] = call.functionParams;
+    expect(placeholder).toBe('PERMIT_PLACEHOLDER_0');
+    expect(call.permits).toHaveLength(1);
+    const permit = call.permits[0];
+    expect(permit.owner).toBe(USER_ADDRESS);
+    expect(permit.token).toBe(USDC_ADDRESS);
+    expect(permit.spender).toBe(PERIPHERY_ADDRESS);
+    expect(permit.amount).toBe('500');
+    expect(permit.amount).not.toBe(
+      '115792089237316195423570985008687907853269984665640564039457584007913129639935',
+    );
+    // identical nonce/deadline in both places (T-14.1-10)
+    expect(permit.nonce).toBe(nonce.toString());
+    expect(permit.deadline).toBe(deadline.toString());
     expect(writeContractAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it('lemon: sin periphery configurada -> NOT_CONFIGURED, no dispara callSmartContract', async () => {
+    stubEnv();
+    vi.stubEnv('NEXT_PUBLIC_PERIPHERY_ADDRESS', '');
+    isLemonWebViewMock.mockReturnValue(true);
+    useAccountMock.mockReturnValue({ address: USER_ADDRESS });
+
+    const { result } = renderHook(() => useVaultWrite());
+    const phase = await result.current.deposit(500n);
+
+    expect(phase.kind).toBe('reverted');
+    expect(callSmartContractMock).not.toHaveBeenCalled();
   });
 });
 

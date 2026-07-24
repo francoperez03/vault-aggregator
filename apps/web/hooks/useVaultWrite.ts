@@ -6,7 +6,7 @@ import { useAccount, useWriteContract } from 'wagmi';
 import { waitForTransactionReceipt } from 'wagmi/actions';
 import { coreAbi } from '@/lib/contracts/coreAbi';
 import { usdcAbi } from '@/lib/contracts/usdcAbi';
-import { getAdapterAddresses, getCoreAddress, getUsdcAddress } from '@/lib/contracts/config';
+import { getAdapterAddresses, getCoreAddress, getPeripheryAddress, getUsdcAddress } from '@/lib/contracts/config';
 import { toContractWeights, type AllocationBps } from '@/lib/vault/weights';
 import { wagmiConfig } from '@/lib/wagmi/config';
 import { getLemonBridge, isLemonWebView, type LemonTxOutcome } from '@/lib/lemon/bridge';
@@ -55,15 +55,19 @@ const NOT_CONFIGURED: TxPhase = { kind: 'reverted', reason: 'La wallet o el cont
 
 /**
  * Dual-runtime write hook (D-11): browser fires `approve` then `deposit` as two explicit
- * `writeContractAsync` calls, each awaiting its own receipt; Lemon submits the same two calls as
- * one `callSmartContract` batch. The approve amount is always exact, never a lifetime/infinite
- * allowance, never a spender other than the core (D-09). `rebalance`/`redeem` never approve —
- * they move no new USDC.
+ * `writeContractAsync` calls, each awaiting its own receipt, spender == core. Lemon instead
+ * routes through `vault-periphery.depositWithPermit` with a Permit2 `permits[]` entry in a single
+ * `callSmartContract` — a Lemon smart-account wallet cannot sign a plain ERC-20 `approve` inside a
+ * batch (D-A2), so Permit2's off-chain signature replaces the on-chain approve step. The permit
+ * amount is always exact, never a lifetime/infinite allowance, and its spender is always the
+ * periphery, never the core (D-09/D-A2). `rebalance`/`redeem` never approve — they move no new
+ * USDC.
  */
 export function useVaultWrite(): UseVaultWriteResult {
   const { address } = useAccount();
   const coreAddress = getCoreAddress();
   const usdcAddress = getUsdcAddress();
+  const peripheryAddress = getPeripheryAddress();
   const adapterAddresses = getAdapterAddresses();
   const { writeContractAsync } = useWriteContract();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -85,10 +89,30 @@ export function useVaultWrite(): UseVaultWriteResult {
       setIsSubmitting(true);
       try {
         if (isLemonWebView()) {
+          if (!peripheryAddress) return NOT_CONFIGURED;
+
+          // Nonce and deadline computed ONCE, passed identically to functionParams and permits[]
+          // (Pitfall 4/T-14.1-10) — a mismatch there breaks Permit2's signed-struct reconstruction.
+          const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
+          const deadline = nowSeconds + BigInt(9);
+          const nonce = BigInt(Date.now());
           const outcome = await getLemonBridge().callSmartContract({
             contracts: [
-              { address: usdcAddress, functionName: 'approve', functionParams: [coreAddress, amount] },
-              { address: coreAddress, functionName: 'deposit', functionParams: [amount] },
+              {
+                address: peripheryAddress,
+                functionName: 'depositWithPermit',
+                functionParams: [amount, nonce, deadline, 'PERMIT_PLACEHOLDER_0'],
+                permits: [
+                  {
+                    owner: address,
+                    token: usdcAddress,
+                    spender: peripheryAddress, // MUST equal contractAddress (T-14.1-11)
+                    amount: amount.toString(), // exact amount, never an unbounded/infinite value (T-14.1-11)
+                    deadline: deadline.toString(),
+                    nonce: nonce.toString(),
+                  },
+                ],
+              },
             ],
           });
           return toTxPhase(outcome);
@@ -121,7 +145,7 @@ export function useVaultWrite(): UseVaultWriteResult {
         invalidate();
       }
     },
-    [address, coreAddress, usdcAddress, writeContractAsync, invalidate],
+    [address, coreAddress, usdcAddress, peripheryAddress, writeContractAsync, invalidate],
   );
 
   const rebalance = useCallback(
