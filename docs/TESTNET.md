@@ -55,8 +55,14 @@ per-user-per-adapter share ledger — so:
 ### The 12.1 ABI the redeploy must expose
 
 The core `0x27a7beb767996da72b8e93088fd7affe30a7dadf` listed below is **SUPERSEDED** — it exports
-the old pooled-allocation ABI, not this one. Whichever redeploy replaces it (12.1 close-out or
-carried into Phase 13, per the Plan 04 checkpoint decision) must expose:
+the old pooled-allocation ABI, not this one.
+
+**Redeploy decision (Plan 04 checkpoint, 2026-07-24): DEFERRED TO PHASE 13.** The redeploy of the
+Sepolia rig (core + 4 mocks) against the ABI below is explicitly NOT part of 12.1's close-out. It
+is Phase 13's responsibility, alongside rewriting `sepolia_core_flow`/`sepolia_edge_cases` (which
+still assert the old pooled model) and KI-03's exact-payout gap.
+
+Whichever redeploy replaces it must expose:
 
 - `deposit(uint256)` — splits across the CALLER's own stored weights, reverts `NoWeightsSet` with none
 - `redeem(uint256)` — bps of the caller's OWN position (**bps, not shares** — the old `redeem(shares)` is gone)
