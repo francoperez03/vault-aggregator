@@ -1,8 +1,9 @@
 # Testnet mock rig (Arbitrum Sepolia)
 
-A disposable rig that runs the **real** `vault-core` and **real** `vault-adapter` against four
-**mock** ERC-4626 vaults and a mock USDC, so the core's plumbing can be exercised on-chain with
-controllable state and zero real money.
+A disposable rig that runs the **real** `vault-core`, **real** `vault-adapter` and **real**
+`vault-periphery` against four **mock** ERC-4626 vaults and the **real** Arbitrum Sepolia USDC, so
+the core's plumbing (including the Permit2 intake path) can be exercised on-chain with
+controllable adapter state.
 
 Deployed by [`scripts/deploy-testnet-mocks.sh`](../scripts/deploy-testnet-mocks.sh); addresses land
 in `docs/.sepolia-env`. The mainnet rig ([RUNBOOK-M2.md](./RUNBOOK-M2.md)) is untouched by any of
@@ -33,58 +34,67 @@ by construction — no Fluid throttle, no Aave Stata wrapping/rebasing, no Morph
 A green Sepolia run says nothing about whether an adapter handles the real thing. **These tests
 never substitute for the Arbitrum One round-trips.**
 
-## ⚠️ Status: superseded by Phase 12.1
+## Deployed rig (Arbitrum Sepolia, 2026-07-24)
 
-The rig below is **deployed and green** (5/5 e2e on Arbitrum Sepolia, 2026-07-23). But Phase 12.1
-replaces the core's accounting model — global pooled allocation becomes per-user weights plus a
-per-user-per-adapter share ledger — so:
-
-- **The two e2e test files assert the OLD model and must be rewritten in 12.1.**
-  `sepolia_core_flow` drives an owner-only `rebalance(adapters, weights)` over a global 25/25/25/25
-  split; `sepolia_edge_cases`'s redeem test depends on `split_by_position` over the shared pool.
-  Both concepts disappear. Their *green run recorded here* is evidence about the pooled model, not
-  about whatever 12.1 ships.
-- **`vault-core` and all four adapters must be redeployed** for 12.1. The core changes bytecode;
-  the adapters' `init(vault, core)` is one-shot with no setter (D-01), so they cannot be re-pointed
-  at a new core.
-- **MockUsdc and the four MockVaults survive untouched** — they are model-agnostic, and so are the
-  `testnet` feature, `scripts/deploy-testnet-mocks.sh` and the `sepolia` module's helpers. Re-running
-  the deploy script with only `MOCK_USDC_ADDR` + the four `MOCK_*_VAULT` lines kept in
-  `docs/.sepolia-env` redeploys just the core and adapters.
-
-### The 12.1 ABI the redeploy must expose
-
-The core `0x27a7beb767996da72b8e93088fd7affe30a7dadf` listed below is **SUPERSEDED** — it exports
-the old pooled-allocation ABI, not this one.
-
-**Redeploy decision (Plan 04 checkpoint, 2026-07-24): DEFERRED TO PHASE 13.** The redeploy of the
-Sepolia rig (core + 4 mocks) against the ABI below is explicitly NOT part of 12.1's close-out. It
-is Phase 13's responsibility, alongside rewriting `sepolia_core_flow`/`sepolia_edge_cases` (which
-still assert the old pooled model) and KI-03's exact-payout gap.
-
-Whichever redeploy replaces it must expose:
-
-- `deposit(uint256)` — splits across the CALLER's own stored weights, reverts `NoWeightsSet` with none
-- `redeem(uint256)` — bps of the caller's OWN position (**bps, not shares** — the old `redeem(shares)` is gone)
-- `rebalance(address[],uint256[])` — **user-callable** (no longer owner-only): validates + writes the
-  caller's new weights, unwinds their OWN position, re-splits the measured proceeds
-- `sharesOf(address,address)` — `(user, adapter)` -> the caller's shares in that adapter
-- `weightsOf(address)` — `(user)` -> `(address[] targets, uint256[] bps)`, the caller's stored weights
-
-**`setAllocation` no longer exists** — there is no owner-level allocation left to set. A brand-new
-user's bootstrap flow is `rebalance(adapters, bps)` (with a zero position, this only writes
-weights) **then** `deposit(amount)` — not a single combined call.
-
-Everything below describes the rig as built. Treat the addresses as current and the test
-descriptions as pending a 12.1 rewrite.
-
-## Deployed rig (Arbitrum Sepolia, 2026-07-23)
-
-Deployer/owner: `0xD245710638f66A16386df955D45e65d13B0C0E3e` (the M1 Sepolia wallet).
+Redeployed by Phase 13 Plan 05 against real Arbitrum Sepolia USDC and the frozen 13a ABI (Permit2
+periphery, `depositFor`, `adapterTotalShares`, `weightBpsOf`, `removeAdapter` gone). Deployer/owner:
+`0xD245710638f66A16386df955D45e65d13B0C0E3e` (the M1 Sepolia wallet, key `~/.wakeup-sepolia.key`).
 
 | Role | Address |
 |---|---|
-| MockUsdc | `0xe26bd9f1f02e468093e1287f418bb79749a6ac92` |
+| USDC (real, Circle-issued, faucet-fundable) | `0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d` |
+| Permit2 (canonical, identical on One and Sepolia) | `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
+| vault-core (`--features testnet`) | `0x159b8f77ec3cc5a9a0fc5df25e9ae2f1b184d2ad` |
+| vault-periphery | `0x31ecfa1cc28d479a3123f1290625d0046c198c76` |
+| MockVault — Morpho slot | `0x3a6a3ca3b1571bfb6835c6b4df1cfffd64a5c58f` |
+| MockVault — Fluid slot | `0x5279d9b41a548874951b369e8aa3cea0c6bf486e` |
+| MockVault — Euler slot | `0xe9b9b2709262745454993b4ecf219d7870391211` |
+| MockVault — Aave slot | `0xacb179937adb75bb0c821900e24b059715619d11` |
+| Adapter — Morpho slot | `0xc2a6616ae58b3be6793d31c84b6134dc57bfa9a4` |
+| Adapter — Fluid slot | `0x1a659df84d6ef1549178d63eafb9b7e5221d901b` |
+| Adapter — Euler slot | `0x104066f5376c43cb4b67ffa67b580b6b4a9bada1` |
+| Adapter — Aave slot | `0x9a871c7713f28c0a3b8218e8548ff449a3c5cf3b` |
+
+All ten new contracts, plus `addAdapter` ×4 and the bootstrap 25/25/25/25 `rebalance`, deployed
+cleanly in one pass. Total redeploy + ABI verification + smoke-deposit cost: **~0.0014 Sepolia
+ETH**.
+
+### ABI as deployed
+
+Verified on-chain immediately after the redeploy (this is what F14 D-05 re-checks):
+
+- `cast call $TESTNET_CORE_ADDR "adapterTotalShares(address)(uint256)" $TESTNET_MORPHO_ADAPTER_ADDR`
+  → `0` pre-deposit, `250000000000` after the smoke deposit below.
+- `cast call $TESTNET_CORE_ADDR "weightBpsOf(address,address)(uint256)" $DEPLOYER $TESTNET_MORPHO_ADAPTER_ADDR`
+  → `2500` (the bootstrap 25% weight).
+- `cast call $TESTNET_PERIPHERY_ADDR "core()(address)"` → `$TESTNET_CORE_ADDR`.
+- `cast call $TESTNET_PERIPHERY_ADDR "usdc()(address)"` → the real USDC address above.
+- `cast call $TESTNET_CORE_ADDR "removeAdapter(address)" <adapter>` → **reverts** (`0x` data, no
+  such selector). `removeAdapter` and `weightsOf` are gone from this ABI; use `setEnabled` and
+  `weightBpsOf` instead.
+
+**Smoke deposit (2026-07-24):** 1 USDC (`1000000` units) approved and deposited with an explicit
+`--gas-limit 15000000` (`eth_estimateGas` under-reports Stylus calls, see
+[RUNBOOK-M2.md](./RUNBOOK-M2.md)). Status 1, split evenly across all four adapters —
+`adapterTotalShares` and the deployer's `sharesOf` both read `250000000000` per adapter afterward
+(shares carry more decimals than the 6-decimal USDC amount by design; the split itself is exact
+25/25/25/25).
+
+The core exposes, and this redeploy verified: `deposit(uint256)`, `depositFor(address,uint256)`,
+`redeem(uint256 bps)`, `rebalance(address[],uint256[])`, `sharesOf(address,address)`,
+`weightBpsOf(address,address)`, `adapterTotalShares(address)`, `addAdapter(address)`,
+`setEnabled(address,bool)`, `init(address)`.
+
+## Retired rig (superseded 2026-07-24)
+
+The Phase 12.1-era rig below exported the old pooled-allocation ABI (`redeem(shares)`,
+`weightsOf(address)`, owner-only `rebalance`) and used MockUsdc as its asset. It cannot be
+re-pointed at the new core: each adapter's `init(vault, core)` is one-shot with no setter (F9 D-01),
+and MockUsdc has no role in the 13a rig at all.
+
+| Role | Address |
+|---|---|
+| MockUsdc (retired, no longer referenced anywhere) | `0xe26bd9f1f02e468093e1287f418bb79749a6ac92` |
 | vault-core (`--features testnet`) | `0x27a7beb767996da72b8e93088fd7affe30a7dadf` |
 | MockVault — Morpho slot | `0x4271b6b81fa0c12908d2240438eca2c95dfeba21` |
 | MockVault — Fluid slot | `0xc7b2d9dedcc02c61fbe74fd09e0b7a9bf00ef1c7` |
@@ -95,34 +105,18 @@ Deployer/owner: `0xD245710638f66A16386df955D45e65d13B0C0E3e` (the M1 Sepolia wal
 | Adapter — Euler slot | `0x9e56af544590f1b5b67d53ce23e3079089ab336c` |
 | Adapter — Aave slot | `0x56e17eca6e0f21a8aa19b7a4ddc4eea111291cdc` |
 
-Total deploy + full test-suite cost: **~0.0016 Sepolia ETH**.
-
-### First on-chain run (2026-07-23) — 5/5 green
-
-This is the first time `vault-core` executed anywhere outside TestVM.
-
-- `core_deposit_rebalance_redeem_flow` — $100 deposited and split four ways, rebalanced to
-  40/30/20/10, fully redeemed for **exactly 100,000,000 units back, zero rounding loss**.
-- `withdraw_cap_propagates_to_adapter_max_withdraw` — vault throttle visible through the adapter.
-- `throttled_adapter_reverts_whole_redeem_and_burns_nothing` — **D-06/D-10 whole-tx atomicity proven
-  on-chain**: one fully throttled leg reverts the entire redeem, and the identical redeem succeeds
-  once the throttle clears, so the failed attempt burned nothing. This property survives the Phase
-  12.1 per-user rewrite (`unwind_position` accumulates `owed_total` before the throttle skip, see
-  KI-02), but the run above predates it and used the F12 `redeem(uint256 shares)` ABI. It is the
-  CR-01 regression gate and MUST be re-run against `redeem(uint256 bps)` on the redeployed rig —
-  KI-04 in `known-issues.md` records why no TestVM test can stand in for it.
-- `donation_inflates_pool_without_breaking_deposits` — the virtual-offset defence holds against a
-  real on-chain donation.
-- `zero_amount_deposit_reverts` — `ZeroAmount` guard.
-
-One transient `error: tx failed to complete` hit the first deploy run mid-way. An unchanged re-run
-completed cleanly, which is exactly what the env-file resume exists for — no contract was
-redeployed and nothing was lost.
+Its 5/5 green e2e run (2026-07-23, `core_deposit_rebalance_redeem_flow`,
+`withdraw_cap_propagates_to_adapter_max_withdraw`,
+`throttled_adapter_reverts_whole_redeem_and_burns_nothing`,
+`donation_inflates_pool_without_breaking_deposits`, `zero_amount_deposit_reverts`) is evidence
+about the pooled model only — it predates the per-user rewrite and the `redeem(uint256 bps)` ABI,
+and does not stand in for 13b's rewritten `sepolia_core_flow`/`sepolia_edge_cases`.
 
 ## Mainnet ↔ testnet mapping
 
-Native USDC on Arbitrum One is `0xaf88d065e77c8cC2239327C5EDb3A432268e5831`; on Sepolia its
-stand-in is the deployed `MockUsdc` (`MOCK_USDC_ADDR` in `docs/.sepolia-env`).
+Native USDC on Arbitrum One is `0xaf88d065e77c8cC2239327C5EDb3A432268e5831`; on Sepolia the rig uses
+the real Circle-issued USDC at `0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d`
+(`SEPOLIA_USDC_ADDR` in `docs/.sepolia-env`) — not a mock.
 
 | Protocol | Arbitrum One vault | Arbitrum One adapter | Sepolia stand-ins |
 |---|---|---|---|
@@ -140,8 +134,11 @@ Sepolia reuses the M1 deployer `0xD245710638f66A16386df955D45e65d13B0C0E3e`
 
 ## Contracts
 
-- **`mock-usdc`** — 6-decimal ERC-20, `mint` deliberately unauthenticated so tests can size
-  positions freely.
+- **`vault-periphery`** — Permit2 intake front-door. Immutable constructor `(core, permit2, usdc)`;
+  `depositWithPermit2` pulls USDC via a Permit2 `SignatureTransfer` then calls `core.depositFor`,
+  crediting the signer, not the periphery (D-19: the core pulls the exact amount it measures via
+  `transferFrom`, so a compromised periphery cannot mint unbacked shares). No privileged role on the
+  core — `depositFor` stays permissionless.
 - **`mock-vault`** — ERC-4626 implementing exactly the surface the adapter calls
   (`deposit`/`withdraw`/`redeem`/`convertToAssets`/`convertToShares`/`maxWithdraw`/`maxRedeem`/
   `asset`/`totalAssets`/`balanceOf`). `totalAssets` reads the vault's real asset balance, so a
@@ -153,47 +150,30 @@ Sepolia reuses the M1 deployer `0xD245710638f66A16386df955D45e65d13B0C0E3e`
 ## The `testnet` feature
 
 `vault-adapter` and `vault-core` both carry USDC as a **compile-time constant**, so pointing them
-at MockUsdc is a build variant, not an env var:
+at real Sepolia USDC is a build variant, not an env var:
 
 ```rust
 #[cfg(not(feature = "testnet"))]
 const USDC: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
 #[cfg(feature = "testnet")]
-const USDC: Address = address!("…MockUsdc…");
+const USDC: Address = address!("75faf114eafb1BDbe2F0316DF893fd58CE46AA4d");
 ```
 
-**A `--features testnet` artifact must never be deployed to mainnet.** The deploy script greps
-both constants against the deployed MockUsdc and refuses to build if they diverge.
+**A `--features testnet` artifact must never be deployed to mainnet** — its USDC constant points at
+a Sepolia-only token, so it would be inert on Arbitrum One even if deployed there by mistake. The
+deploy script greps both constants against the real Sepolia USDC address and refuses to build if
+they diverge (`check_const` in `scripts/deploy-testnet-mocks.sh`).
 
-The feature is default-off, so the mainnet build is unaffected. Measured under the real deploy
-lever (`-Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort`, the flags
-cargo-stylus injects):
+The feature is default-off, so the mainnet build is unaffected.
 
-| Crate | Result |
-|---|---|
-| `vault-adapter` | byte-identical to before the cfg split |
-| `vault-core` | same uncompressed size (78,900 bytes), exactly 2 bytes differ |
-
-Those two bytes are embedded panic **line numbers**, each shifted by exactly +8 — the number of
-lines the cfg block adds above the rest of the file (217→225, 222→230). No code, size, or
-behaviour change; reproduce with `cmp -l` on the two artifacts. Compressed, that costs 19 bytes
-(brotli packs the changed bytes slightly differently): `cargo stylus check` reports 21,142 for the
-pre-branch source and 21,161 now, both far under the 22,528-byte Arbitrum One gate.
-
-Nothing on mainnet depends on the core's bytes today: there is no `vault-core` deployed anywhere
-but this Sepolia rig.
-
-### Sizes (`cargo stylus check`, compressed)
+### Sizes (`cargo stylus check --endpoint arb1`, compressed)
 
 | Contract | Size | Headroom vs 22,528 gate |
 |---|---|---|
-| `mock-usdc` | 7,657 | 66% |
-| `mock-vault` | 13,504 | 40% |
-| `vault-adapter --features testnet` | 9,144 | 59% |
-| `vault-core --features testnet` | 21,133 | 6.2% |
-| `vault-core` (default/mainnet) | 21,161 | 6.1% |
-
-This is why deploying is a two-step bootstrap: MockUsdc must exist before the constant can name it.
+| `mock-vault` | 13,932 | 38% |
+| `vault-adapter --features testnet` | 9,281 | 59% |
+| `vault-core --features testnet` | 20,480 | 9.1% |
+| `vault-periphery` | 10,252 | 55% (independent 22,528-byte gate, see `docs/wasm-size.md`) |
 
 ## Deploy
 
@@ -202,10 +182,12 @@ export ARB_SEPOLIA_RPC_URL=https://sepolia-rollup.arbitrum.io/rpc
 ./scripts/deploy-testnet-mocks.sh
 ```
 
-First run deploys MockUsdc and stops, telling you to paste its address into the two `testnet`
-constants. Do that, re-run, and it continues: four MockVaults, the core, four adapters, wiring,
-`addAdapter` ×4, a 25/25/25/25 bootstrap allocation, and a 1,000 mUSDC mint. Every step records to
-`docs/.sepolia-env` and is skipped on re-run, so a failure mid-way resumes instead of redeploying.
+USDC is a known constant, so there is no bootstrap step for it: the preflight checks the deployer
+holds enough real Sepolia USDC (fund via the Circle faucet, https://faucet.circle.com, if not) and
+then deploys straight through — four MockVaults, `vault-core`, `vault-periphery`, four
+`vault-adapter`s, wiring, `addAdapter` ×4, and a 25/25/25/25 bootstrap allocation. Every step
+records to `docs/.sepolia-env` and is skipped on re-run, so a failure mid-way resumes instead of
+redeploying.
 
 ## Run the tests
 
@@ -216,13 +198,12 @@ ARB_SEPOLIA_RPC_URL=$ARB_SEPOLIA_RPC_URL SEPOLIA_WALLET_KEY=$(cat ~/.wakeup-sepo
   -- --test-threads=1 --nocapture
 ```
 
-`--test-threads=1` is required: the tests mutate shared on-chain state (allocations, withdraw
-caps). With `ARB_SEPOLIA_RPC_URL` unset every test skips cleanly, which is what keeps
-`cargo test --workspace` green and free.
+**`sepolia_core_flow` and `sepolia_edge_cases` still assert the retired pooled-allocation ABI**
+(owner-only `rebalance`, `redeem(shares)`, `split_by_position`) and will fail against this rig as
+written. Their rewrite against the per-user model, plus the KI-03 exact-payout and KI-04
+`redeem(bps)` regression tests, is Phase 13 Plan 06's job — this plan's scope is the redeploy and
+the ABI verification/smoke deposit recorded above, not the e2e suite itself.
 
-- **`sepolia_core_flow`** — sets a 25/25/25/25 allocation, deposits, asserts the four-way split,
-  rebalances to 40/30/20/10, asserts the re-split proportions, redeems, asserts the payout, and
-  restores the canonical allocation. Self-contained and re-runnable.
-- **`sepolia_edge_cases`** — cap propagation to `maxWithdraw`; a fully throttled leg reverting the
-  whole redeem while burning no shares; a donation inflating the pool without zeroing subsequent
-  deposits; `deposit(0)` reverting `ZeroAmount`. Caps are always restored.
+`--test-threads=1` will be required once rewritten: the tests mutate shared on-chain state. With
+`ARB_SEPOLIA_RPC_URL` unset every test skips cleanly, which is what keeps `cargo test --workspace`
+green and free.
