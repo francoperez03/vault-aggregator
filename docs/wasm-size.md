@@ -267,3 +267,60 @@ vs the 12.1 final (20,961). Command: `cargo stylus check --endpoint="https://arb
   custody contract, ledger burn/mint arithmetic must revert on overflow, never wrap.
 
 Headroom under the 22,528-byte gate: **1,263 bytes (~5.6%)**. The D-13 STOP rule did not trigger.
+
+---
+
+## Phase 13 D-18 spike — does a Permit2 intake fit in `vault-core`? (throwaway, 2026-07-24)
+
+Measured from `packages/contracts/vault-core` with
+`cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"`, every step exit 0 with an
+activation fee computed (i.e. 1 fragment, activates on Arbitrum One). **The code measured here was
+discarded — only this table survives.** Purpose: decide Permit2's topology for Phase 13a before
+planning it.
+
+| # | State | Compressed | Delta | Headroom (22,528) |
+|---|-------|-----------|-------|--------------------|
+| M0 | Baseline at `625a3cb` (post WR-01 + WR-04) | 21,205 B | — | 1,323 B |
+| M1 | + Tier 1 trim | 20,649 B | −556 B | 1,879 B |
+| M2 | + Tier 2 trim, **including the mandatory `adapterTotalShares` getter** | 19,904 B | −745 B | 2,624 B |
+| M3 | + minimal Permit2 `SignatureTransfer` intake | 22,475 B | **+2,571 B** | **53 B** |
+
+**Note on M0:** the 12.1 record says 21,265 B; this run measured 21,205 B on the same commit with
+no source change. The 60-byte gap is inside the documented ~100–150 B brotli non-determinism band.
+
+**Tier 1** (accessory, costs nothing that matters):
+- 16 payload-less typed errors collapsed into one `VaultError(uint8 code)`; `AdapterHasBalance` and
+  `RedeemShortfall` stay typed because they carry diagnostic payload.
+- Dropped the `Initialized`, `AdapterAdded`, `AdapterEnabled`, `AdapterRemoved` events. `Deposit`,
+  `Redeem` and `Rebalanced` survive — they are the user's movement history.
+
+**Tier 2** (real cost, small):
+- Dropped `remove_adapter`. `set_enabled(false)` covers the operational case (D-11 guarantees exits
+  always work), and deleting the function also deletes the WR-01 finding rather than mitigating it.
+- Replaced `weightsOf(user) -> (address[], uint256[])` with the scalar
+  `weightBpsOf(user, adapter) -> uint256`. F14 D-23 already sources the adapter list from env vars
+  and F14 D-25 batches reads through multicall, so two dynamic arrays buy nothing over four scalar
+  reads — and dynamic-tuple ABI encoding is not cheap.
+
+**Permit2 intake as measured (M3):** bare `sol!` `permitTransferFrom` binding (nested-struct params
+make `sol_interface!` compute a wrong selector — ADR-001 prohibition, proven in
+`coinflip-periphery/src/permit2.rs`), the canonical Permit2 address constant, one `pull_tokens`
+dispatch helper, a public `depositWithPermit2(amount, nonce, deadline, signature)`, and a shared
+internal `split_and_mint` so the accounting is not duplicated between the two deposit entrypoints.
+The AllowanceTransfer half of CoinFlip's module is excluded (the vault has no weekly-permit path).
+This is the floor, not a first draft to be optimised further.
+
+### Verdict
+
+**Permit2 does NOT fit in-core.** Two independent reasons:
+
+1. **Without the trims it is not close.** Permit2 costs +2,571 B against 1,323 B of headroom at M0 —
+   it overshoots the gate by ~1,248 B. The trims are load-bearing, not optional.
+2. **With both trims it "fits" by 53 bytes, which is not a fit.** The documented brotli
+   non-determinism band is ~100–150 B, so 53 B of headroom is smaller than the measurement's own
+   noise. The same source could measure over the gate on the next build. It also leaves zero budget
+   for Phase 13's remaining work (the WR-02 cheap guard) and for anything F15 needs.
+
+**Therefore: Plan B (separate periphery) is the design for 13a**, and the trims are worth keeping on
+their own merits — Tier 1 is free, and together they buy back 1,301 B in the core regardless of
+where Permit2 ends up.
