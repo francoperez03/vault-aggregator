@@ -6,6 +6,7 @@ import { ArrowDownCircle, ArrowUpCircle, RefreshCw, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isMisconfigured } from '@/lib/contracts/mode'
 import { ConfigErrorBanner } from '@/components/config-error-banner'
+import { FaultInjectionPanel } from '@/components/vault-aggregator/fault-injection-panel'
 
 const NAV_ITEMS = [
   { href: '/', label: 'Posición', icon: Wallet },
@@ -47,6 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
       )}
+      <FaultInjectionPanel />
     </div>
   )
 }
