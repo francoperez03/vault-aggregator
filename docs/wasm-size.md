@@ -182,6 +182,7 @@ measured size, the fragment count and D-14's ordered plan B, and waits for a dec
 | 02-02 | weights validator tests (test-only) | 21,674 | 1 | -8 |
 | 03-01 | per-user deposit/redeem/rebalance + unwind_position + deposit_leg; deleted set_allocation, AllocationSet, active_adapters, split_by_position, InsufficientShares, adapter_bps, flat shares, scalar total_shares | 20,960 | 1 | -714 |
 | 03-02 | rewritten legacy tests (test-only) | 21,036 | 1 | +76 |
+| 04-01 | mandatory security tests (test-only) | 20,997 | 1 | -39 |
 
 **Layout verdict (Assumption A1 → measured):** Option A costs +806 bytes on top of the 12.1
 baseline, including the throwaway probe function. Remaining headroom for the rest of the phase:
@@ -223,3 +224,10 @@ compiled into the release WASM, so this is not a real size change). Headroom sta
 846 bytes Plan 02 left for this plan, because the deletions in Task 03-01 (`set_allocation`,
 `AllocationSet`, `active_adapters`, `split_by_position`, `InsufficientShares`, three storage
 fields) outweighed the additions (`unwind_position`, `deposit_leg`, the rewritten public methods).
+
+**Task 04-01 (the five mandatory security/D-11/D-12 tests, plus the `deposit_without_weights_...`
+extension):** 20,997 bytes, -39 bytes vs Task 03-02 (21,036) — inside the same documented brotli
+non-determinism noise band, exactly as expected: every line added in this task lives under
+`#[cfg(test)] mod tests`, so none of it is compiled into the release WASM. The D-13 STOP rule did
+not trigger (it structurally cannot for test-only code). Headroom under the 22,528-byte gate:
+**1,531 bytes (~6.8%)**.

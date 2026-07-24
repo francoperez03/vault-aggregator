@@ -576,6 +576,11 @@ mod tests {
         let vm = TestVM::default();
         let mut contract = deploy_and_init(&vm);
 
+        // D-01: no USDC mock is registered at all (no `transferFrom` mock on `USDC`). `deposit`
+        // reads the caller's weights and reverts `NoWeightsSet` BEFORE ever calling
+        // `usdc::transfer_from` — if the guard order regressed and the pull ran first, this call
+        // would panic on an unmocked external call instead of returning a clean `Err`, so a normal
+        // `Err(NoWeightsSet)` here is itself the proof that the revert precedes the pull.
         vm.set_sender(user_addr());
         let err = contract.deposit(U256::from(1_000_000u64));
         assert_eq!(err.unwrap_err(), errors::no_weights_set());
@@ -666,6 +671,97 @@ mod tests {
         mock_total_assets(&vm, adapter_addr(), U256::ZERO);
         assert!(contract.remove_adapter(adapter_addr()).is_ok());
         assert!(!registry::is_registered(&contract, adapter_addr()));
+    }
+
+    /// D-11 (T-12.1-20): `set_enabled(false)` is allowed WITH an open position, and disabling only
+    /// blocks NEW money into that adapter — it must never trap a user's existing position. Three
+    /// independent scenarios, each with its OWN fresh `TestVM`/deploy: composing them against a
+    /// single contract instance sequentially would let an earlier scenario's CEI burn (which lands
+    /// in TestVM's in-memory storage even when the top-level call later returns `Err` — see
+    /// `redeem_zero_delta_reverts_shortfall`'s note above) leak into the next scenario's setup.
+    #[test]
+    fn disabled_adapter_blocks_deposits_but_never_traps_a_position() {
+        // --- Scenario 1: disabling WITH an open position succeeds (the guard removed by D-11);
+        // a subsequent deposit whose weights include the now-disabled adapter reverts. ---
+        {
+            let vm = TestVM::default();
+            let mut contract = deploy_init_and_seed_adapter(&vm);
+            let minted = deposit_amount(&vm, &mut contract, U256::from(1_000_000u64));
+            assert!(!minted.is_zero()); // position > 0 before disabling
+
+            vm.set_sender(owner_addr());
+            assert!(contract.set_enabled(adapter_addr(), false).is_ok());
+
+            vm.set_sender(user_addr());
+            let err = contract.deposit(U256::from(1_000u64));
+            assert_eq!(err.unwrap_err(), errors::adapter_not_enabled());
+        }
+
+        // --- Scenario 2: `redeem` still reaches a disabled adapter and burns the user's shares
+        // there (`unwind_position` iterates the FULL registry filtered by held shares, never the
+        // enabled set). ---
+        {
+            let vm = TestVM::default();
+            let mut contract = deploy_init_and_seed_adapter(&vm);
+            deposit_amount(&vm, &mut contract, U256::from(1_000_000u64));
+
+            vm.set_sender(owner_addr());
+            contract.set_enabled(adapter_addr(), false).unwrap();
+
+            // Same shared-balance-buffer limitation as `redeem_zero_delta_reverts_shortfall`: the
+            // final delta check collapses and the call returns `Err`, but the CEI burn earlier in
+            // the same call still lands — what this proves is that the disabled adapter's leg was
+            // actually reached, not the exact payout (that lives on the Sepolia rig, KI-03).
+            mock_total_assets(&vm, adapter_addr(), U256::from(1_000_000u64));
+            mock_max_withdraw(&vm, adapter_addr(), U256::from(1_000_000u64));
+            mock_adapter_withdraw_leg(&vm, adapter_addr(), U256::from(1_000_000u64));
+            let balance_calldata = balanceOfCall { account: contract_addr() }.abi_encode();
+            vm.mock_static_call(USDC, balance_calldata, Ok(U256::ZERO.abi_encode()));
+
+            vm.set_sender(user_addr());
+            let _ = contract.redeem(TOTAL_BPS); // expected Err per the buffer limitation above
+            assert_eq!(contract.shares_of(user_addr(), adapter_addr()), U256::ZERO);
+        }
+
+        // --- Scenario 3: a `rebalance` whose new weights OMIT the disabled adapter still unwinds
+        // the user's old position there (same shared `unwind_position` primitive as redeem). ---
+        {
+            let vm = TestVM::default();
+            let mut contract = deploy_init_and_seed_two_adapters(&vm); // seeds a1/a2, weights 6000/4000
+            let user = user_addr();
+
+            mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+            mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
+            let amount = U256::from(100u64);
+            let transfer_calldata = transferFromCall { from: user, to: contract_addr(), amount }.abi_encode();
+            vm.mock_call(USDC, transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+            mock_adapter_deposit_leg(&vm, adapter_addr(), U256::from(60u64));
+            mock_adapter_deposit_leg(&vm, adapter_two_addr(), U256::from(40u64));
+            vm.set_sender(user);
+            contract.deposit(amount).unwrap();
+            assert!(!contract.shares_of(user, adapter_addr()).is_zero());
+
+            vm.set_sender(owner_addr());
+            contract.set_enabled(adapter_addr(), false).unwrap();
+
+            // New weights target ONLY adapter_two -- adapter_addr is omitted entirely from the new
+            // set. The unwind step of rebalance must still reach it (registry-filtered-by-shares,
+            // D-11), even though it is neither enabled nor present in the new weights.
+            mock_total_assets(&vm, adapter_addr(), U256::from(60u64));
+            mock_max_withdraw(&vm, adapter_addr(), U256::from(60u64));
+            mock_adapter_withdraw_leg(&vm, adapter_addr(), U256::from(60u64));
+            mock_total_assets(&vm, adapter_two_addr(), U256::from(40u64));
+            mock_max_withdraw(&vm, adapter_two_addr(), U256::from(40u64));
+            mock_adapter_withdraw_leg(&vm, adapter_two_addr(), U256::from(40u64));
+            let balance_calldata = balanceOfCall { account: contract_addr() }.abi_encode();
+            vm.mock_static_call(USDC, balance_calldata, Ok(U256::ZERO.abi_encode()));
+
+            vm.set_sender(user);
+            let _ = contract.rebalance(alloc::vec![adapter_two_addr()], alloc::vec![U256::from(10_000u64)]);
+            // Same shared-buffer limitation as scenario 2: the re-split may error on the delta
+            // check, but the CEI burn of the old, now-omitted adapter_addr position lands anyway.
+            assert_eq!(contract.shares_of(user, adapter_addr()), U256::ZERO);
+        }
     }
 
     // --- deposit: multi-adapter atomic split ---
@@ -950,19 +1046,111 @@ mod tests {
         assert_eq!(contract.adapter_total_shares.get(adapter_addr()), shares_a + shares_b);
     }
 
+    /// VAULT-02 criterion 2, non-negotiable (T-12.1-19): two users with DIFFERENT weights deposit
+    /// into the SAME two adapters, ending up with distinguishable, non-proportionate positions; A's
+    /// full `redeem` only ever touches A's own ledger entries, leaving B's position byte-for-byte
+    /// unchanged.
+    ///
+    /// NOTE (KI-03/T-12.1-21): the EXACT USDC amount A receives on `redeem` is NOT provable under
+    /// `stylus-test` 0.10.7 — the before/after `usdc::balance_of(core)` reads inside
+    /// `unwind_position` share one return-data buffer per top-level call (the same limitation
+    /// `redeem_zero_delta_reverts_shortfall` documents above), so they always collapse to the SAME
+    /// value and the call returns a shortfall `Err` regardless of what value is registered. Because
+    /// the CEI burn happens BEFORE that final balance-delta check, the in-memory ledger still
+    /// reflects the burn even though the call errors — that is exactly what this test proves: the
+    /// SHARE LEDGER is independent per user (criterion 2), not the payout amount. The exact payout
+    /// is verified against the Sepolia rig instead, the same split F12 already adopted for
+    /// `redeem`'s happy path.
+    #[test]
+    fn two_users_with_different_weights_redeem_only_their_own_position() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm); // seeds A = [a1,a2]=[6000,4000]
+        let user_a = user_addr();
+        let user_b = non_owner_addr();
+
+        contract
+            .write_weights(
+                user_b,
+                alloc::vec![adapter_addr(), adapter_two_addr()],
+                alloc::vec![U256::from(2_000u64), U256::from(8_000u64)],
+            )
+            .unwrap();
+
+        // User A deposits (top-level call 1, fresh mocks). amount=1000, weights [6000,4000] ->
+        // slices [600,400], no remainder.
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
+        let amount_a = U256::from(1_000u64);
+        let transfer_a = transferFromCall { from: user_a, to: contract_addr(), amount: amount_a }.abi_encode();
+        vm.mock_call(USDC, transfer_a, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), U256::from(600u64));
+        mock_adapter_deposit_leg(&vm, adapter_two_addr(), U256::from(400u64));
+        vm.set_sender(user_a);
+        contract.deposit(amount_a).unwrap();
+
+        // User B deposits (top-level call 2, fresh mocks, different weights). amount=2000, weights
+        // [2000,8000] -> slices [400,1600]. `total_assets` reflects A's real post-deposit state
+        // (no yield: adapter total_assets == cumulative USDC actually deposited).
+        mock_total_assets(&vm, adapter_addr(), U256::from(600u64));
+        mock_total_assets(&vm, adapter_two_addr(), U256::from(400u64));
+        let amount_b = U256::from(2_000u64);
+        let transfer_b = transferFromCall { from: user_b, to: contract_addr(), amount: amount_b }.abi_encode();
+        vm.mock_call(USDC, transfer_b, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), U256::from(400u64));
+        mock_adapter_deposit_leg(&vm, adapter_two_addr(), U256::from(1_600u64));
+        vm.set_sender(user_b);
+        contract.deposit(amount_b).unwrap();
+
+        let a1_shares_a = contract.shares_of(user_a, adapter_addr());
+        let a2_shares_a = contract.shares_of(user_a, adapter_two_addr());
+        let a1_shares_b = contract.shares_of(user_b, adapter_addr());
+        let a2_shares_b = contract.shares_of(user_b, adapter_two_addr());
+        assert!(!a1_shares_a.is_zero());
+        assert!(!a2_shares_a.is_zero());
+        assert!(!a1_shares_b.is_zero());
+        assert!(!a2_shares_b.is_zero());
+        // Different weights -> different per-adapter proportions (A is 3:2 a1:a2, B is 1:4).
+        assert_ne!(a1_shares_a * a2_shares_b, a2_shares_a * a1_shares_b);
+
+        // User A redeems full (top-level call 3, fresh mocks). No-yield invariant (adapter
+        // total_shares == cumulative deposited * OFFSET_POW) makes `owed` per leg resolve to
+        // EXACTLY the original deposited slice (600, 400), independent of B's position. Per the
+        // mandatory note above, the exact USDC amount A actually receives is NOT asserted here —
+        // that verification lives on the Sepolia rig, not under TestVM.
+        mock_total_assets(&vm, adapter_addr(), U256::from(1_000u64));
+        mock_total_assets(&vm, adapter_two_addr(), U256::from(2_000u64));
+        mock_max_withdraw(&vm, adapter_addr(), U256::from(600u64));
+        mock_max_withdraw(&vm, adapter_two_addr(), U256::from(400u64));
+        mock_adapter_withdraw_leg(&vm, adapter_addr(), U256::from(600u64));
+        mock_adapter_withdraw_leg(&vm, adapter_two_addr(), U256::from(400u64));
+        let balance_calldata = balanceOfCall { account: contract_addr() }.abi_encode();
+        vm.mock_static_call(USDC, balance_calldata, Ok(U256::ZERO.abi_encode()));
+
+        vm.set_sender(user_a);
+        let _ = contract.redeem(TOTAL_BPS); // expected Err per the mandatory note above
+
+        assert_eq!(contract.shares_of(user_a, adapter_addr()), U256::ZERO);
+        assert_eq!(contract.shares_of(user_a, adapter_two_addr()), U256::ZERO);
+        // B's position is untouched: exactly the same values recorded before A's redeem.
+        assert_eq!(contract.shares_of(user_b, adapter_addr()), a1_shares_b);
+        assert_eq!(contract.shares_of(user_b, adapter_two_addr()), a2_shares_b);
+    }
+
     // --- D-06 MANDATORY inflation-attack test, re-run per-adapter ---
 
     /// 1-wei deposit + large direct donation to the adapter/protocol (never routed through
     /// `core.deposit()`, so it mints no core shares) + a normal second depositor must still get
-    /// non-zero, proportionate shares. This is the empirical proof of D-03's virtual-offset
-    /// anti-inflation formula (success criterion 4).
+    /// non-zero, proportionate shares. This is the empirical proof of D-06's PER-ADAPTER
+    /// virtual-offset anti-inflation formula (success criterion 4, T-12.1-18): `owed`/`minted` are
+    /// computed against `(adapter_total_shares[adapter], adapter.total_assets())`, never an
+    /// aggregate pool-wide total, so a single adapter can be targeted for the whole attack.
     ///
     /// Structured as 2 separate top-level `deposit()` calls (Pitfall 3): each call's mocks are
     /// registered with `total_assets` LAST, so its bytes win TestVM's shared return-data buffer
     /// for every decode inside that call — the only way to get a deterministic `total_assets`
     /// read per top-level call under this TestVM version's known limitation.
     #[test]
-    fn inflation_attack_second_depositor_gets_nonzero_proportionate_shares() {
+    fn inflation_attack_per_adapter_second_depositor_gets_nonzero_proportionate_shares() {
         let vm = TestVM::default();
         let mut core = deploy_init_and_seed_adapter(&vm);
         core.write_weights(attacker_addr(), alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
@@ -1068,6 +1256,46 @@ mod tests {
             alloc::vec![U256::from(5_000u64), U256::from(5_000u64)],
         );
         assert!(err.is_err());
+    }
+
+    /// D-12 (T-12.1-19, owner variant): the owner has NO lever over other users' positions.
+    /// Calling `rebalance` as the owner only ever touches the OWNER's own (here: zero) position --
+    /// another user's shares must be untouched, byte-for-byte, after the owner's call.
+    #[test]
+    fn owner_rebalance_does_not_move_another_users_position() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_two_adapters(&vm); // seeds a1/a2, user weights 6000/4000
+        let user = user_addr();
+
+        // The user deposits a real position (top-level call 1, fresh mocks).
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
+        let amount = U256::from(100u64);
+        let transfer_calldata = transferFromCall { from: user, to: contract_addr(), amount }.abi_encode();
+        vm.mock_call(USDC, transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), U256::from(60u64));
+        mock_adapter_deposit_leg(&vm, adapter_two_addr(), U256::from(40u64));
+        vm.set_sender(user);
+        contract.deposit(amount).unwrap();
+
+        let user_a1_before = contract.shares_of(user, adapter_addr());
+        let user_a2_before = contract.shares_of(user, adapter_two_addr());
+        assert!(!user_a1_before.is_zero());
+        assert!(!user_a2_before.is_zero());
+
+        // The owner calls rebalance (separate top-level call, own zero position -- no external
+        // calls needed: `unwind_position` finds zero held shares for the owner in both adapters and
+        // `proceeds` is zero, so `rebalance` returns early after writing the owner's own weights).
+        vm.set_sender(owner_addr());
+        contract
+            .rebalance(
+                alloc::vec![adapter_addr(), adapter_two_addr()],
+                alloc::vec![U256::from(5_000u64), U256::from(5_000u64)],
+            )
+            .unwrap();
+
+        assert_eq!(contract.shares_of(user, adapter_addr()), user_a1_before);
+        assert_eq!(contract.shares_of(user, adapter_two_addr()), user_a2_before);
     }
 
     #[test]
