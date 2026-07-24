@@ -48,6 +48,13 @@ the exact payout is verified on the Sepolia rig instead — the same split F12 a
 **For Phase 13:** once the Sepolia rig is redeployed against the 12.1 ABI, extend the e2e suite with
 an exact-payout assertion for two users with different weights, closing the gap TestVM leaves open.
 
+**KI-03: RESOLVED — `two_users_exact_payout_with_different_weights`, 2026-07-24, exact payout
+asserted on the Sepolia rig.** Two users, disjoint adapters, disjoint weights (A 50/50 on
+adapters[0]/[1], B 70/30 on adapters[2]/[3]); each user's redeem payout is asserted with strict
+`assert_eq!` against an off-chain replica of `share_math::convert_to_assets`, and each user's
+`sharesOf` ledger is asserted byte-identical across the other's exit. The rest of this section
+stands as the historical record of why TestVM couldn't reach this case.
+
 ## KI-04 — The full-throttle revert (KI-02) has no TestVM regression test, by construction
 
 `stylus-test` 0.10.7 keeps ONE global return-data buffer (`TestVM::state.return_data`), overwritten
