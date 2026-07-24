@@ -334,3 +334,4 @@ Command (both rows): `cd packages/contracts/vault-core && cargo stylus check --e
 | Task | Change | Compressed bytes | Fragments | Delta |
 |------|--------|------------------|-----------|-------|
 | 01-01 | Tier 1 trim (coded errors + admin events dropped) | 20,699 | 1 | −506 vs baseline 21,205 |
+| 01-02 | Tier 2 trim (remove_adapter dropped, scalar weightBpsOf, adapterTotalShares added) | 19,901 | 1 | −798 vs 01-01 |

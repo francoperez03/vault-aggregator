@@ -89,8 +89,14 @@ impl VaultCore {
     /// D-11: disabling is allowed WITH an open position. It blocks new money in (a disabled
     /// adapter cannot be a weight target, and `deposit` re-checks `adapter_enabled` per leg) but
     /// never blocks money out: `redeem` and `rebalance`'s unwind iterate the FULL registry filtered
-    /// by held shares, so nobody can be locked inside a disabled adapter. The strict empty-position
-    /// guard (F11 D-08) stays only on `remove_adapter`.
+    /// by held shares, so nobody can be locked inside a disabled adapter.
+    ///
+    /// There is no `removeAdapter`. Tier 2 (Phase 13 D-18 spike) deleted it deliberately: the guard
+    /// it used to carry (WR-01, "don't strand a position by removing a still-live adapter from the
+    /// registry") only exists because the function existed. Deleting `remove_adapter` retires the
+    /// WR-01 finding instead of mitigating it — `set_enabled(false)` already covers the operational
+    /// case, and D-11 guarantees a disabled adapter's position is always reachable via `redeem`/
+    /// `rebalance`. This is the exact text Phase 13b's security checklist cites for WR-01's status.
     pub fn set_enabled(&mut self, adapter: Address, enabled: bool) -> Result<(), Vec<u8>> {
         self.ensure_initialized()?;
         self.only_owner()?;
@@ -98,31 +104,6 @@ impl VaultCore {
             return Err(errors::adapter_not_registered());
         }
         self.adapter_enabled.setter(adapter).set(enabled);
-        Ok(())
-    }
-
-    /// Owner-only: removes a registered adapter (swap-remove, see `registry.rs`'s doc-comment for
-    /// the locked removal semantics). Same F11 D-08 empty-position guard as before — unlike
-    /// `set_enabled`, this permanently drops the adapter from the registry, so a position left
-    /// inside it would become permanently unreachable (D-11 only relaxed the disable guard, not
-    /// this one).
-    ///
-    /// WR-01: the guard reads the core's OWN ledger (`adapter_total_shares`), not the adapter's
-    /// `totalAssets()`. A drained protocol can report 0 assets while users still hold ledger
-    /// shares; removing on that external read would strand those entries, and re-adding the same
-    /// address later would price new deposits against the stale share supply. The ledger is the
-    /// source of truth for "someone still has a position here" — and the storage read is also
-    /// cheaper than the external staticcall it replaces.
-    pub fn remove_adapter(&mut self, adapter: Address) -> Result<(), Vec<u8>> {
-        self.ensure_initialized()?;
-        self.only_owner()?;
-        let idx = registry::index_of(self, adapter).ok_or_else(errors::adapter_not_registered)?;
-        let ledger_shares = self.adapter_total_shares.get(adapter);
-        if !ledger_shares.is_zero() {
-            return Err(errors::adapter_has_balance(ledger_shares));
-        }
-        registry::swap_remove(self, idx);
-        self.adapter_enabled.setter(adapter).set(false);
         Ok(())
     }
 
@@ -134,9 +115,17 @@ impl VaultCore {
         self.user_shares.get(user).get(adapter)
     }
 
-    /// D-08: the caller's stored weight preference (adapters + bps, parallel arrays).
-    pub fn weights_of(&self, user: Address) -> (Vec<Address>, Vec<U256>) {
-        self.read_weights(user)
+    /// The denominator the frontend's valuation needs (D-20, F14 blocking): purely exposes an
+    /// existing internal storage read, no new logic.
+    pub fn adapter_total_shares(&self, adapter: Address) -> U256 {
+        self.adapter_total_shares.get(adapter)
+    }
+
+    /// D-08 + F14 D-23/D-25: the frontend already sources the adapter list from env vars and
+    /// batches reads through multicall, so four scalar reads beat two dynamically-encoded arrays.
+    /// Replaces the old `weightsOf(user) -> (address[], uint256[])`.
+    pub fn weight_bps_of(&self, user: Address, adapter: Address) -> U256 {
+        self.weight_bps.get(user).get(adapter)
     }
 
     /// VAULT-01: splits the caller's deposit across THEIR OWN stored weights (D-01/D-02), minting
@@ -662,26 +651,6 @@ mod tests {
         vm.set_sender(owner_addr());
         let err = contract.add_adapter(adapter_addr());
         assert_eq!(err.unwrap_err(), errors::adapter_already_registered());
-    }
-
-    /// WR-01: the guard reads the core's own ledger, not the adapter's `totalAssets()`. A drained
-    /// protocol (0 assets, live ledger shares) must still block removal — otherwise re-adding the
-    /// address later prices new deposits against the stale share supply.
-    #[test]
-    fn registry_remove_reverts_while_ledger_shares_exist() {
-        let vm = TestVM::default();
-        let mut contract = deploy_init_and_seed_adapter(&vm);
-
-        vm.set_sender(owner_addr());
-        // Simulate a drained protocol: the external read says empty while users hold shares.
-        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
-        contract.adapter_total_shares.setter(adapter_addr()).set(U256::from(500u64));
-        let err = contract.remove_adapter(adapter_addr());
-        assert_eq!(err.unwrap_err(), errors::adapter_has_balance(U256::from(500u64)));
-
-        contract.adapter_total_shares.setter(adapter_addr()).set(U256::ZERO);
-        assert!(contract.remove_adapter(adapter_addr()).is_ok());
-        assert!(!registry::is_registered(&contract, adapter_addr()));
     }
 
     /// D-11 (T-12.1-20): `set_enabled(false)` is allowed WITH an open position, and disabling only
@@ -1436,7 +1405,7 @@ mod tests {
     }
 
     #[test]
-    fn weights_of_round_trips_what_was_written() {
+    fn weight_bps_of_round_trips_what_was_written() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_two_adapters(&vm);
 
@@ -1448,9 +1417,8 @@ mod tests {
             )
             .unwrap();
 
-        let (targets, bps) = contract.weights_of(user_addr());
-        assert_eq!(targets, alloc::vec![adapter_addr(), adapter_two_addr()]);
-        assert_eq!(bps, alloc::vec![U256::from(6_000u64), U256::from(4_000u64)]);
+        assert_eq!(contract.weight_bps_of(user_addr(), adapter_addr()), U256::from(6_000u64));
+        assert_eq!(contract.weight_bps_of(user_addr(), adapter_two_addr()), U256::from(4_000u64));
     }
 
     #[test]
@@ -1474,9 +1442,7 @@ mod tests {
             )
             .unwrap();
 
-        let (targets, bps) = contract.weights_of(user_addr());
-        assert_eq!(targets, alloc::vec![adapter_addr()]);
-        assert_eq!(bps, alloc::vec![U256::from(10_000u64)]);
+        assert_eq!(contract.weight_bps_of(user_addr(), adapter_addr()), U256::from(10_000u64));
         assert_eq!(
             contract.weight_bps.get(user_addr()).get(adapter_two_addr()),
             U256::ZERO
@@ -1484,7 +1450,7 @@ mod tests {
     }
 
     #[test]
-    fn weights_of_two_users_are_independent() {
+    fn weight_bps_of_two_users_are_independent() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_two_adapters(&vm);
 
@@ -1503,7 +1469,10 @@ mod tests {
             )
             .unwrap();
 
-        assert_ne!(contract.weights_of(user_addr()), contract.weights_of(non_owner_addr()));
+        assert_eq!(contract.weight_bps_of(user_addr(), adapter_addr()), U256::from(10_000u64));
+        assert_eq!(contract.weight_bps_of(non_owner_addr(), adapter_two_addr()), U256::from(10_000u64));
+        assert_eq!(contract.weight_bps_of(user_addr(), adapter_two_addr()), U256::ZERO);
+        assert_eq!(contract.weight_bps_of(non_owner_addr(), adapter_addr()), U256::ZERO);
     }
 
     #[test]
