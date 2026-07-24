@@ -98,6 +98,43 @@ describe('lemonBridgeMock.callSmartContract', () => {
     ).rejects.toThrow(/functionParams/);
   });
 
+  it('rejects a PERMIT_PLACEHOLDER_0 without a matching permits[] entry', async () => {
+    await expect(
+      lemonBridgeMock.callSmartContract({
+        contracts: [
+          {
+            address: CORE,
+            functionName: 'depositWithPermit',
+            functionParams: [1_000_000n, 1n, 2n, 'PERMIT_PLACEHOLDER_0'],
+          },
+        ],
+      }),
+    ).rejects.toThrow(/PERMIT_PLACEHOLDER_N used without permits/);
+  });
+
+  it('accepts a well-formed permits[]/depositWithPermit call', async () => {
+    const result = await lemonBridgeMock.callSmartContract({
+      contracts: [
+        {
+          address: CORE,
+          functionName: 'depositWithPermit',
+          functionParams: [1_000_000n, 1n, 2n, 'PERMIT_PLACEHOLDER_0'],
+          permits: [
+            {
+              owner: '0x0000000000000000000000000000000000000A',
+              token: USDC,
+              spender: CORE,
+              amount: '1000000',
+              deadline: '2',
+              nonce: '1',
+            },
+          ],
+        },
+      ],
+    });
+    expect(result.result).toBe('PENDING');
+  });
+
   it('returns FAILED for revert', async () => {
     setNextFault('callSmartContract', 'revert');
     const result = await lemonBridgeMock.callSmartContract({

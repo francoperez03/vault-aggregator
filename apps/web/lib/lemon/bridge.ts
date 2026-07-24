@@ -13,10 +13,22 @@ import { lemonBridgeMock } from './bridgeMock';
 /** `TokenName` is a closed SDK enum (Pitfall 3) — the vault only ever moves USDC. */
 export type LemonTokenName = 'USDC';
 
+/** Permit2 permit metadata Lemon signs to substitute a PERMIT_PLACEHOLDER_N slot (SDK `Permit`). */
+export interface LemonPermit {
+  owner: `0x${string}`;
+  token: `0x${string}`;
+  spender: `0x${string}`;
+  amount: string;
+  deadline: string;
+  nonce: string;
+}
+
 export interface LemonContractCall {
   address: `0x${string}`;
   functionName: string;
   functionParams: unknown[];
+  /** When functionParams contains a PERMIT_PLACEHOLDER_N sentinel, describe the permit here. */
+  permits?: LemonPermit[];
 }
 
 /**
@@ -85,6 +97,7 @@ const realLemonBridge: LemonBridge = {
         functionName: call.functionName,
         functionParams: call.functionParams,
         chainId: getChainId() as ChainId,
+        ...(call.permits ? { permits: call.permits } : {}),
       })),
     });
     if (response.result === TransactionResult.FAILED) {

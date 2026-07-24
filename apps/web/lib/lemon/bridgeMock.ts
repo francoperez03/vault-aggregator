@@ -48,6 +48,14 @@ function validateContractCall(call: LemonContractCall): void {
   if (!Array.isArray(call.functionParams)) {
     throw new Error('lemonBridgeMock.callSmartContract: functionParams must be an array.');
   }
+  // A PERMIT_PLACEHOLDER_N sentinel without a matching permits[] entry is a caller bug, not
+  // something the real SDK silently tolerates (T-14.1-14).
+  const hasPlaceholder = call.functionParams.some(
+    (p) => typeof p === 'string' && p.startsWith('PERMIT_PLACEHOLDER_'),
+  );
+  if (hasPlaceholder && (!call.permits || call.permits.length === 0)) {
+    throw new Error('lemonBridgeMock.callSmartContract: PERMIT_PLACEHOLDER_N used without permits[].');
+  }
 }
 
 /**
