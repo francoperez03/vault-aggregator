@@ -1,227 +1,116 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
-import { BalanceCounter } from '@/components/vault-aggregator'
-import { YieldAllocationBuilder } from '@/components/vault-aggregator'
-import { PortfolioAllocation } from '@/components/vault-aggregator'
-import { DepositWithdrawDialog, WithdrawFlowModal } from '@/components/vault-aggregator'
-import {
-  EmptyBalanceState,
-  EmptyPortfolioState,
-  ErrorState,
-  LoadingBalanceState,
-  LoadingPortfolioState,
-} from '@/components/vault-aggregator/empty-states'
-import { StateShortcuts, type DemoState } from '@/components/vault-aggregator/state-shortcuts'
-import { AtomicFlowLogo } from '@/components/atomic-flow-logo'
-import { Button } from '@/components/ui/button'
-import { ArrowUpFromLine } from 'lucide-react'
+import { useState } from 'react'
+import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
-import { getWeightedApy } from '@/lib/vaults'
-import type { Allocation } from '@/types'
-import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { PositionSummary } from '@/components/vault-aggregator/position-summary'
+import { ProtocolBreakdown } from '@/components/vault-aggregator/protocol-breakdown'
+import { formatUsdc } from '@/lib/format'
+import { ADAPTER_IDS } from '@/lib/contracts/config'
+import { MOCK_EMPTY, MOCK_FUNDED, MOCK_WEIGHTS_ONLY, type PositionState } from '@/lib/mock/position'
 
-const DEFAULT_ALLOCATION: Allocation = {
-  aave: 40,
-  morpho: 30,
-  fluid: 20,
-  euler: 10,
+interface HomePositionViewProps {
+  position: PositionState
 }
 
-const MOCK_ALLOCATED = 10_000 // In vaults (staking)
-const MOCK_USDC_AVAILABLE = 2_500 // USDC available for withdraw to Lemon
+/** Composes the home route's three entry states (D-13/D-14/D-26). Plan 08 swaps the `position`
+ * prop's source from a mock fixture to `useVaultPosition()` without touching this component. */
+export function HomePositionView({ position }: HomePositionViewProps) {
+  const weightedAdapterCount = ADAPTER_IDS.filter((id) => position.perAdapter[id].weightBps > 0).length
+  const isFunded = position.totalUsdc > 0n
+
+  return (
+    <div className="px-4 pt-[calc(1rem+env(safe-area-inset-top))]">
+      {position.pendingWithdrawalUsdc !== undefined && position.pendingWithdrawalUsdc > 0n && (
+        <Card className="mb-4 rounded-[14px] border-[var(--warning)]/40 bg-[var(--warning)]/10">
+          <CardContent className="p-4 text-sm text-[var(--text-primary)]">
+            <p>
+              Moviste ${formatUsdc(position.pendingWithdrawalUsdc)} USDC al saldo de la app. Enviálo a Lemon para
+              terminar.
+            </p>
+            <Link href="/retirar" className="mt-2 inline-block text-sm font-semibold text-[var(--brand)] underline">
+              Ir a retirar
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {isFunded ? (
+        <>
+          <PositionSummary totalUsdc={position.totalUsdc} />
+          <Card className="mb-4 rounded-[14px] border-[var(--border-subtle)] px-4 py-4">
+            <CardContent className="p-0">
+              <ProtocolBreakdown position={position} />
+            </CardContent>
+          </Card>
+          <div className="flex gap-2">
+            <Button asChild size="lg" className="min-h-[44px] flex-1">
+              <Link href="/depositar">Depositar</Link>
+            </Button>
+            <Button asChild variant="outline" size="lg" className="min-h-[44px] flex-1">
+              <Link href="/rebalancear">Rebalancear</Link>
+            </Button>
+            <Button asChild variant="outline" size="lg" className="min-h-[44px] flex-1">
+              <Link href="/retirar">Retirar</Link>
+            </Button>
+          </div>
+        </>
+      ) : position.hasWeights ? (
+        <Card className="rounded-[14px] border-[var(--border-subtle)] px-4 py-8 text-center">
+          <CardContent className="flex flex-col items-center gap-3 p-0">
+            <h1 className="text-xl font-semibold text-[var(--text-primary)]">Estrategia guardada</h1>
+            <p className="text-sm text-[var(--text-secondary)]">
+              Tu asignación está definida en {weightedAdapterCount} protocolos. Depositá cuando quieras.
+            </p>
+            <Button asChild size="lg" className="mt-2 min-h-[44px]">
+              <Link href="/depositar">Depositar ahora</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="rounded-[14px] border-dashed border-[var(--border-subtle)] px-4 py-8 text-center">
+          <CardContent className="flex flex-col items-center gap-3 p-0">
+            <h1 className="text-xl font-semibold text-[var(--text-primary)]">Todavía no tenés posición</h1>
+            <p className="text-sm text-[var(--text-secondary)]">
+              Definí tu estrategia y hacé tu primer depósito: se reparte solo entre los protocolos que elijas.
+            </p>
+            <Button asChild size="lg" className="mt-2 min-h-[44px]">
+              <Link href="/rebalancear">Definí tu estrategia</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+// ponytail: dev-only fixture switcher. Plan 08 replaces `position` with useVaultPosition() and
+// this switcher goes away; kept minimal (no gate) since fixtures carry no sensitive data.
+const DEMO_FIXTURES = {
+  empty: MOCK_EMPTY,
+  weightsOnly: MOCK_WEIGHTS_ONLY,
+  funded: MOCK_FUNDED,
+} as const
 
 export default function Page() {
-  const [allocatedBalance, setAllocatedBalance] = useState(MOCK_ALLOCATED)
-  const [usdcBalance, setUsdcBalance] = useState(MOCK_USDC_AVAILABLE)
-  const [allocations, setAllocations] = useState<Allocation>(DEFAULT_ALLOCATION)
-  const [demoState, setDemoState] = useState<DemoState>('default')
-  const [depositDialogOpen, setDepositDialogOpen] = useState(false)
-  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false)
-  const [yieldBuilderOpen, setYieldBuilderOpen] = useState(false)
-
-  const apy = useMemo(() => getWeightedApy(allocations), [allocations])
-
-  const handleStateChange = useCallback((state: DemoState) => {
-    setDemoState(state)
-    if (state === 'empty') {
-      setAllocatedBalance(0)
-      setUsdcBalance(0)
-    }
-    if (state === 'default') {
-      setAllocatedBalance(MOCK_ALLOCATED)
-      setUsdcBalance(MOCK_USDC_AVAILABLE)
-    }
-  }, [])
-
-  // Lemon → miniapp (available USDC)
-  const handleDeposit = useCallback((amount: number) => {
-    setUsdcBalance((b) => b + amount)
-    if (allocatedBalance === 0 && usdcBalance === 0 && amount > 0) setDemoState('default')
-  }, [allocatedBalance, usdcBalance])
-
-  // Vaults → available USDC (redeem)
-  const handleRedeem = useCallback((amount: number) => {
-    setAllocatedBalance((b) => Math.max(0, b - amount))
-    setUsdcBalance((b) => b + amount)
-  }, [])
-
-  // Available USDC → Lemon (outside the miniapp)
-  const handleWithdraw = useCallback((amount: number) => {
-    setUsdcBalance((b) => Math.max(0, b - amount))
-  }, [])
-
-  const handleApplyAllocations = useCallback((newAllocations: Allocation) => {
-    setAllocations(newAllocations)
-    setYieldBuilderOpen(false)
-    toast.success('Allocation applied')
-    // In production this would trigger the router transaction
-  }, [])
-
-  const displayAllocated = demoState === 'empty' ? 0 : allocatedBalance
-  const displayUsdc = demoState === 'empty' ? 0 : usdcBalance
-  const hasAnyBalance = displayAllocated > 0 || displayUsdc > 0
-
-  const showError = demoState === 'error'
-  const showLoading = demoState === 'loading'
-  const showEmptyBalance = demoState === 'empty' && !hasAnyBalance
-  const showEmptyPortfolio = demoState === 'default' && hasAnyBalance && Object.values(allocations).every((v) => v === 0)
+  const [fixtureKey, setFixtureKey] = useState<keyof typeof DEMO_FIXTURES>('funded')
 
   return (
     <main className="min-h-dvh bg-background">
-      <header className="sticky top-0 z-10 bg-[rgba(10,12,15,0.85)] backdrop-blur-[16px] pt-[calc(1rem+env(safe-area-inset-top))] pb-4">
-        <div className="flex items-center justify-between px-4 py-2">
-          <AtomicFlowLogo size={18} wordmarkSize={14} showWordmark variant="muted" />
-          <span
-            className="text-[11px] font-medium uppercase tracking-[0.06em] text-[#4A5A72] shrink-0"
-            aria-label="Arbitrum network"
+      <HomePositionView position={DEMO_FIXTURES[fixtureKey]} />
+      <div className="flex justify-center gap-2 px-4 pb-6 pt-2">
+        {(Object.keys(DEMO_FIXTURES) as (keyof typeof DEMO_FIXTURES)[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setFixtureKey(key)}
+            className="rounded-full border border-[var(--border-subtle)] px-2.5 py-1 text-[10px] text-[var(--text-secondary)]"
           >
-            Arbitrum
-          </span>
-        </div>
-      </header>
-
-      <div className="px-3 pt-0 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-        {/* Error state */}
-        {showError && (
-          <section className="mb-4">
-            <ErrorState
-              title="Failed to load vault data"
-              message="Unable to connect to the network. Please check your connection and try again."
-              onRetry={() => handleStateChange('default')}
-            />
-          </section>
-        )}
-
-        {/* Balance & Actions */}
-        <section className="mb-6">
-          {showLoading ? (
-            <LoadingBalanceState />
-          ) : showEmptyBalance ? (
-            <EmptyBalanceState onDeposit={() => setDepositDialogOpen(true)} />
-          ) : (
-            <>
-              <BalanceCounter
-                allocatedBalance={displayAllocated}
-                apy={apy}
-              />
-              <div className="mt-4 flex gap-2">
-                <DepositWithdrawDialog
-                  variant="deposit"
-                  balance={displayUsdc}
-                  onDeposit={handleDeposit}
-                  open={depositDialogOpen}
-                  onOpenChange={setDepositDialogOpen}
-                  showTrigger
-                  className="flex-[2] min-w-0"
-                />
-                <Button
-                  variant="outline"
-                  size="lg"
-                  disabled={withdrawModalOpen}
-                  className="flex-[1] min-w-0 min-h-[44px] touch-manipulation rounded-[12px] bg-[#1A202C] border border-[#2D3748] hover:bg-[#252B36] hover:border-[#374151] text-[#38bdf8] [&_svg]:text-[#38bdf8] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] disabled:opacity-50"
-                  onClick={() => setWithdrawModalOpen(true)}
-                >
-                  <ArrowUpFromLine className="size-4 shrink-0" strokeWidth={2} />
-                  Withdraw
-                </Button>
-              </div>
-              <WithdrawFlowModal
-                open={withdrawModalOpen}
-                onOpenChange={setWithdrawModalOpen}
-                allocatedBalance={displayAllocated}
-                usdcBalance={displayUsdc}
-                allocations={allocations}
-                onRedeem={handleRedeem}
-                onWithdraw={handleWithdraw}
-              />
-            </>
-          )}
-
-          {!showLoading && showEmptyBalance && (
-            <DepositWithdrawDialog
-              variant="deposit"
-              balance={displayUsdc}
-              onDeposit={handleDeposit}
-              open={depositDialogOpen}
-              onOpenChange={setDepositDialogOpen}
-              showTrigger={false}
-            />
-          )}
-        </section>
-
-        {/* Portfolio Summary */}
-        {showLoading ? (
-          <div className="mb-4">
-            <LoadingPortfolioState />
-          </div>
-        ) : showEmptyPortfolio ? (
-          <Card className="mb-4 rounded-[14px] border-[var(--border-subtle)] py-4">
-            <CardContent className="pt-4 px-4">
-              <EmptyPortfolioState onConfigure={() => setYieldBuilderOpen(true)} />
-            </CardContent>
-          </Card>
-        ) : (
-          displayAllocated > 0 && (
-            <Card className="mb-4 rounded-[14px] border-[var(--border-subtle)] py-5 px-6">
-              <CardContent className="p-0">
-                <PortfolioAllocation allocations={allocations} balance={displayAllocated} />
-              </CardContent>
-            </Card>
-          )
-        )}
-
-        {/* Custom Yield Builder */}
-        {showEmptyBalance ? null : showLoading ? (
-          <div className="space-y-2 rounded-[14px] border border-[var(--border-subtle)] p-4">
-            <Skeleton className="h-5 w-40" />
-            <Skeleton className="h-4 w-full" />
-            <div className="space-y-3 pt-2">
-              {[1, 2, 3, 4].map((i) => (
-                <Skeleton key={i} className="h-14 w-full rounded-xl" />
-              ))}
-            </div>
-          </div>
-        ) : (
-          <YieldAllocationBuilder
-            allocations={allocations}
-            onApply={handleApplyAllocations}
-            open={yieldBuilderOpen}
-            onOpenChange={setYieldBuilderOpen}
-          />
-        )}
-
-        <p
-          className="text-muted-foreground mt-3 text-center text-[11px]"
-          role="note"
-        >
-          Fund security is contingent upon the integrity of underlying protocol smart contracts. Users assume all risks and should conduct due diligence before depositing.
-        </p>
+            {key}
+          </button>
+        ))}
       </div>
-
-      {/* State shortcuts for demo */}
-      <StateShortcuts currentState={demoState} onStateChange={handleStateChange} />
     </main>
   )
 }
