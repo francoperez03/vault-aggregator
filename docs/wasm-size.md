@@ -231,3 +231,19 @@ non-determinism noise band, exactly as expected: every line added in this task l
 `#[cfg(test)] mod tests`, so none of it is compiled into the release WASM. The D-13 STOP rule did
 not trigger (it structurally cannot for test-only code). Headroom under the 22,528-byte gate:
 **1,531 bytes (~6.8%)**.
+
+### Phase 12.1 final
+
+- **Compressed size: 20,997 bytes**, **fragments: 1**, headroom `22528 - 20997` = **1,531 bytes (~6.8%)**
+- **Net delta for the whole phase vs the 12.1 baseline (21,164 bytes, `01-01`): -167 bytes** — the
+  phase nets NEGATIVE despite adding a full per-user weight ledger, a per-adapter share ledger and
+  seven new/rewritten mandatory tests, because Task 03-01's deletion of the pooled owner-allocation
+  model (`set_allocation`, `AllocationSet`, `active_adapters`, `split_by_position` + 6 tests,
+  `InsufficientShares`, three storage fields) outweighed every addition across the phase.
+- Plan B (D-14) activated: **no** — the D-13 STOP rule never triggered across any of the four
+  plans; every task closed with headroom comfortably above zero (the tightest single-task margin
+  was Task 03-01's 1,568 bytes, ~7%, still the largest headroom recorded since Phase 12 began).
+- `cargo stylus export-abi` confirms `deposit(uint256)`, `redeem(uint256)`, `rebalance(address[]
+  memory, uint256[] memory)`, `sharesOf(address, address)`, `weightsOf(address)` are exported, and
+  `setAllocation` is absent, matching the ABI `docs/TESTNET.md` records for the pending Sepolia
+  redeploy.

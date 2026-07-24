@@ -52,6 +52,23 @@ per-user-per-adapter share ledger — so:
   the deploy script with only `MOCK_USDC_ADDR` + the four `MOCK_*_VAULT` lines kept in
   `docs/.sepolia-env` redeploys just the core and adapters.
 
+### The 12.1 ABI the redeploy must expose
+
+The core `0x27a7beb767996da72b8e93088fd7affe30a7dadf` listed below is **SUPERSEDED** — it exports
+the old pooled-allocation ABI, not this one. Whichever redeploy replaces it (12.1 close-out or
+carried into Phase 13, per the Plan 04 checkpoint decision) must expose:
+
+- `deposit(uint256)` — splits across the CALLER's own stored weights, reverts `NoWeightsSet` with none
+- `redeem(uint256)` — bps of the caller's OWN position (**bps, not shares** — the old `redeem(shares)` is gone)
+- `rebalance(address[],uint256[])` — **user-callable** (no longer owner-only): validates + writes the
+  caller's new weights, unwinds their OWN position, re-splits the measured proceeds
+- `sharesOf(address,address)` — `(user, adapter)` -> the caller's shares in that adapter
+- `weightsOf(address)` — `(user)` -> `(address[] targets, uint256[] bps)`, the caller's stored weights
+
+**`setAllocation` no longer exists** — there is no owner-level allocation left to set. A brand-new
+user's bootstrap flow is `rebalance(adapters, bps)` (with a zero position, this only writes
+weights) **then** `deposit(amount)` — not a single combined call.
+
 Everything below describes the rig as built. Treat the addresses as current and the test
 descriptions as pending a 12.1 rewrite.
 
