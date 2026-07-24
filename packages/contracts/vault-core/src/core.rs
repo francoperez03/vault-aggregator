@@ -61,11 +61,19 @@ fn unwind_request(total_assets: U256, max_withdraw: U256) -> Option<U256> {
 
 #[public]
 impl VaultCore {
-    /// Sets `owner` once. Mirrors `vault-adapter/src/adapter.rs`'s `init`.
-    pub fn init(&mut self, owner: Address) -> Result<(), Vec<u8>> {
-        if self.initialized.get() {
-            return Err(errors::already_initialized());
-        }
+    /// Sets `owner` at deploy time. C-H1 (blind adversarial review, D-14): the old design was a
+    /// caller-supplied `init(owner)` runnable by anyone post-deploy — a front-run permanently
+    /// stole ownership of the entire adapter registry, with no `transferOwnership` recovery path.
+    /// A real Stylus `#[constructor]` (matching `vault-periphery/src/router.rs`'s proven pattern)
+    /// closes the gap at the protocol level instead of narrowing it: the constructor runs exactly
+    /// once, atomically as part of deployment, before the contract address can receive any other
+    /// call, so there is no window in which an attacker's transaction can race it. The weaker fix
+    /// considered and rejected (`owner = msg_sender()` inside a still-public `init`) only shrinks
+    /// the race to "whoever's tx lands first" — an attacker can still win that race. Removing the
+    /// caller-supplied `owner` parameter along with the public entrypoint is the point: there is no
+    /// longer a claimable, unauthenticated bootstrap call to front-run.
+    #[constructor]
+    pub fn constructor(&mut self, owner: Address) -> Result<(), Vec<u8>> {
         if owner.is_zero() {
             return Err(errors::zero_address());
         }
@@ -540,39 +548,46 @@ mod tests {
     fn deploy_and_init(vm: &TestVM) -> VaultCore {
         let mut contract = deploy(vm);
         vm.set_sender(owner_addr());
-        contract.init(owner_addr()).unwrap();
+        contract.constructor(owner_addr()).unwrap();
         contract
     }
 
-    // --- init ---
+    // --- constructor (C-H1 fix: owner set at deploy time, no post-deploy claim path) ---
 
     #[test]
-    fn init_succeeds_and_sets_storage() {
+    fn constructor_succeeds_and_sets_storage() {
         let vm = TestVM::default();
         let mut contract = deploy(&vm);
 
-        assert!(contract.init(owner_addr()).is_ok());
+        assert!(contract.constructor(owner_addr()).is_ok());
         assert_eq!(contract.owner.get(), owner_addr());
         assert!(contract.initialized.get());
     }
 
     #[test]
-    fn init_twice_reverts_already_initialized() {
+    fn constructor_zero_owner_reverts() {
         let vm = TestVM::default();
         let mut contract = deploy(&vm);
 
-        contract.init(owner_addr()).unwrap();
-        let err = contract.init(owner_addr());
-        assert_eq!(err.unwrap_err(), errors::already_initialized());
+        let err = contract.constructor(Address::ZERO);
+        assert_eq!(err.unwrap_err(), errors::zero_address());
     }
 
+    /// C-H1: there is no post-deploy entrypoint that can set or reassign `owner` — `constructor`
+    /// is off the exported ABI (Stylus constructors are callable only once, at deployment, never
+    /// via a regular transaction) and no other method in this impl block ever calls `self.owner.set`.
+    /// The only owner-touching path left in the public ABI is `only_owner()`'s read-only comparison.
     #[test]
-    fn init_zero_owner_reverts() {
+    fn no_public_method_other_than_constructor_can_set_owner() {
         let vm = TestVM::default();
-        let mut contract = deploy(&vm);
+        let mut contract = deploy_and_init(&vm);
+        let original_owner = contract.owner.get();
 
-        let err = contract.init(Address::ZERO);
-        assert_eq!(err.unwrap_err(), errors::zero_address());
+        // add_adapter/set_enabled are owner-gated reads of `owner`, never writes to it.
+        vm.set_sender(attacker_addr());
+        let _ = contract.add_adapter(adapter_addr());
+        let _ = contract.set_enabled(adapter_addr(), true);
+        assert_eq!(contract.owner.get(), original_owner);
     }
 
     // --- add_adapter ---

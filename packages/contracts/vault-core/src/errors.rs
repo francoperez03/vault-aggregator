@@ -10,7 +10,7 @@
 //!
 //! | Code | Condition               | Wrapper (unchanged name)   |
 //! |------|--------------------------|-----------------------------|
-//! | 1    | `AlreadyInitialized`    | `already_initialized()`     |
+//! | 1    | `AlreadyInitialized`    | retired (C-H1 fix, see below) |
 //! | 2    | `NotInitialized`        | `not_initialized()`         |
 //! | 3    | `ZeroAddress`           | `zero_address()`            |
 //! | 4    | `NotOwner`              | `not_owner()`                |
@@ -46,9 +46,11 @@ fn coded(code: u8) -> Vec<u8> {
     VaultError { code }.abi_encode()
 }
 
-pub fn already_initialized() -> Vec<u8> {
-    coded(1)
-}
+// Code 1 (`AlreadyInitialized`) is retired: the C-H1 fix (`vault-core/src/core.rs`'s
+// `#[constructor]`) removed the caller-supplied `init` entrypoint it used to guard, and Stylus
+// constructors are only ever invoked once, at deployment, so there is no live call path that can
+// re-trigger it. The code number is left unused rather than renumbered, so `VaultError(1)` never
+// gets silently reassigned to a different condition in this contract's history.
 
 pub fn not_initialized() -> Vec<u8> {
     coded(2)
