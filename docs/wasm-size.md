@@ -177,3 +177,12 @@ measured size, the fragment count and D-14's ordered plan B, and waits for a dec
 | Task | Change | Compressed bytes | Fragments | Delta |
 |------|--------|------------------|-----------|-------|
 | 01-01 | baseline (no 12.1 code) | 21,164 | 1 | — |
+| 01-02 | storage spike (Option A: nested ledger + per-user weights + probe fn) — REVERTED | 21,970 | 1 | +806 |
+
+**Layout verdict (Assumption A1 → measured):** Option A costs +806 bytes on top of the 12.1
+baseline, including the throwaway probe function. Remaining headroom for the rest of the phase:
+558 bytes. Verdict: PROCEED with Option A, but the budget left for Plan 03 falls under 800 bytes
+and the STOP is probable.
+
+The probe function compiled with the exact accessor syntax from the plan on the first try — no
+adjustment to `weight_targets.setter(user).push(adapter)` or any other accessor was needed.
