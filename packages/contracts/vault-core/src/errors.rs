@@ -25,6 +25,7 @@ sol! {
     error AdapterNotRegistered();
     error InsufficientShares();
     error RedeemShortfall(uint256 owed, uint256 actual);
+    error NoWeightsSet();
 }
 
 pub fn already_initialized() -> Vec<u8> {
@@ -97,4 +98,8 @@ pub fn insufficient_shares() -> Vec<u8> {
 
 pub fn redeem_shortfall(owed: U256, actual: U256) -> Vec<u8> {
     RedeemShortfall { owed, actual }.abi_encode()
+}
+
+pub fn no_weights_set() -> Vec<u8> {
+    NoWeightsSet {}.abi_encode()
 }

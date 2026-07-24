@@ -178,6 +178,7 @@ measured size, the fragment count and D-14's ordered plan B, and waits for a dec
 |------|--------|------------------|-----------|-------|
 | 01-01 | baseline (no 12.1 code) | 21,164 | 1 | — |
 | 01-02 | storage spike (Option A: nested ledger + per-user weights + probe fn) — REVERTED | 21,970 | 1 | +806 |
+| 02-01 | per-user storage + write_weights/read_weights + sharesOf/weightsOf + NoWeightsSet | 21,682 | 1 | +518 |
 
 **Layout verdict (Assumption A1 → measured):** Option A costs +806 bytes on top of the 12.1
 baseline, including the throwaway probe function. Remaining headroom for the rest of the phase:
@@ -186,3 +187,10 @@ and the STOP is probable.
 
 The probe function compiled with the exact accessor syntax from the plan on the first try — no
 adjustment to `weight_targets.setter(user).push(adapter)` or any other accessor was needed.
+
+**Task 02-01 (real code, not a throwaway spike):** 21,682 bytes, +518 bytes vs the 12.1 baseline
+(21,164) — 214 bytes cheaper than the disposable spike's +806 bytes, consistent with the spike's
+probe function adding weight the real `write_weights`/`read_weights`/`shares_of`/`weights_of`
+wiring didn't need to duplicate. `weight_targets.setter(user).erase()` compiled unmodified — no
+pop-loop fallback was needed. Headroom remaining for Plan 03: 846 bytes (~3.8%) under the
+22,528-byte gate.

@@ -132,6 +132,19 @@ impl VaultCore {
         Ok(())
     }
 
+    /// D-08: the caller-facing read of one user's position in one adapter, in internal shares.
+    /// The USDC value is built off-chain by the frontend as
+    /// sharesOf(user, adapter) / adapterTotalShares(adapter) * adapter.totalAssets()
+    /// — an aggregated `positionOf(user)` was rejected on byte grounds.
+    pub fn shares_of(&self, user: Address, adapter: Address) -> U256 {
+        self.user_shares.get(user).get(adapter)
+    }
+
+    /// D-08: the caller's stored weight preference (adapters + bps, parallel arrays).
+    pub fn weights_of(&self, user: Address) -> (Vec<Address>, Vec<U256>) {
+        self.read_weights(user)
+    }
+
     /// Atomic multi-adapter split deposit (VAULT-01): pulls `amount` USDC from the caller, splits
     /// it by the current bps allocation across every active adapter (D-10 remainder to the first
     /// active adapter), deposits each slice, and mints offset-based shares from the pre-loop
@@ -413,6 +426,79 @@ impl VaultCore {
             weightsBps: weights_bps.clone(),
         });
         Ok(())
+    }
+
+    /// D-04: validates a caller's weight set with the SAME rule the old owner-level allocation
+    /// used (matching non-empty lengths, no duplicates, every target registered AND enabled, no
+    /// zero weights, sum exactly 10000 via checked addition), then replaces that user's stored
+    /// weights. Exiting a protocol = omitting it from `adapters`.
+    /// Validation runs entirely BEFORE any write, so an invalid call reverts having touched
+    /// nothing (guard-before-mutate).
+    #[allow(dead_code)] // wired to rebalance in the next plan
+    fn write_weights(
+        &mut self,
+        user: Address,
+        adapters: Vec<Address>,
+        weights_bps: Vec<U256>,
+    ) -> Result<(), Vec<u8>> {
+        if adapters.is_empty() || adapters.len() != weights_bps.len() {
+            return Err(errors::allocation_invalid());
+        }
+        for i in 0..adapters.len() {
+            for j in (i + 1)..adapters.len() {
+                if adapters[i] == adapters[j] {
+                    return Err(errors::allocation_invalid());
+                }
+            }
+        }
+        let mut sum = U256::ZERO;
+        for i in 0..adapters.len() {
+            if !registry::is_registered(self, adapters[i]) {
+                return Err(errors::adapter_not_registered());
+            }
+            if !self.adapter_enabled.get(adapters[i]) {
+                return Err(errors::adapter_not_enabled());
+            }
+            if weights_bps[i].is_zero() {
+                return Err(errors::allocation_invalid());
+            }
+            sum = sum
+                .checked_add(weights_bps[i])
+                .ok_or_else(errors::allocation_invalid)?;
+        }
+        if sum != TOTAL_BPS {
+            return Err(errors::allocation_invalid());
+        }
+
+        // Clear the caller's previous set so the stored weights are EXACTLY the passed set.
+        let previous = self.weight_targets.get(user).len();
+        for i in 0..previous {
+            if let Some(old) = self.weight_targets.get(user).get(i) {
+                self.weight_bps.setter(user).setter(old).set(U256::ZERO);
+            }
+        }
+        self.weight_targets.setter(user).erase();
+
+        for i in 0..adapters.len() {
+            self.weight_targets.setter(user).push(adapters[i]);
+            self.weight_bps.setter(user).setter(adapters[i]).set(weights_bps[i]);
+        }
+        Ok(())
+    }
+
+    /// Reads the caller's stored weights back as two parallel Vecs. An empty target list means
+    /// "no weights set" — `deposit` turns that into `NoWeightsSet` (D-01).
+    fn read_weights(&self, user: Address) -> (Vec<Address>, Vec<U256>) {
+        let len = self.weight_targets.get(user).len();
+        let mut targets: Vec<Address> = Vec::with_capacity(len);
+        let mut bps: Vec<U256> = Vec::with_capacity(len);
+        for i in 0..len {
+            if let Some(adapter) = self.weight_targets.get(user).get(i) {
+                targets.push(adapter);
+                bps.push(self.weight_bps.get(user).get(adapter));
+            }
+        }
+        (targets, bps)
     }
 }
 
