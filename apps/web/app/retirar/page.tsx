@@ -153,7 +153,7 @@ function RetirarPageInner() {
   const urlStep = searchParams.get('paso') === '2' ? 2 : 1
 
   const { totalUsdc } = useVaultPosition()
-  const { step: flowStep, pendingAmount, phase, redeem, settleToLemon, acknowledge } = useWithdrawFlow()
+  const { pendingAmount, phase, redeem, settleToLemon, acknowledge } = useWithdrawFlow()
   // The flow itself is the source of truth once it has measured a pending amount (a refresh with
   // no `?paso=2` in the URL should still land on step 2, not silently drop the pending settlement).
   const step = pendingAmount !== null ? 2 : urlStep
