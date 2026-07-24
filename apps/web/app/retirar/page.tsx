@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { TransactionState, type TxPhase } from '@/components/vault-aggregator/transaction-state'
 import { formatUsdc } from '@/lib/format'
-import { MOCK_FUNDED } from '@/lib/mock/position'
+import { useVaultPosition } from '@/hooks/useVaultPosition'
+import { useWithdrawFlow } from '@/hooks/useWithdrawFlow'
 
 const PRESETS: { label: string; bps: bigint }[] = [
   { label: '25%', bps: 2500n },
@@ -15,39 +16,30 @@ const PRESETS: { label: string; bps: bigint }[] = [
   { label: 'MAX', bps: 10000n }, // literal 10000n, never a floor'd computation that could land on 9999n.
 ]
 
-const STEP1_PHASES: { key: string; phase: TxPhase }[] = [
-  { key: 'signing', phase: { kind: 'signing' } },
-  { key: 'pending', phase: { kind: 'pending' } },
-  { key: 'success', phase: { kind: 'success', amount: 1_000_000_000n } },
-  { key: 'rejected', phase: { kind: 'rejected' } },
-  { key: 'reverted', phase: { kind: 'reverted', reason: 'slippage' } },
-]
-
-// D-19/Pitfall 4: `partial` only exists for the SDK-driven withdraw of step 2, never for step 1's
-// on-chain `redeem`, which is atomic.
-const STEP2_PHASES: { key: string; phase: TxPhase }[] = [
-  { key: 'signing', phase: { kind: 'signing' } },
-  { key: 'pending', phase: { kind: 'pending' } },
-  { key: 'success', phase: { kind: 'success' } },
-  { key: 'rejected', phase: { kind: 'rejected' } },
-  { key: 'timeout', phase: { kind: 'timeout' } },
-  { key: 'partial', phase: { kind: 'partial', requested: 1_000_000_000n, actual: 600_000_000n, remaining: 400_000_000n } },
-]
-
 interface WithdrawViewProps {
   totalUsdc: bigint
   step: 1 | 2
-  onStepChange: (step: 1 | 2) => void
+  pendingAmount: bigint | null
+  phase: TxPhase
+  onRedeem: (bps: bigint) => void
+  onSettle: () => void
+  onAcknowledge: () => void
 }
 
-/** `/retirar` in two deep-linkeable steps (`?paso=2`, D-29). Step 1 converts a requested amount to
- * bps on-chain (`redeem(uint256 bps)`, not shares or a raw USDC amount) and is atomic: no partial
- * state exists there. Step 2 carries the amount the redeem tx actually measured, never the amount
+/** `/retirar` in two deep-linkeable steps (`?paso=2`, D-29). Step 1 fires the real on-chain
+ * `redeem(uint256 bps)` and is atomic: no `partial` state exists there (Pitfall 4). Step 2 fires
+ * the real `getLemonBridge().withdraw` with the amount step 1 actually measured, never the amount
  * requested (D-19), and is the only step where the Lemon SDK's partial reconciliation applies. */
-export function WithdrawView({ totalUsdc, step, onStepChange }: WithdrawViewProps) {
+export function WithdrawView({
+  totalUsdc,
+  step,
+  pendingAmount,
+  phase,
+  onRedeem,
+  onSettle,
+  onAcknowledge,
+}: WithdrawViewProps) {
   const [requestedBps, setRequestedBps] = useState<bigint>(0n)
-  const [phase, setPhase] = useState<TxPhase>({ kind: 'confirm' })
-  const [settledAmount, setSettledAmount] = useState<bigint>(0n)
 
   // T-14-04-04 (threat model, accepted): the block on step 2 is advisory, not a trap. Tab close or
   // refresh gets a native confirmation; the persistent banner on `/` covers in-app navigation away.
@@ -62,15 +54,15 @@ export function WithdrawView({ totalUsdc, step, onStepChange }: WithdrawViewProp
   }, [step])
 
   const requestedAmount = (totalUsdc * requestedBps) / 10000n
+  const settledAmount = pendingAmount ?? 0n
 
-  function handleStep1Demo(demoPhase: TxPhase) {
-    setPhase(demoPhase)
-    if (demoPhase.kind === 'success') {
-      // D-19: measured, not pre-computed. Step 2 reads what the tx result carried.
-      setSettledAmount(demoPhase.amount ?? requestedAmount)
-      onStepChange(2)
-      setPhase({ kind: 'confirm' })
+  function handlePrimary() {
+    if (phase.kind === 'partial') {
+      onAcknowledge()
+      return
     }
+    if (step === 1) onRedeem(requestedBps)
+    else onSettle()
   }
 
   if (step === 1) {
@@ -101,7 +93,7 @@ export function WithdrawView({ totalUsdc, step, onStepChange }: WithdrawViewProp
           size="lg"
           className="min-h-[44px]"
           disabled={requestedBps === 0n}
-          onClick={() => setPhase({ kind: 'signing' })}
+          onClick={() => onRedeem(requestedBps)}
         >
           Retirar al saldo de la app
         </Button>
@@ -109,25 +101,10 @@ export function WithdrawView({ totalUsdc, step, onStepChange }: WithdrawViewProp
         {phase.kind !== 'confirm' && (
           <TransactionState
             phase={phase}
-            onPrimary={() => setPhase({ kind: 'confirm' })}
-            onSecondary={() => setPhase({ kind: 'pending' })}
+            onPrimary={handlePrimary}
             summary={<>Retirás ${formatUsdc(requestedAmount)} USDC al saldo de la app</>}
           />
         )}
-
-        {/* ponytail: 14a-only phase selector, same pattern as /depositar and /rebalancear. */}
-        <div className="flex flex-wrap gap-1.5" aria-label="Selector de estado (solo desarrollo)">
-          {STEP1_PHASES.map(({ key, phase: demoPhase }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => handleStep1Demo(demoPhase)}
-              className="rounded-full border border-[var(--border-subtle)] px-2.5 py-1 text-[10px] text-[var(--text-secondary)]"
-            >
-              {key}
-            </button>
-          ))}
-        </div>
       </div>
     )
   }
@@ -140,31 +117,31 @@ export function WithdrawView({ totalUsdc, step, onStepChange }: WithdrawViewProp
         </CardContent>
       </Card>
 
-      <Button type="button" size="lg" className="min-h-[44px]" onClick={() => setPhase({ kind: 'signing' })}>
+      <Button type="button" size="lg" className="min-h-[44px]" onClick={onSettle}>
         Enviar a Lemon
       </Button>
 
-      {phase.kind !== 'confirm' && (
-        <TransactionState
-          phase={phase}
-          onPrimary={() => setPhase({ kind: 'confirm' })}
-          onSecondary={() => setPhase({ kind: 'pending' })}
-          summary={<>Enviás ${formatUsdc(settledAmount)} USDC a Lemon</>}
-        />
+      {phase.kind === 'reverted' ? (
+        // Lemon's own failure copy, distinct from the generic tx-reverted state (never the
+        // same words as an on-chain revert): the money never left the chain, it is still sitting
+        // right here in the mini-app balance, waiting for another attempt at step 2 only.
+        <div className="flex flex-col gap-4 p-4">
+          <p className="text-sm text-[var(--error)]">
+            Lemon no pudo completar este paso. Tus fondos on-chain están seguros en el saldo de la app.
+          </p>
+          <Button type="button" onClick={onSettle}>
+            Reintentar envío
+          </Button>
+        </div>
+      ) : (
+        phase.kind !== 'confirm' && (
+          <TransactionState
+            phase={phase}
+            onPrimary={handlePrimary}
+            summary={<>Enviás ${formatUsdc(settledAmount)} USDC a Lemon</>}
+          />
+        )
       )}
-
-      <div className="flex flex-wrap gap-1.5" aria-label="Selector de estado (solo desarrollo)">
-        {STEP2_PHASES.map(({ key, phase: demoPhase }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setPhase(demoPhase)}
-            className="rounded-full border border-[var(--border-subtle)] px-2.5 py-1 text-[10px] text-[var(--text-secondary)]"
-          >
-            {key}
-          </button>
-        ))}
-      </div>
     </div>
   )
 }
@@ -173,19 +150,39 @@ function RetirarPageInner() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const step = searchParams.get('paso') === '2' ? 2 : 1
+  const urlStep = searchParams.get('paso') === '2' ? 2 : 1
 
-  function setStep(next: 1 | 2) {
+  const { totalUsdc } = useVaultPosition()
+  const { step: flowStep, pendingAmount, phase, redeem, settleToLemon, acknowledge } = useWithdrawFlow()
+  // The flow itself is the source of truth once it has measured a pending amount (a refresh with
+  // no `?paso=2` in the URL should still land on step 2, not silently drop the pending settlement).
+  const step = pendingAmount !== null ? 2 : urlStep
+
+  useEffect(() => {
     const params = new URLSearchParams(searchParams.toString())
-    if (next === 2) params.set('paso', '2')
+    if (step === 2) params.set('paso', '2')
     else params.delete('paso')
     const query = params.toString()
-    router.replace(query ? `${pathname}?${query}` : pathname)
+    const target = query ? `${pathname}?${query}` : pathname
+    if (`${pathname}${window.location.search}` !== target) router.replace(target)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
+
+  async function handleRedeem(bps: bigint) {
+    await redeem(bps)
   }
 
   return (
     <main className="min-h-dvh bg-background">
-      <WithdrawView totalUsdc={MOCK_FUNDED.totalUsdc} step={step} onStepChange={setStep} />
+      <WithdrawView
+        totalUsdc={totalUsdc}
+        step={step}
+        pendingAmount={pendingAmount}
+        phase={phase}
+        onRedeem={handleRedeem}
+        onSettle={settleToLemon}
+        onAcknowledge={acknowledge}
+      />
     </main>
   )
 }

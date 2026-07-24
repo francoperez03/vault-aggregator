@@ -13,6 +13,9 @@ vi.mock('@/hooks/useNetworkGuard', () => ({ useNetworkGuard: () => useNetworkGua
 const useVaultPositionMock = vi.fn()
 vi.mock('@/hooks/useVaultPosition', () => ({ useVaultPosition: () => useVaultPositionMock() }))
 
+const useWithdrawFlowMock = vi.fn(() => ({ pendingAmount: null }))
+vi.mock('@/hooks/useWithdrawFlow', () => ({ useWithdrawFlow: () => useWithdrawFlowMock() }))
+
 vi.mock('@/components/wallet-bar', () => ({ WalletBar: () => null }))
 
 afterEach(cleanup)
@@ -87,5 +90,22 @@ describe('Page (default export)', () => {
     render(<Page />)
 
     expect(screen.getAllByText('$10.00').length).toBeGreaterThan(0)
+  })
+
+  it('con un monto pendiente medido por useWithdrawFlow, muestra el banner persistente', () => {
+    useAccountMock.mockReturnValue({ isConnected: true })
+    useNetworkGuardMock.mockReturnValue({ isWrongNetwork: false, expectedName: 'Sepolia', switchNetwork: vi.fn() })
+    useVaultPositionMock.mockReturnValue({
+      perAdapter: { morpho: { shares: 1n, adapterTotalShares: 1n, totalAssets: 10_000_000n, valueUsdc: 10_000_000n, weightBps: 10000 } },
+      totalUsdc: 10_000_000n,
+      hasWeights: true,
+      isLoading: false,
+      refetch: vi.fn(),
+    })
+    useWithdrawFlowMock.mockReturnValue({ pendingAmount: 500_000n })
+
+    render(<Page />)
+
+    expect(screen.getByText(/Moviste \$0.50 USDC al saldo de la app/)).toBeInTheDocument()
   })
 })

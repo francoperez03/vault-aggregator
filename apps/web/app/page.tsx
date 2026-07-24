@@ -6,11 +6,12 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { PositionSummary } from '@/components/vault-aggregator/position-summary'
 import { ProtocolBreakdown } from '@/components/vault-aggregator/protocol-breakdown'
+import { PendingSettlementBanner } from '@/components/vault-aggregator/pending-settlement-banner'
 import { WalletBar } from '@/components/wallet-bar'
-import { formatUsdc } from '@/lib/format'
 import { ADAPTER_IDS, type AdapterId } from '@/lib/contracts/config'
 import { useVaultPosition } from '@/hooks/useVaultPosition'
 import { useNetworkGuard } from '@/hooks/useNetworkGuard'
+import { useWithdrawFlow } from '@/hooks/useWithdrawFlow'
 
 /** Same shape as the mock fixture module's PositionState (declared locally so this route no
  * longer imports that test-only fixture module). Plan 08 wires `/` to `useVaultPosition()`
@@ -35,17 +36,7 @@ export function HomePositionView({ position }: HomePositionViewProps) {
   return (
     <div className="px-4 pt-[calc(1rem+env(safe-area-inset-top))]">
       {position.pendingWithdrawalUsdc !== undefined && position.pendingWithdrawalUsdc > 0n && (
-        <Card className="mb-4 rounded-[14px] border-[var(--warning)]/40 bg-[var(--warning)]/10">
-          <CardContent className="p-4 text-sm text-[var(--text-primary)]">
-            <p>
-              Moviste ${formatUsdc(position.pendingWithdrawalUsdc)} USDC al saldo de la app. Enviálo a Lemon para
-              terminar.
-            </p>
-            <Link href="/retirar" className="mt-2 inline-block text-sm font-semibold text-[var(--brand)] underline">
-              Ir a retirar
-            </Link>
-          </CardContent>
-        </Card>
+        <PendingSettlementBanner pendingAmount={position.pendingWithdrawalUsdc} />
       )}
 
       {isFunded ? (
@@ -99,7 +90,10 @@ export function HomePositionView({ position }: HomePositionViewProps) {
 
 /** Composes a `useVaultPosition()` read into `HomePositionView`'s prop shape. Unconfigured
  * adapters (missing env var) render as an empty zero entry, same as an adapter with no position. */
-function toPositionState(vaultPosition: ReturnType<typeof useVaultPosition>): PositionState {
+function toPositionState(
+  vaultPosition: ReturnType<typeof useVaultPosition>,
+  pendingWithdrawalUsdc: bigint | null,
+): PositionState {
   const perAdapter = {} as PositionState['perAdapter']
   for (const id of ADAPTER_IDS) {
     const adapter = vaultPosition.perAdapter[id]
@@ -107,13 +101,21 @@ function toPositionState(vaultPosition: ReturnType<typeof useVaultPosition>): Po
       ? { shares: adapter.shares, valueUsdc: adapter.valueUsdc, weightBps: adapter.weightBps, unavailable: adapter.unavailable }
       : { shares: 0n, valueUsdc: 0n, weightBps: 0 }
   }
-  return { perAdapter, totalUsdc: vaultPosition.totalUsdc, hasWeights: vaultPosition.hasWeights }
+  return {
+    perAdapter,
+    totalUsdc: vaultPosition.totalUsdc,
+    hasWeights: vaultPosition.hasWeights,
+    pendingWithdrawalUsdc: pendingWithdrawalUsdc ?? undefined,
+  }
 }
 
 export default function Page() {
   const { isConnected } = useAccount()
   const { isWrongNetwork, expectedName, switchNetwork } = useNetworkGuard()
   const vaultPosition = useVaultPosition()
+  // D-19: the banner (plan 03/08) is only real once step 1 of a withdrawal actually measured and
+  // persisted an amount, which is what useWithdrawFlow reads back from localStorage on mount.
+  const { pendingAmount } = useWithdrawFlow()
 
   return (
     <main className="min-h-dvh bg-background">
@@ -141,7 +143,7 @@ export default function Page() {
           </Card>
         </div>
       ) : (
-        <HomePositionView position={toPositionState(vaultPosition)} />
+        <HomePositionView position={toPositionState(vaultPosition, pendingAmount)} />
       )}
     </main>
   )
