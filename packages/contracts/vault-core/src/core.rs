@@ -155,6 +155,14 @@ impl VaultCore {
     /// a full exit. The frontend converts "take out $50" to bps off-chain, the same way it converts
     /// USDC to shares today. Every adapter has its own share price, so a single global share
     /// scalar does not exist in this model.
+    /// C-M2: a position that has devalued to dust (every per-adapter `owed` floors to 0) must
+    /// still be closable here, exactly like `rebalance` already tolerates a zero-value unwind
+    /// (see its own `proceeds.is_zero()` early-return below). `unwind_position` already burns the
+    /// shares and clears the ledger unconditionally before this point — the old code additionally
+    /// REVERTED the whole call on a zero payout, which undid nothing (Stylus reverts are atomic)
+    /// but meant a dust position had no working exit path at all. Skipping only the USDC transfer
+    /// (there is nothing to send) and paying out `paid` (possibly zero) fixes that without
+    /// touching the burn/reconciliation logic.
     pub fn redeem(&mut self, bps: U256) -> Result<U256, Vec<u8>> {
         self.ensure_initialized()?;
         if bps.is_zero() || bps > TOTAL_BPS {
@@ -162,11 +170,10 @@ impl VaultCore {
         }
         let user = self.vm().msg_sender();
         let paid = self.unwind_position(user, bps)?;
-        if paid.is_zero() {
-            return Err(errors::zero_amount());
+        if !paid.is_zero() {
+            let transfer_ctx = Call::new_mutating(self);
+            usdc::transfer(self.vm(), transfer_ctx, USDC, user, paid)?; // always to msg.sender (F12 D-02)
         }
-        let transfer_ctx = Call::new_mutating(self);
-        usdc::transfer(self.vm(), transfer_ctx, USDC, user, paid)?; // always to msg.sender (F12 D-02)
 
         self.vm().log(Redeem { user, bps, assets: paid });
         Ok(paid)
@@ -1227,6 +1234,36 @@ mod tests {
         // Stylus/EVM call-frame semantics the whole tx (including the burn) unwinds on Err — this
         // in-memory `contract` value reflects only the pre-revert mutation, not what a real chain
         // would persist. Nothing further to assert on state here.
+    }
+
+    /// C-M2: a position devalued to dust (every adapter's `owed` floors to 0 on a full exit) must
+    /// still close successfully via `redeem`, exactly as it already does via `rebalance`. Seeds a
+    /// 1-wei deposit (mints nonzero shares off the virtual-offset math), then simulates the
+    /// adapter losing all value (`total_assets` mocked to 0) so `convert_to_assets` floors the
+    /// owed payout to 0. Before the fix this reverted `ZeroAmount`; after the fix it succeeds,
+    /// pays out 0, and clears the user's shares from the ledger.
+    #[test]
+    fn redeem_full_exit_on_dust_position_succeeds_and_clears_shares() {
+        let vm = TestVM::default();
+        let mut contract = deploy_init_and_seed_adapter(&vm);
+
+        let shares_minted = deposit_amount(&vm, &mut contract, U256::from(1u64));
+        assert!(!shares_minted.is_zero());
+
+        // Total loss: the adapter now reports 0 assets for this position's shares.
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        mock_max_withdraw(&vm, adapter_addr(), U256::ZERO);
+        // owed floors to 0 -> unwind_request returns None -> no withdraw call is made, so the
+        // core's USDC balance is unchanged across the before/after reads (single registration is
+        // safe here, unlike Pitfall 1's two-distinct-values case).
+        let balance_calldata = balanceOfCall { account: contract_addr() }.abi_encode();
+        vm.mock_static_call(USDC, balance_calldata, Ok(U256::ZERO.abi_encode()));
+
+        vm.set_sender(user_addr());
+        let paid = contract.redeem(TOTAL_BPS).unwrap(); // must succeed, not revert ZeroAmount
+        assert_eq!(paid, U256::ZERO);
+        assert_eq!(contract.shares_of(user_addr(), adapter_addr()), U256::ZERO);
+        assert_eq!(contract.adapter_total_shares.get(adapter_addr()), U256::ZERO);
     }
 
     #[test]
