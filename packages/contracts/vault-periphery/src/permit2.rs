@@ -54,7 +54,10 @@ sol! {
     ) external;
 }
 
-/// Canonical Permit2 address -- identical on Arbitrum One and Arbitrum Sepolia.
+/// Canonical Permit2 address -- identical on Arbitrum One and Arbitrum Sepolia. The constructor
+/// takes `permit2` as an explicit argument (not this constant) so deploy tooling stays in
+/// control; referenced here by tests and deploy scripts as the known-correct value to pass in.
+#[allow(dead_code)]
 pub const CANONICAL_PERMIT2: Address = Address::new([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0xD4, 0x73, 0x03, 0x0F, 0x11, 0x6d, 0xDE, 0xE9, 0xF6, 0xB4,
     0x3a, 0xC7, 0x8B, 0xA3,
