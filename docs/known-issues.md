@@ -1,5 +1,41 @@
 # Known issues — carried into Phase 13's security review
 
+## PERMIT2-REMOVED — `vault-periphery` deleted, Lemon cannot substitute a Permit2 signature
+
+**Status: RESOLVED BY DELETION, pre-13b security checklist.** CoinFlip (M1) empirically proved that
+Lemon's hosting model cannot support Permit2 signature-substitution: the server-side
+`PERMIT_PLACEHOLDER_0` mechanism fails, and Permit2 is not allowed as an entrypoint contract inside
+Lemon's mini-app sandbox. `vault-periphery`'s only public method, `depositWithPermit2`, existed
+solely to let Lemon substitute a signed Permit2 transfer for a real user signature — the exact
+mechanism CoinFlip found does not work. With no working consumer, the periphery contract, its
+Permit2 `SignatureTransfer` binding, and the core's permissionless `depositFor(user, amount)`
+entrypoint (periphery's only external caller) were all removed:
+
+- `packages/contracts/vault-periphery` deleted entirely (crate, workspace member, CI check).
+- `VaultCore::deposit_for` demoted from a public ABI entry to a private helper (D-13 plain `impl`
+  block) — `deposit(uint256)` is now the only intake entrypoint, always self-deposit
+  (`payer == user == msg.sender`).
+- Lemon integrates via the CoinFlip fallback instead: one-time `USDC.approve(core, amount)`, then
+  `core.deposit(amount)` per deposit — no signature substitution required.
+
+**Every residual risk this deletion makes moot:**
+
+- **P-I1** (periphery's USDC belief never reconciled with the core's) — the periphery no longer
+  exists; there is nothing left to reconcile.
+- **P-I2** (Permit2 signature-shape gate excludes EIP-1271 signers) — moot, there is no Permit2
+  intake path at all anymore.
+- **P-I3** (no sweep/rescue path on a partial pull) — moot, the periphery that could have held a
+  partial pull no longer exists.
+- **D-19 residual risks #1-#3** (periphery transient-balance zeroing, disabled-adapter revert
+  leaving nothing stranded, permissionless dust-deposit not poisoning the offset) — the first two
+  were periphery-specific and no longer apply; the third exercised `depositFor`'s third-party-credit
+  path directly, which is no longer reachable from outside the contract (`deposit_for` is private,
+  only ever called by `deposit()` with `user == msg.sender`).
+
+See `docs/security/adversarial-review/cross-reference.md`'s Periphery partition for the closing
+note on P-I1/P-I2/P-I3, and `docs/TESTNET.md` for the redeployed rig (no periphery contract, no
+`TESTNET_PERIPHERY_ADDR`).
+
 ## KI-01 — Stranded USDC in the core (D-10)
 
 A user's `rebalance` re-splits only the balance delta measured inside `unwind_position` for their

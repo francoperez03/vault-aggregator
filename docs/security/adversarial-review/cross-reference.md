@@ -298,6 +298,21 @@ introduces partial-fill or fee-taking deposit semantics, that same change must a
 mechanism to the periphery in the same PR - record this as an explicit dependency for whichever
 future plan touches `deposit_for`'s pull semantics, so it is not rediscovered from scratch.
 
+### Closing note — the periphery contract has been removed (post-13b, pre-checklist)
+
+CoinFlip (M1) empirically proved Lemon cannot perform Permit2 signature substitution (the
+server-side placeholder mechanism fails, Permit2 is not an allowed entrypoint inside Lemon's
+sandbox). `vault-periphery`'s `depositWithPermit2` existed solely to let Lemon use that exact
+mechanism, so it had no working consumer. The periphery crate, its Permit2 binding, and the core's
+now-orphaned permissionless `deposit_for(user, amount)` entrypoint have all been deleted; Lemon
+integrates via the CoinFlip fallback (`approve` once, then `core.deposit(amount)` per deposit).
+
+**P-I1, P-I2 and P-I3 above are now MOOT** - the contract they describe no longer exists. There is
+no periphery balance to reconcile (P-I1), no Permit2 signature shape to gate on (P-I2), and no
+periphery to add a sweep/rescue path to (P-I3). This partition's three findings stand as the
+historical record of what the blind review found in the periphery while it existed; none require
+further action. See `docs/known-issues.md`'s `PERMIT2-REMOVED` entry for the full disposition.
+
 ---
 
 ## Final count
