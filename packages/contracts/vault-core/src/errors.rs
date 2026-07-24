@@ -23,7 +23,6 @@ sol! {
     error TransferFailed();
     error AdapterAlreadyRegistered();
     error AdapterNotRegistered();
-    error InsufficientShares();
     error RedeemShortfall(uint256 owed, uint256 actual);
     error NoWeightsSet();
 }
@@ -90,10 +89,6 @@ pub fn adapter_already_registered() -> Vec<u8> {
 
 pub fn adapter_not_registered() -> Vec<u8> {
     AdapterNotRegistered {}.abi_encode()
-}
-
-pub fn insufficient_shares() -> Vec<u8> {
-    InsufficientShares {}.abi_encode()
 }
 
 pub fn redeem_shortfall(owed: U256, actual: U256) -> Vec<u8> {

@@ -180,6 +180,7 @@ measured size, the fragment count and D-14's ordered plan B, and waits for a dec
 | 01-02 | storage spike (Option A: nested ledger + per-user weights + probe fn) — REVERTED | 21,970 | 1 | +806 |
 | 02-01 | per-user storage + write_weights/read_weights + sharesOf/weightsOf + NoWeightsSet | 21,682 | 1 | +518 |
 | 02-02 | weights validator tests (test-only) | 21,674 | 1 | -8 |
+| 03-01 | per-user deposit/redeem/rebalance + unwind_position + deposit_leg; deleted set_allocation, AllocationSet, active_adapters, split_by_position, InsufficientShares, adapter_bps, flat shares, scalar total_shares | 20,960 | 1 | -714 |
 
 **Layout verdict (Assumption A1 → measured):** Option A costs +806 bytes on top of the 12.1
 baseline, including the throwaway probe function. Remaining headroom for the rest of the phase:
@@ -200,3 +201,16 @@ pop-loop fallback was needed. Headroom remaining for Plan 03: 846 bytes (~3.8%) 
 noise band already documented for this project (brotli compression non-determinism across
 otherwise-identical release artifacts, since `#[cfg(test)]` code is never compiled into the
 release WASM); not a real reduction. Headroom for Plan 03 stays effectively 846-854 bytes (~3.8%).
+
+**Task 03-01 (the atomic deposit/redeem/rebalance rewrite):** 20,960 bytes, **-714 bytes vs Task
+02-02** (21,674). The D-13 STOP rule did NOT trigger — the measured size went DOWN, not up, because
+this task deletes more surface than it adds: `set_allocation`, the `AllocationSet` event,
+`registry::active_adapters`, `share_math::split_by_position` (plus its 6 unit tests),
+`errors::InsufficientShares`/`insufficient_shares()`, and three storage fields (`adapter_bps`, the
+flat `shares` mapping, the scalar `total_shares`) are all gone, while the additions
+(`unwind_position`, `deposit_leg`, the rewritten `deposit`/`redeem`/`rebalance` bodies) reuse
+`write_weights`/`read_weights`/`sharesOf`/`weightsOf` from Plan 02 rather than duplicating logic.
+Headroom under the 22,528-byte gate: **1,568 bytes (~7%)** — comfortably clear of the gate, and
+more headroom than Plan 02 left for this plan (846 bytes), not less. `cargo stylus export-abi`
+confirms `deposit`, `redeem`, `rebalance`, `sharesOf`, `weightsOf`, `addAdapter`, `setEnabled`,
+`removeAdapter` are present and `setAllocation` is absent.

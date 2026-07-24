@@ -36,12 +36,11 @@ const TOTAL_BPS: U256 = U256::from_limbs([10_000u64, 0, 0, 0]);
 sol! {
     event Initialized(address indexed owner);
     event Deposit(address indexed user, uint256 assets, uint256 shares);
-    event Redeem(address indexed user, uint256 shares, uint256 assets);
+    event Redeem(address indexed user, uint256 bps, uint256 assets);
     event AdapterAdded(address indexed adapter);
     event AdapterEnabled(address indexed adapter, bool enabled);
     event AdapterRemoved(address indexed adapter);
-    event AllocationSet(address[] adapters, uint256[] weightsBps);
-    event Rebalanced(uint256 redeposited);
+    event Rebalanced(address indexed user, uint256 redeposited);
 }
 
 /// D-09b: the amount to unwind from one adapter is `min(total_assets, max_withdraw)` (the adapter
@@ -74,8 +73,9 @@ impl VaultCore {
         Ok(())
     }
 
-    /// Owner-only: registers a new adapter, enabled by default with 0 bps (weight is assigned
-    /// only via `set_allocation`). D-07 dynamic registry.
+    /// Owner-only: registers a new adapter, enabled by default. Weight is assigned only via each
+    /// user's own `rebalance` call (D-01/D-02) — there is no owner-level allocation. D-07 dynamic
+    /// registry.
     pub fn add_adapter(&mut self, adapter: Address) -> Result<(), Vec<u8>> {
         self.ensure_initialized()?;
         self.only_owner()?;
@@ -87,36 +87,32 @@ impl VaultCore {
         }
         self.adapters.push(adapter);
         self.adapter_enabled.setter(adapter).set(true);
-        self.adapter_bps.setter(adapter).set(U256::ZERO);
         self.vm().log(AdapterAdded { adapter });
         Ok(())
     }
 
-    /// Owner-only: enables/disables a registered adapter. Disabling enforces the D-08
-    /// empty-position invariant (`total_assets() == 0`) BEFORE the storage write, and zeroes any
-    /// stale bps weight so it can't linger in a future `set_allocation` sum.
+    /// Owner-only enable/disable of a registered adapter.
+    /// D-11: disabling is allowed WITH an open position. It blocks new money in (a disabled
+    /// adapter cannot be a weight target, and `deposit` re-checks `adapter_enabled` per leg) but
+    /// never blocks money out: `redeem` and `rebalance`'s unwind iterate the FULL registry filtered
+    /// by held shares, so nobody can be locked inside a disabled adapter. The strict empty-position
+    /// guard (F11 D-08) stays only on `remove_adapter`.
     pub fn set_enabled(&mut self, adapter: Address, enabled: bool) -> Result<(), Vec<u8>> {
         self.ensure_initialized()?;
         self.only_owner()?;
         if !registry::is_registered(self, adapter) {
             return Err(errors::adapter_not_registered());
         }
-        if !enabled {
-            let total_assets = adapter_dispatch::total_assets(self.vm(), adapter)?;
-            if !total_assets.is_zero() {
-                return Err(errors::adapter_has_balance(total_assets));
-            }
-        }
         self.adapter_enabled.setter(adapter).set(enabled);
-        if !enabled {
-            self.adapter_bps.setter(adapter).set(U256::ZERO);
-        }
         self.vm().log(AdapterEnabled { adapter, enabled });
         Ok(())
     }
 
     /// Owner-only: removes a registered adapter (swap-remove, see `registry.rs`'s doc-comment for
-    /// the locked removal semantics). Same D-08 empty-position guard as `set_enabled(false)`.
+    /// the locked removal semantics). Same F11 D-08 empty-position guard as before — unlike
+    /// `set_enabled`, this permanently drops the adapter from the registry, so a position left
+    /// inside it would become permanently unreachable (D-11 only relaxed the disable guard, not
+    /// this one).
     pub fn remove_adapter(&mut self, adapter: Address) -> Result<(), Vec<u8>> {
         self.ensure_initialized()?;
         self.only_owner()?;
@@ -127,7 +123,6 @@ impl VaultCore {
         }
         registry::swap_remove(self, idx);
         self.adapter_enabled.setter(adapter).set(false);
-        self.adapter_bps.setter(adapter).set(U256::ZERO);
         self.vm().log(AdapterRemoved { adapter });
         Ok(())
     }
@@ -145,209 +140,120 @@ impl VaultCore {
         self.read_weights(user)
     }
 
-    /// Atomic multi-adapter split deposit (VAULT-01): pulls `amount` USDC from the caller, splits
-    /// it by the current bps allocation across every active adapter (D-10 remainder to the first
-    /// active adapter), deposits each slice, and mints offset-based shares from the pre-loop
-    /// `total_assets` snapshot. Any single `adapter.deposit()` revert unwinds the whole tx (D-09).
+    /// VAULT-01: splits the caller's deposit across THEIR OWN stored weights (D-01/D-02), minting
+    /// shares per adapter at that adapter's own price (D-06). Any leg reverting reverts the whole
+    /// tx (whole-tx atomicity, inherited F11 D-09).
     pub fn deposit(&mut self, amount: U256) -> Result<U256, Vec<u8>> {
         self.ensure_initialized()?;
         if amount.is_zero() {
             return Err(errors::zero_amount());
         }
-
-        // Snapshot the registry into local memory FIRST (Pitfall 4/T-11-11): the split loop below
-        // iterates this `Vec`, never re-reading storage mid-iteration.
-        let active = registry::active_adapters(self);
-        if active.is_empty() {
-            return Err(errors::adapter_not_enabled());
-        }
-
-        // Snapshot the aggregate total_assets BEFORE any external mutating call (Pitfall 2/T-11-10):
-        // minting against a post-deposit total would dilute the depositor against their own funds.
-        let mut total_assets_before = U256::ZERO;
-        for (adapter, _bps) in active.iter() {
-            total_assets_before += adapter_dispatch::total_assets(self.vm(), *adapter)?;
-        }
-
         let user = self.vm().msg_sender();
-        let self_addr = self.vm().contract_address();
 
+        // D-01: no implicit fallback allocation exists. A user bootstraps by calling
+        // `rebalance(adapters, bps)` with a zero position first, which just writes their weights.
+        let (targets, weights) = self.read_weights(user);
+        if targets.is_empty() {
+            return Err(errors::no_weights_set());
+        }
+
+        // Guard + snapshot BEFORE any mutating call: an adapter disabled after the weights were
+        // written must not take new money (D-11), and minting against a post-deposit total_assets
+        // would dilute the depositor against their own funds.
+        let mut ta_before: Vec<U256> = Vec::with_capacity(targets.len());
+        for adapter in targets.iter() {
+            if !self.adapter_enabled.get(*adapter) {
+                return Err(errors::adapter_not_enabled());
+            }
+            ta_before.push(adapter_dispatch::total_assets(self.vm(), *adapter)?);
+        }
+
+        let self_addr = self.vm().contract_address();
         let pull_ctx = Call::new_mutating(self);
         usdc::transfer_from(self.vm(), pull_ctx, USDC, user, self_addr, amount)?;
 
-        let weights: Vec<U256> = active.iter().map(|(_, bps)| *bps).collect();
         let slices = share_math::split_by_bps(amount, &weights)?;
-
-        // Bare `?` per adapter: any revert unwinds the whole tx atomically (D-09/T-11-09),
-        // Stylus/EVM call-frame semantics give this for free, no manual rollback needed.
-        for ((adapter, _bps), slice) in active.iter().zip(slices) {
-            // Skip 0-value legs: an enabled 0-bps adapter (add_adapter enables at 0 bps,
-            // set_allocation need not cover the full enabled set) would otherwise force a
-            // deposit(0) that some ERC-4626 adapters revert on -> self-inflicted deposit DoS.
-            // Guard on the slice, not bps, so the D-10 remainder-to-slot-0 leg still routes.
-            if slice.is_zero() {
+        let mut minted_total = U256::ZERO;
+        for i in 0..targets.len() {
+            // Skip 0-value legs: a dust-sized slice would hit the adapter's ZeroAmount guard and
+            // revert an otherwise valid deposit.
+            if slices[i].is_zero() {
                 continue;
             }
-            let approve_ctx = Call::new_mutating(self);
-            usdc::approve(self.vm(), approve_ctx, USDC, *adapter, slice)?;
-
-            let deposit_ctx = Call::new_mutating(self);
-            adapter_dispatch::deposit(self.vm(), deposit_ctx, *adapter, slice)?;
+            minted_total += self.deposit_leg(user, targets[i], slices[i], ta_before[i])?;
         }
-
-        let shares = share_math::convert_to_shares(
-            amount,
-            self.total_shares.get(),
-            total_assets_before,
-            share_math::OFFSET_POW,
-        )?;
-        if shares.is_zero() {
+        if minted_total.is_zero() {
             return Err(errors::zero_shares());
         }
 
-        let new_user_shares = self.shares.get(user) + shares;
-        self.shares.setter(user).set(new_user_shares);
-        let new_total_shares = self.total_shares.get() + shares;
-        self.total_shares.set(new_total_shares);
-
-        self.vm().log(Deposit {
-            user,
-            assets: amount,
-            shares,
-        });
-        Ok(shares)
+        self.vm().log(Deposit { user, assets: amount, shares: minted_total });
+        Ok(minted_total)
     }
 
-    /// Hardened redeem (D-03..D-07): burns `shares` from the caller, converts to `owed` USDC via
-    /// `convert_to_assets` (floor, always in the vault's favor), pulls it pro-rata from every
-    /// active adapter BY LIVE POSITION (`split_by_position`, not the static bps split `deposit`
-    /// uses), then pays the caller the REAL measured USDC balance delta the core gained across
-    /// the whole withdraw loop, capped at `owed` (D-05/D-07) — never the adapter's return value or
-    /// the pre-computed `owed`. A shortfall (measured delta < owed) reverts the whole tx (D-06).
-    pub fn redeem(&mut self, shares: U256) -> Result<U256, Vec<u8>> {
+    /// D-07: withdrawal is denominated as a fraction of the caller's OWN position. `bps` = 10000 is
+    /// a full exit. The frontend converts "take out $50" to bps off-chain, the same way it converts
+    /// USDC to shares today. Every adapter has its own share price, so a single global share
+    /// scalar does not exist in this model.
+    pub fn redeem(&mut self, bps: U256) -> Result<U256, Vec<u8>> {
         self.ensure_initialized()?;
-        if shares.is_zero() {
-            return Err(errors::zero_shares());
+        if bps.is_zero() || bps > TOTAL_BPS {
+            return Err(errors::allocation_invalid());
         }
         let user = self.vm().msg_sender();
-        if self.shares.get(user) < shares {
-            return Err(errors::insufficient_shares());
-        }
-
-        // Snapshot the registry + per-adapter LIVE total_assets BEFORE any mutation/external call
-        // (Pitfall 2/4). `positions` feeds the D-04 split; their sum feeds convert_to_assets.
-        let active = registry::active_adapters(self);
-        let mut positions: Vec<U256> = Vec::with_capacity(active.len());
-        let mut total_assets_before = U256::ZERO;
-        for (adapter, _bps) in active.iter() {
-            let ta = adapter_dispatch::total_assets(self.vm(), *adapter)?;
-            total_assets_before += ta;
-            positions.push(ta);
-        }
-
-        let owed = share_math::convert_to_assets(
-            shares,
-            self.total_shares.get(),
-            total_assets_before,
-            share_math::OFFSET_POW,
-        )?;
-        if owed.is_zero() {
+        let paid = self.unwind_position(user, bps)?;
+        if paid.is_zero() {
             return Err(errors::zero_amount());
         }
-
-        // CEI: burn before any external call. An atomic revert later restores these.
-        let new_user_shares = self.shares.get(user) - shares;
-        self.shares.setter(user).set(new_user_shares);
-        let new_total_shares = self.total_shares.get() - shares;
-        self.total_shares.set(new_total_shares);
-
-        // D-05: measure the REAL USDC balance the core actually gains across the whole redeem —
-        // never trust adapter returns or the pre-computed `owed`.
-        let self_addr = self.vm().contract_address();
-        let balance_before = usdc::balance_of(self.vm(), USDC, self_addr)?;
-
-        // D-04: pro-rata BY LIVE POSITION, remainder to index 0 (NOT split_by_bps — the pool may
-        // be off-allocation after a rebalance, and positions are unbounded quantities).
-        let slices = share_math::split_by_position(owed, &positions)?;
-        for ((adapter, _bps), slice) in active.iter().zip(slices) {
-            // Skip 0-value legs: registry::active_adapters returns every enabled adapter, and
-            // after a D-11 exit-by-omission rebalance an enabled adapter can sit at position 0 ->
-            // split_by_position hands it slice 0. adapter.withdraw(0) reverts ZeroAmount, so a
-            // bare `?` here would revert EVERY redeem — a permanent DoS, not a legit D-06
-            // shortfall. Skip it.
-            if slice.is_zero() {
-                continue;
-            }
-            let withdraw_ctx = Call::new_mutating(self);
-            adapter_dispatch::withdraw(self.vm(), withdraw_ctx, *adapter, slice)?; // bare ? = D-06 atomicity
-        }
-
-        let balance_after = usdc::balance_of(self.vm(), USDC, self_addr)?;
-        // checked_sub: a buggy/compromised adapter moving USDC OUT of the core would underflow —
-        // in release builds ruint wraps, turning a loss into a huge delta that passes the D-06
-        // gate. Treat any net outflow as a shortfall and revert.
-        let actual_delta = balance_after
-            .checked_sub(balance_before)
-            .ok_or_else(|| errors::redeem_shortfall(owed, U256::ZERO))?;
-
-        // D-06 shortfall -> whole-tx revert; D-07 surplus (donation/sandwich) -> credit capped at owed.
-        let paid = share_math::reconcile_credit(owed, actual_delta)?;
-
         let transfer_ctx = Call::new_mutating(self);
-        usdc::transfer(self.vm(), transfer_ctx, USDC, user, paid)?; // D-02: to msg.sender
+        usdc::transfer(self.vm(), transfer_ctx, USDC, user, paid)?; // always to msg.sender (F12 D-02)
 
-        self.vm().log(Redeem { user, shares, assets: paid });
+        self.vm().log(Redeem { user, bps, assets: paid });
         Ok(paid)
     }
 
-    /// Owner-only allocation rebalance (VAULT-03, D-08): full-unwind every current position to the
-    /// core's USDC balance, write the new weights (the internal set_allocation step, D-13), then
-    /// re-split the REAL, complete core USDC balance across the new weights (D-09 — sweeps any capped
-    /// surplus/donation left by redeem, D-07). Atomic: any leg reverting reverts the whole tx (D-10).
-    /// With an empty pool this degenerates to just setting weights (D-13 bootstrap).
+    /// VAULT-03, user-scoped. The ONLY public way to write weights (D-02): validates + stores the
+    /// caller's new weights, fully unwinds THEIR OWN position (D-09) and re-splits the measured
+    /// proceeds across the new weights. With a zero position this degenerates to just writing
+    /// weights — that is the D-01 bootstrap a new user runs before their first deposit.
+    ///
+    /// SECURITY (D-10): `proceeds` is the balance delta measured INSIDE `unwind_position` for this
+    /// caller's legs only. This method must NEVER read `usdc::balance_of(core)` — the old
+    /// owner-only rebalance did exactly that (F12, `core.rs:323`), and under the per-user model that
+    /// read is the theft vector: one caller would sweep the core's stranded surplus (F12 D-07 caps)
+    /// and other users' donations into their own position. Leftover USDC stays stranded and inert;
+    /// it is a documented known issue for the Phase 13 checklist, not something a user path sweeps.
     pub fn rebalance(
         &mut self,
         adapters: Vec<Address>,
         new_weights: Vec<U256>,
     ) -> Result<(), Vec<u8>> {
         self.ensure_initialized()?;
-        self.only_owner()?;
+        let user = self.vm().msg_sender();
 
-        // Snapshot the OLD active set BEFORE the weight write (Open Question 2): unwind the CURRENT
-        // allocation, not the new adapters[] param (which would miss unwinding an exited protocol).
-        let old_active = registry::active_adapters(self);
+        // Validate + write BEFORE the unwind, so an invalid weight set reverts before any external
+        // call (guard-before-mutate).
+        self.write_weights(user, adapters.clone(), new_weights.clone())?;
 
-        // Validate + write the new weights. set_allocation validates (D-11: sum 10000, no dups, no
-        // zeros, every target enabled) BEFORE writing, so an invalid rebalance reverts before any unwind.
-        self.set_allocation(adapters.clone(), new_weights.clone())?;
-
-        // UNWIND every OLD position to the core's own USDC balance (D-08), dust/throttle-tolerant (D-09b).
-        for (adapter, _bps) in old_active.iter() {
-            let total_assets = adapter_dispatch::total_assets(self.vm(), *adapter)?;
-            let max = adapter_dispatch::max_withdraw(self.vm(), *adapter)?;
-            if let Some(request) = unwind_request(total_assets, max) {
-                let withdraw_ctx = Call::new_mutating(self);
-                adapter_dispatch::withdraw(self.vm(), withdraw_ctx, *adapter, request)?; // bare ? = D-10
-            }
+        // D-10: `proceeds` is ONLY the balance delta measured inside `unwind_position` for THIS
+        // caller's legs. Never read `usdc::balance_of(core)` here — that would let this caller
+        // sweep the core's stranded surplus and other users' donations into their own position.
+        let proceeds = self.unwind_position(user, TOTAL_BPS)?;
+        if proceeds.is_zero() {
+            self.vm().log(Rebalanced { user, redeposited: U256::ZERO });
+            return Ok(());
         }
 
-        // RE-SPLIT the REAL, complete core USDC balance across the NEW weights (D-09 by construction).
-        let self_addr = self.vm().contract_address();
-        let core_balance = usdc::balance_of(self.vm(), USDC, self_addr)?;
-        let slices = share_math::split_by_bps(core_balance, &new_weights)?;
-        for (adapter, slice) in adapters.iter().zip(slices) {
-            // Skip zero slices: an empty pool (D-13 bootstrap) or a dust-sized slice would otherwise
-            // hit the adapter's ZeroAmount deposit guard and revert the whole rebalance.
-            if slice.is_zero() {
+        let slices = share_math::split_by_bps(proceeds, &new_weights)?;
+        for i in 0..adapters.len() {
+            if slices[i].is_zero() {
                 continue;
             }
-            let approve_ctx = Call::new_mutating(self);
-            usdc::approve(self.vm(), approve_ctx, USDC, *adapter, slice)?;
-            let deposit_ctx = Call::new_mutating(self);
-            adapter_dispatch::deposit(self.vm(), deposit_ctx, *adapter, slice)?; // bare ? = D-10
+            // Snapshot AFTER the unwind: the unwind changed this adapter's total_assets.
+            let ta_before = adapter_dispatch::total_assets(self.vm(), adapters[i])?;
+            self.deposit_leg(user, adapters[i], slices[i], ta_before)?;
         }
 
-        self.vm().log(Rebalanced { redeposited: core_balance });
+        self.vm().log(Rebalanced { user, redeposited: proceeds });
         Ok(())
     }
 
@@ -366,75 +272,105 @@ impl VaultCore {
     }
 }
 
-/// D-13: `set_allocation` lives OUTSIDE the `#[public]` impl block. The `#[public]` macro exports
+/// D-13: internal helpers live OUTSIDE the `#[public]` impl block. The `#[public]` macro exports
 /// every method it wraps into the ABI regardless of Rust-level `pub`/private visibility (verified
 /// against `stylus-proc`'s own `PublicImpl` — it does not filter by fn visibility), so un-`pub`ing
-/// alone does not hide a method from `cargo stylus export-abi`. A plain, unannotated `impl`
-/// block IS the only way to keep a method callable internally (`self.set_allocation(...)` from
-/// `rebalance`) while keeping it off the exported ABI surface.
+/// alone does not hide a method from `cargo stylus export-abi`. A plain, unannotated `impl` block
+/// IS the only way to keep `unwind_position`, `deposit_leg`, `write_weights` and `read_weights`
+/// callable internally while keeping them off the exported ABI surface.
 impl VaultCore {
-    /// Owner-only: sets the global bps allocation (D-06). Validates BEFORE any write: matching
-    /// lengths, non-empty, no duplicates, every target registered+enabled, no zero weights, and
-    /// the sum is exactly 10000 (checked addition). Then clears bps for every currently-enabled
-    /// adapter and writes the new set, so the on-chain allocation is exactly the passed set.
-    fn set_allocation(
-        &mut self,
-        adapters: Vec<Address>,
-        weights_bps: Vec<U256>,
-    ) -> Result<(), Vec<u8>> {
-        self.ensure_initialized()?;
-        self.only_owner()?;
+    /// Shared exit primitive for `redeem` and `rebalance` (D-07/D-09). Withdraws `bps_fraction`
+    /// /10000 of `user`'s position, burns those shares, and returns the reconciled USDC the core
+    /// actually gained.
+    ///
+    /// D-11: iterates the FULL adapter registry filtered by `user_shares[user][adapter] != 0` —
+    /// never `weightsOf(user)` and never the enabled set. A user who holds shares in an adapter the
+    /// owner disabled (or that they dropped from their weights) must still be able to get out.
+    ///
+    /// D-06: `owed` is computed per adapter against `(adapter_total_shares[adapter],
+    /// adapter.total_assets())`. There is no aggregate share price in this model.
+    ///
+    /// `user` is never a caller-supplied parameter: the public entrypoints always pass
+    /// `self.vm().msg_sender()`, and this method is off the ABI (plain impl block).
+    fn unwind_position(&mut self, user: Address, bps_fraction: U256) -> Result<U256, Vec<u8>> {
+        let self_addr = self.vm().contract_address();
+        let balance_before = usdc::balance_of(self.vm(), USDC, self_addr)?;
 
-        if adapters.is_empty() || adapters.len() != weights_bps.len() {
-            return Err(errors::allocation_invalid());
-        }
+        let mut owed_total = U256::ZERO;
+        for i in 0..self.adapters.len() {
+            let Some(adapter) = self.adapters.get(i) else {
+                continue;
+            };
+            let held = self.user_shares.get(user).get(adapter);
+            if held.is_zero() {
+                continue;
+            }
+            let slice_shares = if bps_fraction == TOTAL_BPS {
+                held
+            } else {
+                share_math::mul_div_floor(held, bps_fraction, TOTAL_BPS)?
+            };
+            if slice_shares.is_zero() {
+                continue;
+            }
+            let ts = self.adapter_total_shares.get(adapter);
+            let ta = adapter_dispatch::total_assets(self.vm(), adapter)?;
+            let owed = share_math::convert_to_assets(slice_shares, ts, ta, share_math::OFFSET_POW)?;
 
-        for i in 0..adapters.len() {
-            for j in (i + 1)..adapters.len() {
-                if adapters[i] == adapters[j] {
-                    return Err(errors::allocation_invalid());
-                }
+            // CEI: burn before the external withdraw. An atomic revert later restores these.
+            self.user_shares.setter(user).setter(adapter).set(held - slice_shares);
+            self.adapter_total_shares.setter(adapter).set(ts - slice_shares);
+
+            let max = adapter_dispatch::max_withdraw(self.vm(), adapter)?;
+            if let Some(request) = unwind_request(owed, max) {
+                owed_total += owed;
+                let withdraw_ctx = Call::new_mutating(self);
+                adapter_dispatch::withdraw(self.vm(), withdraw_ctx, adapter, request)?; // bare ? = whole-tx atomicity
             }
         }
 
-        let mut sum = U256::ZERO;
-        for i in 0..adapters.len() {
-            if !self.adapter_enabled.get(adapters[i]) {
-                return Err(errors::adapter_not_enabled());
-            }
-            if weights_bps[i].is_zero() {
-                return Err(errors::allocation_invalid());
-            }
-            sum = sum
-                .checked_add(weights_bps[i])
-                .ok_or_else(errors::allocation_invalid)?;
-        }
-        if sum != TOTAL_BPS {
-            return Err(errors::allocation_invalid());
-        }
-
-        let currently_active = registry::active_adapters(self);
-        for (adapter, _) in currently_active {
-            self.adapter_bps.setter(adapter).set(U256::ZERO);
-        }
-        for i in 0..adapters.len() {
-            self.adapter_bps.setter(adapters[i]).set(weights_bps[i]);
-        }
-
-        self.vm().log(AllocationSet {
-            adapters: adapters.clone(),
-            weightsBps: weights_bps.clone(),
-        });
-        Ok(())
+        let balance_after = usdc::balance_of(self.vm(), USDC, self_addr)?;
+        // checked_sub: a compromised adapter moving USDC OUT of the core would wrap in release
+        // builds, turning a loss into a huge delta that passes the shortfall gate.
+        let actual_delta = balance_after
+            .checked_sub(balance_before)
+            .ok_or_else(|| errors::redeem_shortfall(owed_total, U256::ZERO))?;
+        // Shortfall (including a throttled adapter that could only return part of `owed`) reverts
+        // the whole tx; surplus is capped at `owed_total` and stays stranded in the core (D-10).
+        share_math::reconcile_credit(owed_total, actual_delta)
     }
 
-    /// D-04: validates a caller's weight set with the SAME rule the old owner-level allocation
-    /// used (matching non-empty lengths, no duplicates, every target registered AND enabled, no
-    /// zero weights, sum exactly 10000 via checked addition), then replaces that user's stored
-    /// weights. Exiting a protocol = omitting it from `adapters`.
+    /// Shared entry leg for `deposit` and `rebalance`'s re-split: approves + deposits `slice` into
+    /// one adapter and mints the caller's shares against that adapter's OWN pre-call snapshot
+    /// (`total_assets_before`) and its OWN `adapter_total_shares` (D-06 per-adapter offset).
+    fn deposit_leg(
+        &mut self,
+        user: Address,
+        adapter: Address,
+        slice: U256,
+        total_assets_before: U256,
+    ) -> Result<U256, Vec<u8>> {
+        let approve_ctx = Call::new_mutating(self);
+        usdc::approve(self.vm(), approve_ctx, USDC, adapter, slice)?;
+        let deposit_ctx = Call::new_mutating(self);
+        adapter_dispatch::deposit(self.vm(), deposit_ctx, adapter, slice)?;
+
+        let ts = self.adapter_total_shares.get(adapter);
+        let minted = share_math::convert_to_shares(slice, ts, total_assets_before, share_math::OFFSET_POW)?;
+        if minted.is_zero() {
+            return Err(errors::zero_shares());
+        }
+        let held = self.user_shares.get(user).get(adapter);
+        self.user_shares.setter(user).setter(adapter).set(held + minted);
+        self.adapter_total_shares.setter(adapter).set(ts + minted);
+        Ok(minted)
+    }
+
+    /// D-04: validates a caller's weight set (matching non-empty lengths, no duplicates, every
+    /// target registered AND enabled, no zero weights, sum exactly 10000 via checked addition),
+    /// then replaces that user's stored weights. Exiting a protocol = omitting it from `adapters`.
     /// Validation runs entirely BEFORE any write, so an invalid call reverts having touched
     /// nothing (guard-before-mutate).
-    #[allow(dead_code)] // wired to rebalance in the next plan
     fn write_weights(
         &mut self,
         user: Address,
@@ -636,19 +572,22 @@ mod tests {
     }
 
     #[test]
-    fn deposit_without_adapter_reverts_adapter_not_enabled() {
+    fn deposit_without_weights_reverts_no_weights_set() {
         let vm = TestVM::default();
         let mut contract = deploy_and_init(&vm);
 
         vm.set_sender(user_addr());
         let err = contract.deposit(U256::from(1_000_000u64));
-        assert_eq!(err.unwrap_err(), errors::adapter_not_enabled());
+        assert_eq!(err.unwrap_err(), errors::no_weights_set());
     }
 
     #[test]
     fn deposit_mints_nonzero_shares() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_adapter(&vm);
+        contract
+            .write_weights(user_addr(), alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
 
         let amount = U256::from(1_000_000u64);
 
@@ -676,11 +615,11 @@ mod tests {
         vm.set_sender(user_addr());
         let shares = contract.deposit(amount).unwrap();
         assert!(!shares.is_zero());
-        assert_eq!(contract.shares.get(user_addr()), shares);
-        assert_eq!(contract.total_shares.get(), shares);
+        assert_eq!(contract.shares_of(user_addr(), adapter_addr()), shares);
+        assert_eq!(contract.adapter_total_shares.get(adapter_addr()), shares);
     }
 
-    // --- registry: add / remove / enable-disable (Task 1) + set_allocation (Task 2) ---
+    // --- registry: add / remove / enable-disable ---
 
     fn adapter_two_addr() -> Address {
         Address::from([0x12; 20])
@@ -715,21 +654,6 @@ mod tests {
     }
 
     #[test]
-    fn registry_disable_reverts_with_balance() {
-        let vm = TestVM::default();
-        let mut contract = deploy_init_and_seed_adapter(&vm);
-
-        vm.set_sender(owner_addr());
-        mock_total_assets(&vm, adapter_addr(), U256::from(1_000u64));
-        let err = contract.set_enabled(adapter_addr(), false);
-        assert_eq!(err.unwrap_err(), errors::adapter_has_balance(U256::from(1_000u64)));
-
-        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
-        assert!(contract.set_enabled(adapter_addr(), false).is_ok());
-        assert!(!contract.adapter_enabled.get(adapter_addr()));
-    }
-
-    #[test]
     fn registry_remove_reverts_with_balance() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_adapter(&vm);
@@ -744,50 +668,7 @@ mod tests {
         assert!(!registry::is_registered(&contract, adapter_addr()));
     }
 
-    #[test]
-    fn registry_set_allocation_sum_must_be_10000() {
-        let vm = TestVM::default();
-        let mut contract = deploy_and_init(&vm);
-
-        vm.set_sender(owner_addr());
-        contract.add_adapter(adapter_addr()).unwrap();
-        contract.add_adapter(adapter_two_addr()).unwrap();
-
-        let err = contract.set_allocation(
-            alloc::vec![adapter_addr(), adapter_two_addr()],
-            alloc::vec![U256::from(6_000u64), U256::from(3_000u64)],
-        );
-        assert_eq!(err.unwrap_err(), errors::allocation_invalid());
-
-        assert!(contract
-            .set_allocation(
-                alloc::vec![adapter_addr(), adapter_two_addr()],
-                alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
-            )
-            .is_ok());
-        assert_eq!(contract.adapter_bps.get(adapter_addr()), U256::from(6_000u64));
-        assert_eq!(contract.adapter_bps.get(adapter_two_addr()), U256::from(4_000u64));
-    }
-
-    #[test]
-    fn registry_set_allocation_rejects_disabled_target() {
-        let vm = TestVM::default();
-        let mut contract = deploy_and_init(&vm);
-
-        vm.set_sender(owner_addr());
-        contract.add_adapter(adapter_addr()).unwrap();
-        contract.add_adapter(adapter_two_addr()).unwrap();
-        mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
-        contract.set_enabled(adapter_two_addr(), false).unwrap();
-
-        let err = contract.set_allocation(
-            alloc::vec![adapter_addr(), adapter_two_addr()],
-            alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
-        );
-        assert_eq!(err.unwrap_err(), errors::adapter_not_enabled());
-    }
-
-    // --- deposit: multi-adapter atomic split (Task 3) ---
+    // --- deposit: multi-adapter atomic split ---
 
     fn deploy_init_and_seed_two_adapters(vm: &TestVM) -> VaultCore {
         let mut contract = deploy_and_init(vm);
@@ -795,7 +676,8 @@ mod tests {
         contract.add_adapter(adapter_addr()).unwrap();
         contract.add_adapter(adapter_two_addr()).unwrap();
         contract
-            .set_allocation(
+            .write_weights(
+                user_addr(),
                 alloc::vec![adapter_addr(), adapter_two_addr()],
                 alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
             )
@@ -822,7 +704,7 @@ mod tests {
         let mut contract = deploy_init_and_seed_two_adapters(&vm);
 
         // Same-value mocks across both adapters (Pitfall 3): the numeric assertion below only
-        // needs total_shares/shares[user] to be nonzero and equal, not a per-adapter split proof.
+        // needs each leg's minted shares to be nonzero, not a per-adapter split proof.
         mock_total_assets(&vm, adapter_addr(), U256::ZERO);
         mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
 
@@ -842,8 +724,8 @@ mod tests {
         vm.set_sender(user_addr());
         let shares = contract.deposit(amount).unwrap();
         assert!(!shares.is_zero());
-        assert_eq!(contract.shares.get(user_addr()), shares);
-        assert_eq!(contract.total_shares.get(), shares);
+        assert!(!contract.shares_of(user_addr(), adapter_addr()).is_zero());
+        assert!(!contract.shares_of(user_addr(), adapter_two_addr()).is_zero());
     }
 
     #[test]
@@ -886,33 +768,38 @@ mod tests {
         vm.set_sender(user_addr());
         let err = contract.deposit(amount);
         assert!(err.is_err());
-        assert!(contract.total_shares.get().is_zero());
-        assert!(contract.shares.get(user_addr()).is_zero());
+        assert!(contract.shares_of(user_addr(), adapter_addr()).is_zero());
+        assert!(contract.shares_of(user_addr(), adapter_two_addr()).is_zero());
     }
 
-    /// WR-02: an enabled adapter left at 0 bps must NOT receive a 0-value deposit/withdraw leg.
-    /// adapter_two stays enabled at 0 bps (add_adapter enables at 0; set_allocation gives 100% to
-    /// adapter one). Its deposit(0)/withdraw(0) are mocked to REVERT: if the 0-slice legs were
-    /// still routed (no `slice.is_zero()` skip), both deposit and redeem would revert (the
-    /// self-inflicted DoS). With the skip they never fire, so the round trip succeeds.
+    /// A slice that rounds to zero must be skipped, not routed as `deposit(0)`/`withdraw(0)` (some
+    /// adapters revert on a zero-value call — routing it would be a self-inflicted DoS). Under the
+    /// per-user model a caller only ever splits across THEIR OWN weight targets, so this is
+    /// exercised with a dust-sized amount whose bps-weighted slice floors to 0 for one leg.
+    /// `adapter_two`'s deposit(0) is mocked to REVERT: if the `slice.is_zero()` skip regressed, the
+    /// whole deposit would revert instead of succeeding with only `adapter_addr()`'s leg filled.
     ///
     /// Mock ordering follows Pitfall 3 (TestVM's shared return-data buffer): the LAST-registered
     /// mock's bytes are what every call reads back, so the value the math/bool-decodes depend on
-    /// (the good adapter's leg) is registered last; the adapter_two revert mocks are registered
-    /// earlier and are only ever hit if the skip regresses.
+    /// (the good adapter's leg) is registered last; the adapter_two revert mock is registered
+    /// earlier and is only ever hit if the skip regresses.
     #[test]
-    fn zero_bps_enabled_adapter_does_not_break_deposit_or_redeem() {
+    fn zero_slice_leg_is_skipped_on_deposit() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_adapter(&vm);
         vm.set_sender(owner_addr());
-        contract.add_adapter(adapter_two_addr()).unwrap(); // enabled, 0 bps
+        contract.add_adapter(adapter_two_addr()).unwrap();
         contract
-            .set_allocation(alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .write_weights(
+                user_addr(),
+                alloc::vec![adapter_addr(), adapter_two_addr()],
+                alloc::vec![U256::from(9_999u64), U256::from(1u64)],
+            )
             .unwrap();
 
-        let amount = U256::from(1_000_000u64);
+        // amount=1: slice for adapter_two = floor(1*1/10000) = 0; remainder (1) goes to slot 0.
+        let amount = U256::from(1u64);
 
-        // --- deposit ---
         mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
         mock_total_assets(&vm, adapter_addr(), U256::ZERO);
         let transfer_from_calldata = transferFromCall {
@@ -929,32 +816,11 @@ mod tests {
         vm.set_sender(user_addr());
         let shares = contract.deposit(amount).unwrap();
         assert!(!shares.is_zero());
-
-        // --- redeem the whole position; adapter_two's withdraw(0) leg must likewise be skipped ---
-        // Per Pitfall 1 (12-RESEARCH.md), `redeem`'s before/after `balanceOf(core)` reads collapse
-        // to a single shared-buffer value under TestVM, so `actual_delta` is always 0 here and the
-        // call reverts on D-06's shortfall gate rather than paying out. This still proves the skip:
-        // if the `if slice.is_zero() { continue; }` guard regressed, `adapter_two`'s `withdraw(0)`
-        // mock below (registered to revert with `ZeroWithdraw`) would fire FIRST, and the tx would
-        // revert with THAT error instead of ever reaching the balance-delta reconciliation. We
-        // assert the revert is `RedeemShortfall`, distinguishing it from a `ZeroWithdraw` regression.
-        let withdraw_zero = withdrawCall { usdcAmount: U256::ZERO }.abi_encode();
-        vm.mock_call(adapter_two_addr(), withdraw_zero, U256::ZERO, Err(b"ZeroWithdraw".to_vec()));
-        mock_adapter_withdraw_leg(&vm, adapter_addr(), amount);
-        mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
-        mock_total_assets(&vm, adapter_addr(), amount);
-        let balance_calldata = balanceOfCall { account: contract_addr() }.abi_encode();
-        vm.mock_static_call(USDC, balance_calldata, Ok(amount.abi_encode())); // registered last -> return buffer
-
-        vm.set_sender(user_addr());
-        let err = contract.redeem(shares);
-        match err {
-            Err(bytes) => assert_ne!(bytes, b"ZeroWithdraw".to_vec()),
-            Ok(_) => panic!("redeem should revert under the TestVM shared-buffer wall (Pitfall 1)"),
-        }
+        assert!(!contract.shares_of(user_addr(), adapter_addr()).is_zero());
+        assert!(contract.shares_of(user_addr(), adapter_two_addr()).is_zero());
     }
 
-    // --- redeem (Task 1/2) ---
+    // --- redeem ---
 
     fn mock_adapter_withdraw_leg(vm: &TestVM, adapter: Address, slice: U256) {
         let withdraw_calldata = withdrawCall { usdcAmount: slice }.abi_encode();
@@ -966,9 +832,13 @@ mod tests {
         vm.mock_call(USDC, transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
     }
 
-    /// Deposits `amount` for `user_addr()` against a single seeded adapter (10000 bps), mocking
-    /// the pre-deposit `total_assets()` at zero. Returns the shares minted.
+    /// Deposits `amount` for `user_addr()` against a single seeded adapter (100% weight, written
+    /// via `write_weights`), mocking the pre-deposit `total_assets()` at zero. Returns the shares
+    /// minted.
     fn deposit_amount(vm: &TestVM, contract: &mut VaultCore, amount: U256) -> U256 {
+        contract
+            .write_weights(user_addr(), alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
         mock_total_assets(vm, adapter_addr(), U256::ZERO);
 
         let transfer_calldata = transferFromCall {
@@ -998,10 +868,6 @@ mod tests {
     fn redeem_zero_delta_reverts_shortfall() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_adapter(&vm);
-        vm.set_sender(owner_addr());
-        contract
-            .set_allocation(alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
-            .unwrap();
 
         let amount = U256::from(1_000_000u64);
         let shares_minted = deposit_amount(&vm, &mut contract, amount);
@@ -1012,42 +878,41 @@ mod tests {
         mock_adapter_withdraw_leg(&vm, adapter_addr(), amount);
         mock_usdc_transfer(&vm, user_addr(), amount);
         mock_total_assets(&vm, adapter_addr(), amount);
+        mock_max_withdraw(&vm, adapter_addr(), amount);
         let balance_calldata = balanceOfCall { account: contract_addr() }.abi_encode();
         vm.mock_static_call(USDC, balance_calldata, Ok(amount.abi_encode()));
 
         vm.set_sender(user_addr());
-        let err = contract.redeem(shares_minted);
+        let err = contract.redeem(TOTAL_BPS); // full exit
         assert!(err.is_err()); // actual_delta == 0 < owed -> D-06 shortfall revert
-        // Shares/total_shares are already burned (CEI runs before the external calls/revert), but
-        // per Stylus/EVM call-frame semantics the whole tx (including the burn) unwinds on Err —
-        // this in-memory `contract` value reflects only the pre-revert mutation, not what a real
-        // chain would persist. Nothing further to assert on state here.
+        // Shares are already burned (CEI runs before the external calls/revert), but per
+        // Stylus/EVM call-frame semantics the whole tx (including the burn) unwinds on Err — this
+        // in-memory `contract` value reflects only the pre-revert mutation, not what a real chain
+        // would persist. Nothing further to assert on state here.
     }
 
     #[test]
-    fn redeem_more_than_owned_reverts() {
+    fn redeem_bps_out_of_range_reverts() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_adapter(&vm);
-        vm.set_sender(owner_addr());
-        contract
-            .set_allocation(alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
-            .unwrap();
-
-        let amount = U256::from(1_000_000u64);
-        let shares_minted = deposit_amount(&vm, &mut contract, amount);
 
         vm.set_sender(user_addr());
-        let err = contract.redeem(shares_minted + U256::from(1u64));
-        assert_eq!(err.unwrap_err(), errors::insufficient_shares());
+        let err = contract.redeem(U256::ZERO);
+        assert_eq!(err.unwrap_err(), errors::allocation_invalid());
+
+        let err = contract.redeem(U256::from(10_001u64));
+        assert_eq!(err.unwrap_err(), errors::allocation_invalid());
     }
 
     #[test]
     fn two_users_shares_are_independent() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_adapter(&vm);
-        vm.set_sender(owner_addr());
         contract
-            .set_allocation(alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .write_weights(user_addr(), alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+        contract
+            .write_weights(non_owner_addr(), alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
             .unwrap();
 
         // User A deposits (fresh top-level call, fresh mocks).
@@ -1080,12 +945,12 @@ mod tests {
 
         assert!(!shares_a.is_zero());
         assert!(!shares_b.is_zero());
-        assert_eq!(contract.shares.get(user_addr()), shares_a);
-        assert_eq!(contract.shares.get(non_owner_addr()), shares_b);
-        assert_eq!(contract.total_shares.get(), shares_a + shares_b);
+        assert_eq!(contract.shares_of(user_addr(), adapter_addr()), shares_a);
+        assert_eq!(contract.shares_of(non_owner_addr(), adapter_addr()), shares_b);
+        assert_eq!(contract.adapter_total_shares.get(adapter_addr()), shares_a + shares_b);
     }
 
-    // --- D-03 MANDATORY inflation-attack test (Task 3) ---
+    // --- D-06 MANDATORY inflation-attack test, re-run per-adapter ---
 
     /// 1-wei deposit + large direct donation to the adapter/protocol (never routed through
     /// `core.deposit()`, so it mints no core shares) + a normal second depositor must still get
@@ -1100,8 +965,9 @@ mod tests {
     fn inflation_attack_second_depositor_gets_nonzero_proportionate_shares() {
         let vm = TestVM::default();
         let mut core = deploy_init_and_seed_adapter(&vm);
-        vm.set_sender(owner_addr());
-        core.set_allocation(alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+        core.write_weights(attacker_addr(), alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
+            .unwrap();
+        core.write_weights(victim_addr(), alloc::vec![adapter_addr()], alloc::vec![U256::from(10_000u64)])
             .unwrap();
 
         // Step 1: attacker deposits 1 wei (smallest possible unit). `total_assets` is registered
@@ -1123,7 +989,7 @@ mod tests {
 
         vm.set_sender(attacker_addr());
         core.deposit(attacker_deposit).unwrap();
-        let attacker_shares = core.shares.get(attacker_addr());
+        let attacker_shares = core.shares_of(attacker_addr(), adapter_addr());
         assert!(!attacker_shares.is_zero());
 
         // Step 2: the attacker donates a large amount directly to the adapter/protocol (bypassing
@@ -1146,11 +1012,11 @@ mod tests {
         vm.set_sender(victim_addr());
         core.deposit(normal_deposit).unwrap();
 
-        let victim_shares = core.shares.get(victim_addr());
+        let victim_shares = core.shares_of(victim_addr(), adapter_addr());
         assert!(!victim_shares.is_zero(), "victim must receive non-zero shares despite the donation");
     }
 
-    // --- rebalance (VAULT-03) ---
+    // --- rebalance (VAULT-03, user-scoped) ---
 
     fn mock_max_withdraw(vm: &TestVM, adapter: Address, value: U256) {
         let calldata = maxWithdrawCall {}.abi_encode();
@@ -1158,21 +1024,11 @@ mod tests {
     }
 
     #[test]
-    fn rebalance_owner_only() {
-        let vm = TestVM::default();
-        let mut contract = deploy_and_init(&vm);
-
-        vm.set_sender(non_owner_addr());
-        let err = contract.rebalance(alloc::vec![], alloc::vec![]);
-        assert_eq!(err.unwrap_err(), errors::not_owner());
-    }
-
-    #[test]
     fn rebalance_rejects_invalid_weights() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_two_adapters(&vm);
 
-        vm.set_sender(owner_addr());
+        vm.set_sender(user_addr());
         let err = contract.rebalance(
             alloc::vec![adapter_addr(), adapter_two_addr()],
             alloc::vec![U256::from(6_000u64), U256::from(3_000u64)], // sums to 9000, not 10000
@@ -1184,18 +1040,32 @@ mod tests {
     fn rebalance_reverts_on_unwind_leg_failure() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_two_adapters(&vm);
+        let user = user_addr();
 
-        // adapter_addr holds a live position with a non-zero unwind_request; its withdraw leg
-        // reverts, so the whole rebalance must revert (D-10 atomicity).
-        mock_total_assets(&vm, adapter_addr(), U256::from(100u64));
-        mock_max_withdraw(&vm, adapter_addr(), U256::from(100u64));
-        let withdraw_calldata = withdrawCall { usdcAmount: U256::from(100u64) }.abi_encode();
+        // Bootstrap a real position: user deposits per the seeded 60/40 weights (fresh top-level
+        // call, own mocks).
+        mock_total_assets(&vm, adapter_addr(), U256::ZERO);
+        mock_total_assets(&vm, adapter_two_addr(), U256::ZERO);
+        let amount = U256::from(100u64);
+        let transfer_calldata = transferFromCall { from: user, to: contract_addr(), amount }.abi_encode();
+        vm.mock_call(USDC, transfer_calldata, U256::ZERO, Ok(true.abi_encode()));
+        mock_adapter_deposit_leg(&vm, adapter_addr(), U256::from(60u64));
+        mock_adapter_deposit_leg(&vm, adapter_two_addr(), U256::from(40u64));
+        vm.set_sender(user);
+        contract.deposit(amount).unwrap();
+
+        // Rebalance (separate top-level call): unwind_position's withdraw leg for adapter_addr
+        // (the caller's own, live position) reverts, so the whole rebalance must revert (D-09/D-10
+        // atomicity) — this is the unwind of the caller's OWN position, not an owner-driven pool.
+        mock_total_assets(&vm, adapter_addr(), U256::from(60u64));
+        mock_max_withdraw(&vm, adapter_addr(), U256::from(60u64));
+        let withdraw_calldata = withdrawCall { usdcAmount: U256::from(60u64) }.abi_encode();
         vm.mock_call(adapter_addr(), withdraw_calldata, U256::ZERO, Err(b"WithdrawExceedsMax".to_vec()));
 
-        vm.set_sender(owner_addr());
+        vm.set_sender(user);
         let err = contract.rebalance(
             alloc::vec![adapter_addr(), adapter_two_addr()],
-            alloc::vec![U256::from(6_000u64), U256::from(4_000u64)],
+            alloc::vec![U256::from(5_000u64), U256::from(5_000u64)],
         );
         assert!(err.is_err());
     }

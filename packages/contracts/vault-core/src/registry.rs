@@ -13,9 +13,7 @@
 //! AT DEPOSIT TIME (Plan 03), never a frozen insertion order. An auditor should read this single
 //! rule and not need to reason about historical registry mutations.
 
-use alloc::vec::Vec;
-
-use alloy_primitives::{Address, U256};
+use alloy_primitives::Address;
 
 use crate::VaultCore;
 
@@ -32,20 +30,6 @@ pub fn index_of(core: &VaultCore, adapter: Address) -> Option<usize> {
         }
     }
     None
-}
-
-/// Enabled adapters with their current bps weight, in array order. Used by `set_allocation`
-/// validation (Task 2) and by the split-deposit loop (Plan 03).
-pub fn active_adapters(core: &VaultCore) -> Vec<(Address, U256)> {
-    let mut result = Vec::new();
-    for i in 0..core.adapters.len() {
-        if let Some(adapter) = core.adapters.get(i) {
-            if core.adapter_enabled.get(adapter) {
-                result.push((adapter, core.adapter_bps.get(adapter)));
-            }
-        }
-    }
-    result
 }
 
 /// Swap-remove `adapters[idx]`: move the last element into `idx`, then pop. See the module-level
