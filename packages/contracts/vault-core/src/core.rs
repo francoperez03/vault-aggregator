@@ -699,7 +699,7 @@ mod tests {
     }
 
     #[test]
-    fn deposit_splits_across_active_adapters() {
+    fn deposit_splits_across_caller_weights() {
         let vm = TestVM::default();
         let mut contract = deploy_init_and_seed_two_adapters(&vm);
 

@@ -181,6 +181,7 @@ measured size, the fragment count and D-14's ordered plan B, and waits for a dec
 | 02-01 | per-user storage + write_weights/read_weights + sharesOf/weightsOf + NoWeightsSet | 21,682 | 1 | +518 |
 | 02-02 | weights validator tests (test-only) | 21,674 | 1 | -8 |
 | 03-01 | per-user deposit/redeem/rebalance + unwind_position + deposit_leg; deleted set_allocation, AllocationSet, active_adapters, split_by_position, InsufficientShares, adapter_bps, flat shares, scalar total_shares | 20,960 | 1 | -714 |
+| 03-02 | rewritten legacy tests (test-only) | 21,036 | 1 | +76 |
 
 **Layout verdict (Assumption A1 → measured):** Option A costs +806 bytes on top of the 12.1
 baseline, including the throwaway probe function. Remaining headroom for the rest of the phase:
@@ -214,3 +215,11 @@ Headroom under the 22,528-byte gate: **1,568 bytes (~7%)** — comfortably clear
 more headroom than Plan 02 left for this plan (846 bytes), not less. `cargo stylus export-abi`
 confirms `deposit`, `redeem`, `rebalance`, `sharesOf`, `weightsOf`, `addAdapter`, `setEnabled`,
 `removeAdapter` are present and `setAllocation` is absent.
+
+**Task 03-02 (test-only rewrite of the legacy suite):** 21,036 bytes, +76 bytes vs Task 03-01 —
+inside the project's documented brotli non-determinism noise band (`#[cfg(test)]` code is never
+compiled into the release WASM, so this is not a real size change). Headroom stays effectively
+~1,490-1,568 bytes (~6.6-7%) under the gate. Phase 12.1 closes with net headroom LARGER than the
+846 bytes Plan 02 left for this plan, because the deletions in Task 03-01 (`set_allocation`,
+`AllocationSet`, `active_adapters`, `split_by_position`, `InsufficientShares`, three storage
+fields) outweighed the additions (`unwind_position`, `deposit_leg`, the rewritten public methods).
