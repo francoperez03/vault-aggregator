@@ -1,19 +1,20 @@
 'use client'
 
-import { Button } from '@/components/ui/button'
 import { formatUsdc } from '@/lib/format'
+import { useUsdcAllowance } from '@/hooks/useUsdcAllowance'
 
 interface DepositApproveStepProps {
   isLemonRuntime: boolean
   amount: bigint
-  approved: boolean
-  onApprove: () => void
 }
 
-/** D-09: the approve is per-deposit, for the EXACT amount, every time, and never persists between
- * deposits. Browser runtime shows it as its own signature (two firmas); inside Lemon the SDK
- * batches `[approve, deposit]` into one prompt (D-11), so no separate approve CTA renders there. */
-export function DepositApproveStep({ isLemonRuntime, amount, approved, onApprove }: DepositApproveStepProps) {
+/** D-09: the approve is per-deposit, for the EXACT amount, every time, read from the real
+ * allowance (never a local click-to-approve toggle) — `useVaultWrite().deposit` fires both
+ * signatures itself, this step is informational only. Inside Lemon the SDK batches
+ * `[approve, deposit]` into one prompt (D-11), so no separate approve copy renders there. */
+export function DepositApproveStep({ isLemonRuntime, amount }: DepositApproveStepProps) {
+  const { needsApproval } = useUsdcAllowance(amount)
+
   if (isLemonRuntime) {
     return (
       <p className="text-sm text-[var(--text-secondary)]">
@@ -22,14 +23,15 @@ export function DepositApproveStep({ isLemonRuntime, amount, approved, onApprove
     )
   }
 
+  if (!needsApproval) {
+    return (
+      <p className="text-xs text-[var(--text-secondary)]">USDC ya aprobado · ${formatUsdc(amount)}</p>
+    )
+  }
+
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-xs text-[var(--text-secondary)]">
-        Vas a firmar dos veces: primero aprobás el monto exacto, después depositás.
-      </p>
-      <Button type="button" onClick={onApprove} disabled={approved} className="min-h-[44px]">
-        {approved ? `USDC aprobado · $${formatUsdc(amount)}` : 'Aprobar USDC'}
-      </Button>
-    </div>
+    <p className="text-xs text-[var(--text-secondary)]">
+      Vas a firmar dos veces: primero aprobás el monto exacto, después depositás.
+    </p>
   )
 }
