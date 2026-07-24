@@ -238,23 +238,14 @@ impl VaultCore {
         }
         Ok(())
     }
-}
 
-/// D-13: internal helpers live OUTSIDE the `#[public]` impl block. The `#[public]` macro exports
-/// every method it wraps into the ABI regardless of Rust-level `pub`/private visibility (verified
-/// against `stylus-proc`'s own `PublicImpl` — it does not filter by fn visibility), so un-`pub`ing
-/// alone does not hide a method from `cargo stylus export-abi`. A plain, unannotated `impl` block
-/// IS the only way to keep `unwind_position`, `deposit_leg`, `write_weights` and `read_weights`
-/// callable internally while keeping them off the exported ABI surface.
-impl VaultCore {
-    /// The core PULLS the USDC from `msg.sender` and credits `user` (always `msg.sender` itself —
-    /// `deposit`'s only caller passes `caller`, never a third party). Off the exported ABI (D-13:
-    /// a plain `impl` block, not `#[public]`) since the periphery that used to call this
-    /// permissionlessly (crediting a third party from a Permit2-pulled deposit) has been removed —
-    /// Lemon cannot do signature substitution against this contract (empirically proven by
-    /// CoinFlip's identical Permit2 attempt), so there is no consumer left for a permissionless
-    /// deposit-on-behalf entrypoint, and removing it from the ABI shrinks the attack surface.
-    fn deposit_for(&mut self, user: Address, amount: U256) -> Result<U256, Vec<u8>> {
+    /// The core PULLS the USDC from `msg.sender` and credits `user` (a third party when called via
+    /// the restored `vault-periphery`'s `deposit_with_permit`, or `msg.sender` itself when called
+    /// through the `deposit` sugar above). Permissionless-but-safe: it always credits the passed
+    /// `user`, never the caller, so a malicious caller can at most pay for someone else's deposit,
+    /// never redirect funds. `user`'s OWN stored weights decide the split, and the core's own
+    /// weight/adapter logic (not caller privilege) is what makes crediting a third party safe.
+    pub fn deposit_for(&mut self, user: Address, amount: U256) -> Result<U256, Vec<u8>> {
         self.ensure_initialized()?;
         if amount.is_zero() {
             return Err(errors::zero_amount());
@@ -306,7 +297,15 @@ impl VaultCore {
         self.vm().log(Deposit { user, assets: amount, shares: minted_total });
         Ok(minted_total)
     }
+}
 
+/// D-13: internal helpers live OUTSIDE the `#[public]` impl block. The `#[public]` macro exports
+/// every method it wraps into the ABI regardless of Rust-level `pub`/private visibility (verified
+/// against `stylus-proc`'s own `PublicImpl` — it does not filter by fn visibility), so un-`pub`ing
+/// alone does not hide a method from `cargo stylus export-abi`. A plain, unannotated `impl` block
+/// IS the only way to keep `unwind_position`, `deposit_leg`, `write_weights` and `read_weights`
+/// callable internally while keeping them off the exported ABI surface.
+impl VaultCore {
     /// Shared exit primitive for `redeem` and `rebalance` (D-07/D-09). Withdraws `bps_fraction`
     /// /10000 of `user`'s position, burns those shares, and returns the reconciled USDC the core
     /// actually gained.
