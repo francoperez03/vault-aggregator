@@ -85,3 +85,13 @@ What guards it instead:
 (`redeem(uint256 shares)`); when the rig is redeployed against the 12.1 ABI it must be re-pointed at
 `redeem(uint256 bps)` and re-run, with an added `sharesOf(user, adapter)` assertion proving the
 position is intact after the reverted attempt. Do not close Phase 13 with this test unported.
+
+**KI-04: RESOLVED — `throttled_adapter_reverts_whole_redeem_and_burns_nothing` re-pointed at
+`redeem(bps)` with a `sharesOf` snapshot assertion, 2026-07-24, green against the 13a rig.** Both
+throttle shapes D-07 requires are now covered by name: the same test above (full throttle, cap 0
+on adapter 0) plus two siblings in `sepolia_edge_cases.rs` —
+`partial_throttle_reverts_with_shortfall_instead_of_paying_less` (D-07.1, cap strictly between 0
+and the owed amount) and `full_throttle_skips_the_leg_but_still_reverts` (D-07.2, the CR-01 shape
+repeated on a second adapter so it carries no state dependency on the KI-04 test). All three assert
+`sharesOf(caller, adapter)` byte-identical across the reverted attempt on every adapter, and accept
+either `WithdrawExceedsMax` or `RedeemShortfall` by name, never a bare "reverted".
