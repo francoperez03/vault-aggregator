@@ -37,7 +37,7 @@
   --aave: #B6509E;
   --morpho: #5B8EFA;
   --fluid: #00D4FF;
-  --beefy: #F5A623;
+  --euler: #8A9BB8; /* TODO: replace with Euler's official brand hex from euler.finance brand kit */
   /* Easing */
   --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
 
@@ -65,7 +65,7 @@
   --chart-1: var(--aave);
   --chart-2: var(--morpho);
   --chart-3: var(--fluid);
-  --chart-4: var(--beefy);
+  --chart-4: var(--euler);
   --chart-5: var(--yield);
   /* Radius (design system: 6, 10, 14, 20, 28px) */
   --radius: 0.625rem;
@@ -149,7 +149,7 @@
   --color-aave: var(--aave);
   --color-morpho: var(--morpho);
   --color-fluid: var(--fluid);
-  --color-beefy: var(--beefy);
+  --color-euler: var(--euler);
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);

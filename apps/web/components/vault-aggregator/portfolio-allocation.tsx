@@ -9,7 +9,7 @@ const PROTOCOL_COLORS: Record<string, string> = {
   aave: 'var(--aave)',
   morpho: 'var(--morpho)',
   fluid: 'var(--fluid)',
-  beefy: 'var(--beefy)',
+  euler: 'var(--euler)',
 }
 
 interface PortfolioAllocationProps {

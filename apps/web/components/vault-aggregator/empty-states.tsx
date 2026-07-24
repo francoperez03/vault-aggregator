@@ -21,7 +21,7 @@ const VAULT_TAGS = [
   { name: 'Aave 4.2%', color: 'bg-[#6366F1]' },
   { name: 'Morpho 5.8%', color: 'bg-[#3B82F6]' },
   { name: 'Fluid 4.9%', color: 'bg-[#22D3EE]' },
-  { name: 'Beefy 6.1%', color: 'bg-[#F97316]' },
+  { name: 'Euler 5.3%', color: 'bg-[#8A9BB8]' },
 ] as const
 
 export function EmptyBalanceState({ onDeposit }: EmptyBalanceStateProps) {

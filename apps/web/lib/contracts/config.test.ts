@@ -52,7 +52,7 @@ describe('contract config', () => {
     expect(getUsdcAddress()).toBe(USDC_ADDRESS);
   });
 
-  it('ADAPTER_IDS lists the four adapters with Euler, not Beefy', () => {
+  it('ADAPTER_IDS lists the four adapters with the current protocol set', () => {
     expect(ADAPTER_IDS).toEqual(['morpho', 'fluid', 'euler', 'aave']);
   });
 

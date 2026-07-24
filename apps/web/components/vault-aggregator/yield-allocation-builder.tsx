@@ -15,7 +15,7 @@ const PROTOCOL_STYLES: Record<string, { bg: string; text: string }> = {
   aave: { bg: 'rgba(182,80,158,0.15)', text: 'var(--aave)' },
   morpho: { bg: 'rgba(91,142,250,0.15)', text: 'var(--morpho)' },
   fluid: { bg: 'rgba(0,212,255,0.15)', text: 'var(--fluid)' },
-  beefy: { bg: 'rgba(245,166,35,0.15)', text: 'var(--beefy)' },
+  euler: { bg: 'rgba(138,155,184,0.15)', text: 'var(--euler)' },
 }
 
 interface YieldAllocationBuilderProps {

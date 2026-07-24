@@ -1,6 +1,7 @@
 import type { Vault } from '@/types'
+import { getAdapterAddresses } from '@/lib/contracts/config'
 
-export const VAULTS: Vault[] = [
+const VAULT_CATALOG: Omit<Vault, 'adapterAddress'>[] = [
   {
     id: 'aave',
     protocol: 'Aave',
@@ -32,20 +33,31 @@ export const VAULTS: Vault[] = [
     logoUrl: '/vault-logos/fluid.png',
   },
   {
-    id: 'beefy',
-    protocol: 'Beefy',
-    name: 'Beefy USDC Vault',
+    id: 'euler',
+    protocol: 'Euler',
+    name: 'Euler USDC Vault',
     vaultAddress: '0x...',
     underlyingAsset: 'USDC',
-    apy: 6.1,
-    strategyType: 'Yield Optimizer',
-    logoUrl: '/vault-logos/beefy.png',
+    apy: 5.3,
+    strategyType: 'Lending',
+    logoUrl: '/vault-logos/euler.svg',
   },
 ]
 
+/** apy stays mocked until F15 (D-26/VFE-02): do not animate anything with it in this phase. */
+export function getVaults(): Vault[] {
+  const adapters = getAdapterAddresses()
+  return VAULT_CATALOG.map((vault) => ({ ...vault, adapterAddress: adapters[vault.id] }))
+}
+
+// ponytail: kept for the pre-existing v0 components (portfolio-allocation.tsx,
+// yield-allocation-builder.tsx) still on the static-import shape; migrate them to getVaults()
+// when their route plan (03/04) touches them.
+export const VAULTS: Vault[] = getVaults()
+
 export function getWeightedApy(allocations: Record<string, number>): number {
   let total = 0
-  for (const vault of VAULTS) {
+  for (const vault of getVaults()) {
     const pct = allocations[vault.id] ?? 0
     total += (vault.apy * pct) / 100
   }

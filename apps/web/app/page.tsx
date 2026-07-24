@@ -26,7 +26,7 @@ const DEFAULT_ALLOCATION: Allocation = {
   aave: 40,
   morpho: 30,
   fluid: 20,
-  beefy: 10,
+  euler: 10,
 }
 
 const MOCK_ALLOCATED = 10_000 // In vaults (staking)
