@@ -6,7 +6,8 @@ import { AllocationSliders } from '@/components/vault-aggregator/allocation-slid
 import { RebalanceCostDisclosure } from '@/components/vault-aggregator/rebalance-cost-disclosure'
 import { TransactionState, type TxPhase } from '@/components/vault-aggregator/transaction-state'
 import { normalizeToBps, sumBps, toContractWeights } from '@/lib/vault/weights'
-import { getAdapterAddresses, type AdapterId } from '@/lib/contracts/config'
+import { ADAPTER_IDS, getAdapterAddresses, type AdapterId } from '@/lib/contracts/config'
+import { useVaultPosition } from '@/hooks/useVaultPosition'
 
 const DEMO_PHASES: { key: string; phase: TxPhase }[] = [
   { key: 'signing', phase: { kind: 'signing' } },
@@ -95,25 +96,25 @@ export function RebalanceView({ isBootstrap, initialAllocation, addresses }: Reb
   )
 }
 
+/** bps (0-10000) -> percent (0-100), rounded: AllocationSliders works in plain percentages
+ * (`lib/vault/weights.ts`'s `normalizeToBps` converts back before arming the tx). */
+function bpsToPercent(bps: number): number {
+  return Math.round(bps / 100)
+}
+
 export default function RebalancePage() {
-  const [isBootstrap, setIsBootstrap] = useState(true)
+  const vaultPosition = useVaultPosition()
+  // D-13: position cero degenerates this route into "definí tu estrategia" over a zero balance.
+  const isBootstrap = vaultPosition.totalUsdc === 0n
+
+  const initialAllocation: Partial<Record<AdapterId, number>> = {}
+  for (const id of ADAPTER_IDS) {
+    initialAllocation[id] = bpsToPercent(vaultPosition.perAdapter[id]?.weightBps ?? 0)
+  }
 
   return (
     <main className="min-h-dvh bg-background">
-      <RebalanceView
-        isBootstrap={isBootstrap}
-        initialAllocation={isBootstrap ? { morpho: 0, fluid: 0, euler: 0, aave: 0 } : { morpho: 30, fluid: 20, euler: 10, aave: 40 }}
-        addresses={getAdapterAddresses()}
-      />
-      <div className="flex justify-center p-4">
-        <button
-          type="button"
-          onClick={() => setIsBootstrap((current) => !current)}
-          className="rounded-full border border-[var(--border-subtle)] px-2.5 py-1 text-[10px] text-[var(--text-secondary)]"
-        >
-          modo: {isBootstrap ? 'bootstrap' : 'rebalance'}
-        </button>
-      </div>
+      <RebalanceView isBootstrap={isBootstrap} initialAllocation={initialAllocation} addresses={getAdapterAddresses()} />
     </main>
   )
 }

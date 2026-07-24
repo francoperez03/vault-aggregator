@@ -13,9 +13,13 @@ interface ProtocolBreakdownProps {
   position: PositionState
 }
 
-/** One row per protocol from the catalog (D-27: Euler, not Beefy). Names never translate (D-33). */
+/** One row per protocol from the catalog (D-27: Euler, not Beefy). Names never translate (D-33).
+ * A protocol whose reads failed (T-14-08-04) still gets a row: an "unavailable" label, never a
+ * silent zero. */
 export function ProtocolBreakdown({ position }: ProtocolBreakdownProps) {
-  const rows = getVaults().filter((vault) => position.perAdapter[vault.id].valueUsdc > 0n)
+  const rows = getVaults().filter(
+    (vault) => position.perAdapter[vault.id].valueUsdc > 0n || position.perAdapter[vault.id].unavailable,
+  )
 
   if (rows.length === 0) return null
 
@@ -40,10 +44,14 @@ export function ProtocolBreakdown({ position }: ProtocolBreakdownProps) {
                 />
                 <span className="truncate text-sm font-semibold text-[var(--text-primary)]">{vault.protocol}</span>
               </div>
-              <div className="flex shrink-0 items-baseline gap-2 font-mono tabular-nums">
-                <span className="text-sm text-[var(--text-primary)]">${formatUsdc(adapter.valueUsdc)}</span>
-                <span className="text-xs text-[var(--text-secondary)]">{adapter.weightBps / 100}%</span>
-              </div>
+              {adapter.unavailable ? (
+                <span className="shrink-0 text-xs font-semibold text-[var(--warning)]">No disponible</span>
+              ) : (
+                <div className="flex shrink-0 items-baseline gap-2 font-mono tabular-nums">
+                  <span className="text-sm text-[var(--text-primary)]">${formatUsdc(adapter.valueUsdc)}</span>
+                  <span className="text-xs text-[var(--text-secondary)]">{adapter.weightBps / 100}%</span>
+                </div>
+              )}
             </div>
           )
         })}

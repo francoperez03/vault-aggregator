@@ -2,14 +2,18 @@ import type { AdapterId } from '@/lib/contracts/config'
 import { ADAPTER_IDS } from '@/lib/contracts/config'
 
 /**
- * Mock position fixtures for 14a (design pass, contra datos mock, sin lecturas a la cadena).
- * Plan 08 reemplaza estas fixtures por `useVaultPosition()`, que compone el mismo shape desde
- * `sharesOf`/`adapterTotalShares`/`totalAssets` (D-21). Este shape es el contrato entre ambos.
+ * Fixture shape for `HomePositionView`/`ProtocolBreakdown`. Plan 08 no longer feeds `app/page.tsx`
+ * from this module (see `toPositionState` there, which composes the same shape from
+ * `useVaultPosition()`'s `sharesOf`/`adapterTotalShares`/`totalAssets` reads per D-21) — this file
+ * stays only as a test fixture.
  *
  * `valueUsdc`/`totalUsdc` son unidades atómicas de USDC (6 decimales), nunca `number`.
  */
 export interface PositionState {
-  perAdapter: Record<AdapterId, { shares: bigint; valueUsdc: bigint; weightBps: number }>
+  perAdapter: Record<
+    AdapterId,
+    { shares: bigint; valueUsdc: bigint; weightBps: number; unavailable?: boolean }
+  >
   totalUsdc: bigint
   /** Derived from weightBps per adapter (D-14/D-23) — never a separate "onboarded" flag
    * (14-RESEARCH.md Pitfall 4). Kept as a field here because plan 08's real hook computes it

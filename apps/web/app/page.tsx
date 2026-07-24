@@ -1,14 +1,26 @@
 'use client'
 
-import { useState } from 'react'
+import { useAccount } from 'wagmi'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { PositionSummary } from '@/components/vault-aggregator/position-summary'
 import { ProtocolBreakdown } from '@/components/vault-aggregator/protocol-breakdown'
+import { WalletBar } from '@/components/wallet-bar'
 import { formatUsdc } from '@/lib/format'
-import { ADAPTER_IDS } from '@/lib/contracts/config'
-import { MOCK_EMPTY, MOCK_FUNDED, MOCK_WEIGHTS_ONLY, type PositionState } from '@/lib/mock/position'
+import { ADAPTER_IDS, type AdapterId } from '@/lib/contracts/config'
+import { useVaultPosition } from '@/hooks/useVaultPosition'
+import { useNetworkGuard } from '@/hooks/useNetworkGuard'
+
+/** Same shape as the mock fixture module's PositionState (declared locally so this route no
+ * longer imports that test-only fixture module). Plan 08 wires `/` to `useVaultPosition()`
+ * instead, see `toPositionState` below. */
+interface PositionState {
+  perAdapter: Record<AdapterId, { shares: bigint; valueUsdc: bigint; weightBps: number; unavailable?: boolean }>
+  totalUsdc: bigint
+  hasWeights: boolean
+  pendingWithdrawalUsdc?: bigint
+}
 
 interface HomePositionViewProps {
   position: PositionState
@@ -85,32 +97,52 @@ export function HomePositionView({ position }: HomePositionViewProps) {
   )
 }
 
-// ponytail: dev-only fixture switcher. Plan 08 replaces `position` with useVaultPosition() and
-// this switcher goes away; kept minimal (no gate) since fixtures carry no sensitive data.
-const DEMO_FIXTURES = {
-  empty: MOCK_EMPTY,
-  weightsOnly: MOCK_WEIGHTS_ONLY,
-  funded: MOCK_FUNDED,
-} as const
+/** Composes a `useVaultPosition()` read into `HomePositionView`'s prop shape. Unconfigured
+ * adapters (missing env var) render as an empty zero entry, same as an adapter with no position. */
+function toPositionState(vaultPosition: ReturnType<typeof useVaultPosition>): PositionState {
+  const perAdapter = {} as PositionState['perAdapter']
+  for (const id of ADAPTER_IDS) {
+    const adapter = vaultPosition.perAdapter[id]
+    perAdapter[id] = adapter
+      ? { shares: adapter.shares, valueUsdc: adapter.valueUsdc, weightBps: adapter.weightBps, unavailable: adapter.unavailable }
+      : { shares: 0n, valueUsdc: 0n, weightBps: 0 }
+  }
+  return { perAdapter, totalUsdc: vaultPosition.totalUsdc, hasWeights: vaultPosition.hasWeights }
+}
 
 export default function Page() {
-  const [fixtureKey, setFixtureKey] = useState<keyof typeof DEMO_FIXTURES>('funded')
+  const { isConnected } = useAccount()
+  const { isWrongNetwork, expectedName, switchNetwork } = useNetworkGuard()
+  const vaultPosition = useVaultPosition()
 
   return (
     <main className="min-h-dvh bg-background">
-      <HomePositionView position={DEMO_FIXTURES[fixtureKey]} />
-      <div className="flex justify-center gap-2 px-4 pb-6 pt-2">
-        {(Object.keys(DEMO_FIXTURES) as (keyof typeof DEMO_FIXTURES)[]).map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setFixtureKey(key)}
-            className="rounded-full border border-[var(--border-subtle)] px-2.5 py-1 text-[10px] text-[var(--text-secondary)]"
-          >
-            {key}
-          </button>
-        ))}
-      </div>
+      <WalletBar />
+      {!isConnected ? (
+        <div className="px-4 pt-8">
+          <Card className="rounded-[14px] border-dashed border-[var(--border-subtle)] px-4 py-8 text-center">
+            <CardContent className="flex flex-col items-center gap-3 p-0">
+              <h1 className="text-xl font-semibold text-[var(--text-primary)]">Conectá tu wallet</h1>
+              <p className="text-sm text-[var(--text-secondary)]">
+                Necesitás conectar tu wallet para ver tu posición.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      ) : isWrongNetwork ? (
+        <div className="px-4 pt-8">
+          <Card className="rounded-[14px] border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-8 text-center">
+            <CardContent className="flex flex-col items-center gap-3 p-0">
+              <p className="text-sm text-[var(--text-primary)]">Cambiá a Arbitrum {expectedName} para continuar.</p>
+              <Button type="button" size="lg" className="min-h-[44px]" onClick={switchNetwork}>
+                Cambiar de red
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <HomePositionView position={toPositionState(vaultPosition)} />
+      )}
     </main>
   )
 }
