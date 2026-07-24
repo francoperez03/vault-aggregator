@@ -94,7 +94,9 @@ pub fn split_by_bps(amount: U256, weights_bps: &[U256]) -> Result<Vec<U256>, Vec
 /// Reconciles the credit a redeem/rebalance actually owes against the REAL measured USDC delta.
 /// D-06: a shortfall (actual < owed) reverts the whole tx. D-07: a surplus (actual > owed, e.g. a
 /// direct-USDC donation or sandwich inflating the core's balance) is capped — the caller is paid
-/// exactly `owed`, never the excess (the excess stays in the core for the next rebalance to sweep).
+/// exactly `owed`, never the excess. Per D-10 the excess stays stranded and inert in the core:
+/// NO path (rebalance included) may sweep it, because a sweep through a user path is the theft
+/// vector the per-user model exists to close (see `rebalance`'s SECURITY comment in core.rs).
 pub fn reconcile_credit(owed: U256, actual_delta: U256) -> Result<U256, Vec<u8>> {
     if actual_delta < owed {
         return Err(errors::redeem_shortfall(owed, actual_delta));
