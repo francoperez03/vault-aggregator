@@ -106,7 +106,11 @@ This is the first time `vault-core` executed anywhere outside TestVM.
 - `withdraw_cap_propagates_to_adapter_max_withdraw` — vault throttle visible through the adapter.
 - `throttled_adapter_reverts_whole_redeem_and_burns_nothing` — **D-06/D-10 whole-tx atomicity proven
   on-chain**: one fully throttled leg reverts the entire redeem, and the identical redeem succeeds
-  once the throttle clears, so the failed attempt burned nothing.
+  once the throttle clears, so the failed attempt burned nothing. This property survives the Phase
+  12.1 per-user rewrite (`unwind_position` accumulates `owed_total` before the throttle skip, see
+  KI-02), but the run above predates it and used the F12 `redeem(uint256 shares)` ABI. It is the
+  CR-01 regression gate and MUST be re-run against `redeem(uint256 bps)` on the redeployed rig —
+  KI-04 in `known-issues.md` records why no TestVM test can stand in for it.
 - `donation_inflates_pool_without_breaking_deposits` — the virtual-offset defence holds against a
   real on-chain donation.
 - `zero_amount_deposit_reverts` — `ZeroAmount` guard.

@@ -321,9 +321,16 @@ impl VaultCore {
             self.user_shares.setter(user).setter(adapter).set(held - slice_shares);
             self.adapter_total_shares.setter(adapter).set(ts - slice_shares);
 
+            // EVERY burned leg must be reconciled, skipped legs included. The burn above is
+            // unconditional, so accumulating `owed` only inside the `if let` below would let a
+            // fully-throttled leg (`max_withdraw() == 0` -> `unwind_request` returns None) shrink
+            // the reconciliation target to match what was actually withdrawn: no shortfall, the
+            // call succeeds, and the user's shares in that adapter are destroyed for nothing.
+            // Accumulating first makes a skipped leg always trip the shortfall gate below and
+            // revert the whole tx (D-09/KI-02, inherited F12 D-06 atomicity).
+            owed_total += owed;
             let max = adapter_dispatch::max_withdraw(self.vm(), adapter)?;
             if let Some(request) = unwind_request(owed, max) {
-                owed_total += owed;
                 let withdraw_ctx = Call::new_mutating(self);
                 adapter_dispatch::withdraw(self.vm(), withdraw_ctx, adapter, request)?; // bare ? = whole-tx atomicity
             }
@@ -1298,6 +1305,15 @@ mod tests {
         assert_eq!(contract.shares_of(user, adapter_two_addr()), user_a2_before);
     }
 
+    /// The pure half of the CR-01 guarantee: a fully-throttled leg (`max_withdraw() == 0`) yields
+    /// `None`, i.e. the external `withdraw` is SKIPPED while the burn above it in `unwind_position`
+    /// still lands. `unwind_position` therefore accumulates `owed_total` BEFORE this call, so the
+    /// skipped leg still trips the shortfall gate and reverts the whole tx.
+    ///
+    /// The end-to-end half (redeem with `total_assets() > 0` and `max_withdraw() == 0` reverting
+    /// `RedeemShortfall`) is NOT constructible under `stylus-test` 0.10.7 and deliberately has no
+    /// test here — see KI-04 in `docs/known-issues.md` for the proof and for the Sepolia rig test
+    /// that covers it (`throttled_adapter_reverts_whole_redeem_and_burns_nothing`).
     #[test]
     fn unwind_request_skips_zero_and_throttled() {
         assert_eq!(unwind_request(U256::ZERO, U256::ZERO), None);

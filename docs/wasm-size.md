@@ -183,6 +183,7 @@ measured size, the fragment count and D-14's ordered plan B, and waits for a dec
 | 03-01 | per-user deposit/redeem/rebalance + unwind_position + deposit_leg; deleted set_allocation, AllocationSet, active_adapters, split_by_position, InsufficientShares, adapter_bps, flat shares, scalar total_shares | 20,960 | 1 | -714 |
 | 03-02 | rewritten legacy tests (test-only) | 21,036 | 1 | +76 |
 | 04-01 | mandatory security tests (test-only) | 20,997 | 1 | -39 |
+| CR-01 | fix: accumulate `owed_total` before the throttle skip in `unwind_position` | 20,961 | 1 | -36 |
 
 **Layout verdict (Assumption A1 → measured):** Option A costs +806 bytes on top of the 12.1
 baseline, including the throwaway probe function. Remaining headroom for the rest of the phase:
@@ -232,10 +233,16 @@ non-determinism noise band, exactly as expected: every line added in this task l
 not trigger (it structurally cannot for test-only code). Headroom under the 22,528-byte gate:
 **1,531 bytes (~6.8%)**.
 
+**CR-01 fix (code review):** 20,961 bytes, -36 bytes vs Task 04-01 (20,997) — inside the documented
+brotli non-determinism noise band. The change is a single statement moved out of an `if let` body in
+`unwind_position` (`owed_total += owed`), which is byte-neutral by construction: the same add, one
+scope up. The D-13 STOP rule did not trigger. Headroom under the 22,528-byte gate: **1,567 bytes
+(~7.0%)**.
+
 ### Phase 12.1 final
 
-- **Compressed size: 20,997 bytes**, **fragments: 1**, headroom `22528 - 20997` = **1,531 bytes (~6.8%)**
-- **Net delta for the whole phase vs the 12.1 baseline (21,164 bytes, `01-01`): -167 bytes** — the
+- **Compressed size: 20,961 bytes**, **fragments: 1**, headroom `22528 - 20961` = **1,567 bytes (~7.0%)**
+- **Net delta for the whole phase vs the 12.1 baseline (21,164 bytes, `01-01`): -203 bytes** — the
   phase nets NEGATIVE despite adding a full per-user weight ledger, a per-adapter share ledger and
   seven new/rewritten mandatory tests, because Task 03-01's deletion of the pooled owner-allocation
   model (`set_allocation`, `AllocationSet`, `active_adapters`, `split_by_position` + 6 tests,
