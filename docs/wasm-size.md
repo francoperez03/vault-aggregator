@@ -354,3 +354,4 @@ mainnet gate — it does not share `vault-core`'s budget. Measured from
 | Task | Change | Compressed bytes | Fragments | Delta |
 |------|--------|------------------|-----------|-------|
 | 04-01 | Scaffold: constructor + `core()`/`permit2()`/`usdc()` views, no Permit2 logic yet | 4,353 | 1 | — |
+| 04-03 | Full path: Permit2 `SignatureTransfer` binding, USDC `approve` dispatch, `depositWithPermit2` (Variante A) | 10,266 | 1 | +5,913 vs 04-01 (4,353), 12,262 bytes headroom (~54%) under the 22,528-byte gate |
