@@ -10,8 +10,18 @@ import { PendingSettlementBanner } from '@/components/vault-aggregator/pending-s
 import { WalletBar } from '@/components/wallet-bar'
 import { ADAPTER_IDS, type AdapterId } from '@/lib/contracts/config'
 import { useVaultPosition } from '@/hooks/useVaultPosition'
+import { useVaultYield, type UseVaultYieldResult } from '@/hooks/useVaultYield'
 import { useNetworkGuard } from '@/hooks/useNetworkGuard'
 import { useWithdrawFlow } from '@/hooks/useWithdrawFlow'
+
+/** Total-level tick state (15-UI-SPEC §Color): down wins over up so a net-negative moment is never
+ * masked by a single up row; only all-flat/pre-sample renders --text-secondary. */
+function deriveTotalState(perAdapter: UseVaultYieldResult['perAdapter']): 'flat' | 'up' | 'down' {
+  const states = Object.values(perAdapter).map((e) => e?.state)
+  if (states.some((s) => s === 'down')) return 'down'
+  if (states.some((s) => s === 'up')) return 'up'
+  return 'flat'
+}
 
 /** Same shape as the mock fixture module's PositionState (declared locally so this route no
  * longer imports that test-only fixture module). Plan 08 wires `/` to `useVaultPosition()`
@@ -25,11 +35,23 @@ interface PositionState {
 
 interface HomePositionViewProps {
   position: PositionState
+  /** VFE-02 live yield, threaded from `useVaultYield`. Optional so direct-render tests keep
+   * working: absent → the total falls back to `position.totalUsdc` flat, rows to their static
+   * `valueUsdc` (see `ProtocolBreakdown`). */
+  yieldByAdapter?: UseVaultYieldResult['perAdapter']
+  totalDisplayedUsdc?: bigint
+  totalState?: 'flat' | 'up' | 'down'
 }
 
 /** Composes the home route's three entry states (D-13/D-14/D-26). Plan 08 swaps the `position`
- * prop's source from a mock fixture to `useVaultPosition()` without touching this component. */
-export function HomePositionView({ position }: HomePositionViewProps) {
+ * prop's source from a mock fixture to `useVaultPosition()` without touching this component;
+ * Plan 15 threads the live yield in (VFE-02) while keeping the fixture-only fallback. */
+export function HomePositionView({
+  position,
+  yieldByAdapter,
+  totalDisplayedUsdc,
+  totalState = 'flat',
+}: HomePositionViewProps) {
   const weightedAdapterCount = ADAPTER_IDS.filter((id) => position.perAdapter[id].weightBps > 0).length
   const isFunded = position.totalUsdc > 0n
 
@@ -41,10 +63,10 @@ export function HomePositionView({ position }: HomePositionViewProps) {
 
       {isFunded ? (
         <>
-          <PositionSummary totalUsdc={position.totalUsdc} />
+          <PositionSummary displayedValueUsdc={totalDisplayedUsdc ?? position.totalUsdc} state={totalState} />
           <Card className="mb-4 rounded-[14px] border-[var(--border-subtle)] px-4 py-4">
             <CardContent className="p-0">
-              <ProtocolBreakdown position={position} />
+              <ProtocolBreakdown position={position} yieldByAdapter={yieldByAdapter} />
             </CardContent>
           </Card>
           <div className="flex gap-2">
@@ -113,6 +135,10 @@ export default function Page() {
   const { isConnected } = useAccount()
   const { isWrongNetwork, expectedName, switchNetwork } = useNetworkGuard()
   const vaultPosition = useVaultPosition()
+  // VFE-02: turn the already-fetched positions into the live per-second counter. No txNonce is
+  // threaded here because deposits/withdraws/rebalances complete on their own routes, not on `/`;
+  // the snapshot's MIN_SAMPLE_INTERVAL gate absorbs the between-visit share jump (Pitfall 2/3).
+  const vaultYield = useVaultYield(vaultPosition.perAdapter)
   // D-19: the banner (plan 03/08) is only real once step 1 of a withdrawal actually measured and
   // persisted an amount, which is what useWithdrawFlow reads back from localStorage on mount.
   const { pendingAmount } = useWithdrawFlow()
@@ -143,7 +169,12 @@ export default function Page() {
           </Card>
         </div>
       ) : (
-        <HomePositionView position={toPositionState(vaultPosition, pendingAmount)} />
+        <HomePositionView
+          position={toPositionState(vaultPosition, pendingAmount)}
+          yieldByAdapter={vaultYield.perAdapter}
+          totalDisplayedUsdc={vaultYield.totalDisplayedUsdc}
+          totalState={deriveTotalState(vaultYield.perAdapter)}
+        />
       )}
     </main>
   )

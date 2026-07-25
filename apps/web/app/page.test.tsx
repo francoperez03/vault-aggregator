@@ -5,7 +5,8 @@ import Page from './page'
 import { MOCK_EMPTY, MOCK_FUNDED, MOCK_WEIGHTS_ONLY } from '@/lib/mock/position'
 
 const useAccountMock = vi.fn()
-vi.mock('wagmi', () => ({ useAccount: () => useAccountMock() }))
+// useVaultYield (wired in Plan 15) also pulls useChainId from wagmi — mock both.
+vi.mock('wagmi', () => ({ useAccount: () => useAccountMock(), useChainId: () => 421614 }))
 
 const useNetworkGuardMock = vi.fn()
 vi.mock('@/hooks/useNetworkGuard', () => ({ useNetworkGuard: () => useNetworkGuardMock() }))
@@ -36,7 +37,8 @@ describe('HomePositionView', () => {
 
   it('MOCK_FUNDED: shows the total, the protocol breakdown, and deposit/rebalance/withdraw actions', () => {
     render(<HomePositionView position={MOCK_FUNDED} />)
-    expect(screen.getByText('$10,000.00')).toBeInTheDocument()
+    // VFE-02: the total now renders through YieldCounter at 6-dp precision (formatUsdcPrecise).
+    expect(screen.getByText('$10,000.000000')).toBeInTheDocument()
     expect(screen.getByText('Aave')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Depositar' })).toHaveAttribute('href', '/depositar')
     expect(screen.getByRole('link', { name: 'Rebalancear' })).toHaveAttribute('href', '/rebalancear')
@@ -89,7 +91,8 @@ describe('Page (default export)', () => {
 
     render(<Page />)
 
-    expect(screen.getAllByText('$10.00').length).toBeGreaterThan(0)
+    // 6-dp precision via YieldCounter (total + the single morpho row).
+    expect(screen.getAllByText('$10.000000').length).toBeGreaterThan(0)
   })
 
   it('con un monto pendiente medido por useWithdrawFlow, muestra el banner persistente', () => {

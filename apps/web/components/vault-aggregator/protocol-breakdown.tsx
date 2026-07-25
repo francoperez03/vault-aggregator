@@ -1,6 +1,7 @@
 import { getVaults } from '@/lib/vaults'
-import { formatUsdc } from '@/lib/format'
+import { YieldCounter } from '@/components/vault-aggregator/yield-counter'
 import type { PositionState } from '@/lib/mock/position'
+import type { AdapterId } from '@/lib/contracts/config'
 
 const PROTOCOL_COLORS: Record<string, string> = {
   aave: 'var(--aave)',
@@ -9,14 +10,21 @@ const PROTOCOL_COLORS: Record<string, string> = {
   euler: 'var(--euler)',
 }
 
+type YieldEntry = { displayedValueUsdc: bigint; state: 'flat' | 'up' | 'down' }
+
 interface ProtocolBreakdownProps {
   position: PositionState
+  /** VFE-02's live per-adapter ticking value (from `useVaultYield`). Optional so existing
+   * fixture-driven callers (this component's own tests, `HomePositionView` direct-render tests)
+   * keep working unchanged: an adapter missing here falls back to its static `valueUsdc`/flat. */
+  yieldByAdapter?: Partial<Record<AdapterId, YieldEntry>>
 }
 
 /** One row per protocol from the catalog (D-27: Euler, not Beefy). Names never translate (D-33).
  * A protocol whose reads failed (T-14-08-04) still gets a row: an "unavailable" label, never a
- * silent zero. */
-export function ProtocolBreakdown({ position }: ProtocolBreakdownProps) {
+ * silent zero. The value cell is the shared `YieldCounter` (VFE-02) — ticking per second when a
+ * derived rate exists, static/`--text-secondary` otherwise; the unavailable branch is untouched. */
+export function ProtocolBreakdown({ position, yieldByAdapter }: ProtocolBreakdownProps) {
   const rows = getVaults().filter(
     (vault) => position.perAdapter[vault.id].valueUsdc > 0n || position.perAdapter[vault.id].unavailable,
   )
@@ -31,6 +39,7 @@ export function ProtocolBreakdown({ position }: ProtocolBreakdownProps) {
       <div className="space-y-2">
         {rows.map((vault) => {
           const adapter = position.perAdapter[vault.id]
+          const y: YieldEntry = yieldByAdapter?.[vault.id] ?? { displayedValueUsdc: adapter.valueUsdc, state: 'flat' }
           return (
             <div
               key={vault.id}
@@ -47,8 +56,8 @@ export function ProtocolBreakdown({ position }: ProtocolBreakdownProps) {
               {adapter.unavailable ? (
                 <span className="shrink-0 text-xs font-semibold text-[var(--warning)]">No disponible</span>
               ) : (
-                <div className="flex shrink-0 items-baseline gap-2 font-mono tabular-nums">
-                  <span className="text-sm text-[var(--text-primary)]">${formatUsdc(adapter.valueUsdc)}</span>
+                <div className="flex shrink-0 items-baseline gap-2">
+                  <YieldCounter displayedValueUsdc={y.displayedValueUsdc} state={y.state} size="row" />
                   <span className="text-xs text-[var(--text-secondary)]">{adapter.weightBps / 100}%</span>
                 </div>
               )}
