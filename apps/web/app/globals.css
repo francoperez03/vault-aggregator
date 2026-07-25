@@ -240,6 +240,17 @@
   }
 }
 
+/* VFE-02 yield counter (15-UI-SPEC.md §Tick/animation contract): the one allowed animated
+   moment, a color transition on the flat->accruing state change. Reduced-motion: instant swap. */
+.yield-counter {
+  transition: color 300ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .yield-counter {
+    transition: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
