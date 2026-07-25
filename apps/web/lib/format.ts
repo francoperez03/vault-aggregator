@@ -8,6 +8,15 @@ export function formatUsdc(atomicAmount: bigint): string {
   return `${whole.toLocaleString('en-US')}.${cents.toString().padStart(2, '0')}`
 }
 
+/** 6-decimal variant for the live yield counter only (15-UI-SPEC §Decimal precision): shows the
+ * full on-chain atomic-unit resolution so small per-second deltas are visible, never fabricated
+ * precision beyond what convertToAssets already produces. */
+export function formatUsdcPrecise(atomicAmount: bigint): string {
+  const whole = atomicAmount / USDC_UNIT
+  const fraction = atomicAmount % USDC_UNIT
+  return `${whole.toLocaleString('en-US')}.${fraction.toString().padStart(6, '0')}`
+}
+
 /** Parses a user-typed decimal string (up to 6 decimals) into an atomic USDC bigint. Never
  * routes the amount through `number` — only used for display formatting, never for the tx value. */
 export function parseUsdcInput(input: string): bigint {
