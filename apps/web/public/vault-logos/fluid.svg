@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <clipPath id="fluid-clip">
+      <circle cx="32" cy="32" r="32"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#fluid-clip)">
+    <circle cx="32" cy="32" r="32" fill="#00D4FF"/>
+    <path d="M16 40c4-8 8-12 16-12s12 4 16 12" stroke="white" stroke-width="4" stroke-linecap="round"/>
+    <path d="M16 36c6-6 10-10 16-10s10 4 16 10" stroke="rgba(255,255,255,0.5)" stroke-width="3" stroke-linecap="round"/>
+    <path d="M12 44c6-8 12-12 20-12s14 4 20 12" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+  </g>
+</svg>
