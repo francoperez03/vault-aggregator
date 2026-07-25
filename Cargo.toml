@@ -1,6 +1,27 @@
 [workspace]
 resolver = "2"
-members = []
+members = [
+    "packages/contracts/vault-adapter",
+    "packages/contracts/vault-core",
+    "packages/contracts/vault-periphery",
+    "packages/contracts/adapter-e2e",
+    "packages/contracts/mock-usdc",
+    "packages/contracts/mock-vault",
+]
+# adapter-e2e (host-only, pulls the full alloy client) is a workspace member but stays out of
+# default-members: `cargo stylus deploy` builds every default member for wasm32-unknown-unknown,
+# and the full `alloy` client does not compile for that target (M1 hit this exact wall when
+# `coinflip-e2e` joined the workspace).
+default-members = [
+    "packages/contracts/vault-adapter",
+    "packages/contracts/vault-core",
+    "packages/contracts/vault-periphery",
+    "packages/contracts/mock-usdc",
+    "packages/contracts/mock-vault",
+]
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("contract-client-gen"))'] }
 
 [profile.release]
 opt-level = "z"
@@ -8,3 +29,7 @@ lto = true
 panic = "abort"
 codegen-units = 1
 strip = true
+# WR-04: money-path arithmetic (ledger burn/mint, owed accumulation) must revert on overflow,
+# never wrap silently. The explicit checked_* calls stay for the paths that need a typed error;
+# this is the safety net for everything else. Byte cost measured in docs/wasm-size.md.
+overflow-checks = true

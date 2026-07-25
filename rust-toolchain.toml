@@ -1,3 +1,15 @@
+# Pinned narrower than it looks: cargo-stylus 0.10.7/0.10.8 hardcodes
+# `-Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort` for any non-stable
+# channel (stylus-tools core/build.rs) -- it does NOT use the newer `-C panic=immediate-abort`
+# real panic strategy. Nightlies from 2026-01-15 onward reject that legacy flag outright
+# ("panic_immediate_abort is now a real panic strategy!"), breaking cargo-stylus's own
+# check/deploy/verify path regardless of project config. nightly-2025-09-15 is the newest
+# bisected date where the legacy flag still works AND rustc is new enough (1.92) for alloy's
+# MSRV. Same pin `coinflip/packages/contracts` uses (07-01) -- reclaims ~9.9KB compressed on the
+# equivalent monolith core, the decisive lever that got Phase 11's redeem() under the 22,528-byte
+# Arbitrum One gate (11-04). Bumping cargo-stylus or this toolchain later requires re-bisecting
+# this window; see coinflip's 07-01-SUMMARY.md.
 [toolchain]
-channel = "1.91.0"
+channel = "nightly-2025-09-15"
 targets = ["wasm32-unknown-unknown"]
+components = ["rust-src"]

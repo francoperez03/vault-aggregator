@@ -1,0 +1,236 @@
+# Known issues — carried into Phase 13's security review
+
+## PERMIT2-REMOVED — `vault-periphery` deleted, Lemon cannot substitute a Permit2 signature
+
+**Status: RESOLVED BY DELETION, pre-13b security checklist.** CoinFlip (M1) empirically proved that
+Lemon's hosting model cannot support Permit2 signature-substitution: the server-side
+`PERMIT_PLACEHOLDER_0` mechanism fails, and Permit2 is not allowed as an entrypoint contract inside
+Lemon's mini-app sandbox. `vault-periphery`'s only public method, `depositWithPermit2`, existed
+solely to let Lemon substitute a signed Permit2 transfer for a real user signature — the exact
+mechanism CoinFlip found does not work. With no working consumer, the periphery contract, its
+Permit2 `SignatureTransfer` binding, and the core's permissionless `depositFor(user, amount)`
+entrypoint (periphery's only external caller) were all removed:
+
+- `packages/contracts/vault-periphery` deleted entirely (crate, workspace member, CI check).
+- `VaultCore::deposit_for` demoted from a public ABI entry to a private helper (D-13 plain `impl`
+  block) — `deposit(uint256)` is now the only intake entrypoint, always self-deposit
+  (`payer == user == msg.sender`).
+- Lemon integrates via the CoinFlip fallback instead: one-time `USDC.approve(core, amount)`, then
+  `core.deposit(amount)` per deposit — no signature substitution required.
+
+**Every residual risk this deletion makes moot:**
+
+- **P-I1** (periphery's USDC belief never reconciled with the core's) — the periphery no longer
+  exists; there is nothing left to reconcile.
+- **P-I2** (Permit2 signature-shape gate excludes EIP-1271 signers) — moot, there is no Permit2
+  intake path at all anymore.
+- **P-I3** (no sweep/rescue path on a partial pull) — moot, the periphery that could have held a
+  partial pull no longer exists.
+- **D-19 residual risks #1-#3** (periphery transient-balance zeroing, disabled-adapter revert
+  leaving nothing stranded, permissionless dust-deposit not poisoning the offset) — the first two
+  were periphery-specific and no longer apply; the third exercised `depositFor`'s third-party-credit
+  path directly, which is no longer reachable from outside the contract (`deposit_for` is private,
+  only ever called by `deposit()` with `user == msg.sender`).
+
+See `docs/security/adversarial-review/cross-reference.md`'s Periphery partition for the closing
+note on P-I1/P-I2/P-I3, and `docs/TESTNET.md` for the redeployed rig (no periphery contract, no
+`TESTNET_PERIPHERY_ADDR`).
+
+## KI-01 — Stranded USDC in the core (D-10)
+
+A user's `rebalance` re-splits only the balance delta measured inside `unwind_position` for their
+own legs. It never reads `balanceOf(core)`. Consequence: surplus capped by `reconcile_credit`
+(a donation, a sandwich, adapter rounding in the core's favour) accumulates in the core and no code
+path moves it. This is deliberate: sweeping the full core balance from a user path is the theft
+vector of the per-user model, and an owner-only `sweep()` was rejected (bytes, plus an owner
+function that moves funds is exactly the surface a review scrutinises).
+
+**For Phase 13:** quantify how much dust actually accrues. If it is material, `sweep()` is the
+deferred candidate to reopen — with data.
+
+**KI-01: RESOLVED — `dust_accrual_over_n_cycles`, 2026-07-24, 0 units stranded over 5 cycles
+(`KI-01-DUST` in `docs/PROTOCOL-PROBES.md`).** A single wallet ran 5 full deposit → rebalance →
+full-bps-redeem cycles; `USDC.balanceOf(core)` never moved off zero. With one shareholder per
+adapter throughout the run, `unwind_position`'s reconciliation and `deposit_leg`'s virtual-offset
+math have no fractional remainder to leave behind — dust needs a second party (or a partial exit)
+sharing an adapter to strand anything, the same shape `WR-02-DILUTION` already demonstrates on the
+deposit side. **Decision: `sweep()` stays closed**, per the original 12.1 D-10 rejection, now with
+data instead of argument alone. Donations and sandwiches are bounded by written argument (not
+measured directly, per D-09): a donation's value is captured by that adapter's existing
+shareholders, never stranded in the core; a sandwich around `deposit`/`redeem` cannot extract more
+than the rounding `reconcile_credit`/`deposit_leg` already tolerate, since every leg reconciles
+against a same-transaction snapshot. Full derivation in `PROTOCOL-PROBES.md`'s `KI-01-DUST` entry.
+
+## KI-02 — A throttled protocol blocks that user's whole exit (D-09, inherited F12 D-06)
+
+Whole-tx atomicity means one throttled adapter (FLUID-THROTTLE, see `PROTOCOL-PROBES.md`) reverts
+the user's entire `redeem` or `rebalance`, not just that leg. Under the pooled model this blocked
+the pool; under the per-user model it blocks the individual user until the protocol frees liquidity.
+Best-effort partial exit was rejected twice: it breaks the `delta == owed` reconciliation.
+
+Both throttle shapes revert, by two different mechanisms — worth stating explicitly, because they
+look asymmetric in `unwind_position` and the asymmetry is what CR-01 exploited:
+
+- **Partial throttle** (`0 < maxWithdraw() < owed`): the leg withdraws `maxWithdraw()` but
+  reconciles against the full `owed`, so the measured balance delta falls short and
+  `reconcile_credit` reverts `RedeemShortfall`.
+- **Full throttle** (`maxWithdraw() == 0`): `unwind_request` returns `None` and the external
+  `withdraw` is SKIPPED — calling `withdraw(0)` would revert `ZeroAmount` on a merely-illiquid
+  protocol. The share burn above it is unconditional and `owed_total += owed` runs BEFORE the
+  skip, so the skipped leg still shows up as a shortfall and reverts the whole tx.
+
+The `owed_total += owed` placement is load-bearing for the second case. Phase 12.1 briefly had it
+inside the `if let` (CR-01): a fully-throttled leg then succeeded with the user's shares burned and
+nothing paid out, silently redistributing their assets to the other holders in that adapter. Do not
+move it back inside the conditional.
+
+**For Phase 13:** if the fork tests show Fluid throttling with real frequency, partial exit and/or
+delta-only rebalance are the deferred candidates to reopen.
+
+## KI-03 — Exact USDC amount on redeem is not provable under TestVM
+
+`stylus-test` 0.10.7 shares one return-data buffer across mocked calls inside a single top-level
+call, so the two `balanceOf(core)` reads inside `redeem` collapse to the same value. Share-ledger
+independence IS proven in TestVM (`two_users_with_different_weights_redeem_only_their_own_position`);
+the exact payout is verified on the Sepolia rig instead — the same split F12 adopted.
+
+**For Phase 13:** once the Sepolia rig is redeployed against the 12.1 ABI, extend the e2e suite with
+an exact-payout assertion for two users with different weights, closing the gap TestVM leaves open.
+
+**KI-03: RESOLVED — `two_users_exact_payout_with_different_weights`, 2026-07-24, exact payout
+asserted on the Sepolia rig.** Two users, disjoint adapters, disjoint weights (A 50/50 on
+adapters[0]/[1], B 70/30 on adapters[2]/[3]); each user's redeem payout is asserted with strict
+`assert_eq!` against an off-chain replica of `share_math::convert_to_assets`, and each user's
+`sharesOf` ledger is asserted byte-identical across the other's exit. The rest of this section
+stands as the historical record of why TestVM couldn't reach this case.
+
+## KI-04 — The full-throttle revert (KI-02) has no TestVM regression test, by construction
+
+`stylus-test` 0.10.7 keeps ONE global return-data buffer (`TestVM::state.return_data`), overwritten
+at mock-REGISTRATION time. `perform_mocked_*_call` only supplies the return-data *length*; the bytes
+every mocked call reads back are the last-registered mock's, from offset 0. So inside a single
+top-level call, `adapter.totalAssets()`, `adapter.maxWithdraw()` and `usdc.balanceOf(core)` all
+decode the SAME `U256`.
+
+That makes the full-throttle case unreachable under TestVM. Reaching the skipped-leg branch requires
+`maxWithdraw() == 0`, which forces `totalAssets() == 0` in the same call, which forces
+`owed = slice_shares * (0 + 1) / (total_shares + 10^6) == 0` (floor) since `slice_shares <=
+total_shares`. A skipped leg under TestVM therefore ALWAYS has `owed == 0`, and the CR-01 bug — the
+`owed` of a skipped leg going missing from `owed_total` — is invisible: zero is zero either way.
+Forcing `owed > 0` needs `slice_shares >= total_shares + 10^6`, which underflows the
+`total_shares - slice_shares` burn and panics in a debug build. Same reasoning rules out the partial
+throttle case (`max == totalAssets` in every mocked call, so `max < owed` is unreachable).
+
+What guards it instead:
+
+- `unwind_request_skips_zero_and_throttled` (unit) pins the pure half: `max_withdraw() == 0` yields
+  `None`, i.e. the leg IS skipped while the burn above it lands.
+- `throttled_adapter_reverts_whole_redeem_and_burns_nothing` in
+  `packages/contracts/adapter-e2e/tests/sepolia_edge_cases.rs` pins the end-to-end half on a real
+  chain: `MockVault::setWithdrawCap(0)` freezes one leg, the redeem reverts, and the identical
+  redeem succeeds once the cap clears — which is only possible if the failed attempt burned nothing.
+
+**For Phase 13:** this e2e test is the CR-01 regression gate. It currently binds the F12 ABI
+(`redeem(uint256 shares)`); when the rig is redeployed against the 12.1 ABI it must be re-pointed at
+`redeem(uint256 bps)` and re-run, with an added `sharesOf(user, adapter)` assertion proving the
+position is intact after the reverted attempt. Do not close Phase 13 with this test unported.
+
+**KI-04: RESOLVED — `throttled_adapter_reverts_whole_redeem_and_burns_nothing` re-pointed at
+`redeem(bps)` with a `sharesOf` snapshot assertion, 2026-07-24, green against the 13a rig.** Both
+throttle shapes D-07 requires are now covered by name: the same test above (full throttle, cap 0
+on adapter 0) plus two siblings in `sepolia_edge_cases.rs` —
+`partial_throttle_reverts_with_shortfall_instead_of_paying_less` (D-07.1, cap strictly between 0
+and the owed amount) and `full_throttle_skips_the_leg_but_still_reverts` (D-07.2, the CR-01 shape
+repeated on a second adapter so it carries no state dependency on the KI-04 test). All three assert
+`sharesOf(caller, adapter)` byte-identical across the reverted attempt on every adapter, and accept
+either `WithdrawExceedsMax` or `RedeemShortfall` by name, never a bare "reverted".
+
+## WR-02 — Deposit shortfall (Phase 13 Plan 08)
+
+**Status: ACCEPTED WITH GUARD.** `deposit_leg`'s 100 bps `DepositShortfall` floor
+(`vault-core/src/core.rs`) is proven correct in isolation by its own `vault-core` unit test
+(WR-02/T-12.1-18, a mocked `total_assets()` donation). The measured dilution below that floor is
+small (50 bps haircut → 0.5% fewer vault shares, `WR-02-DILUTION` in `docs/PROTOCOL-PROBES.md`) and
+does not reopen D-13's rejection of full per-leg symmetrization.
+
+**Live-chain addendum, discovered in Plan 08:** reproducing the guard's donation-inflated trigger
+condition live (`deposit_credit_shortfall_beyond_tolerance_reverts`,
+`packages/contracts/adapter-e2e/tests/sepolia_edge_cases.rs`) shows the underlying `MockVault`'s own
+`ZeroShares` guard (on the real, raw vault shares minted, evaluated INSIDE
+`adapter_dispatch::deposit` before `deposit_leg`'s own math runs) fires first, not
+`DepositShortfall`. This is mathematically forced given the adapter is each vault's sole
+shareholder — see the doc-comment on that test and the `WR-02-DILUTION` verdict in
+`docs/PROTOCOL-PROBES.md` for the full derivation. Net effect: WR-02's real vector is caught by a
+STRICTER guard than the one written for it, live. No action needed — a stricter guard catching the
+same condition earlier is not a gap.
+
+**Side effect of developing this test:** the first iteration used adapter index 2 (EULER on this
+rig) and left it holding a small amount of permanently unclaimed donation dust (`totalAssets() > 0`,
+`totalSupply() == 0`) — per D-10, no path may sweep it, and it does not affect any other adapter or
+user. Harmless; documented here so a future reader of EULER's on-chain state isn't surprised by it.
+The test itself was moved to adapter index 3 (AAVE) for the version that ships.
+
+## C-H1 — Unprotected `init` allowed front-running to steal permanent contract ownership (blind adversarial review, D-14)
+
+**Status: FIXED.** `VaultCore::init(&mut self, owner: Address)` took `owner` as a caller-supplied
+parameter with no access control — anyone could front-run the deployer's bootstrap transaction,
+permanently claim the owner role (no `transferOwnership` recovery path), and register a malicious
+adapter through the owner-gated registry. See
+`docs/security/adversarial-review/cross-reference.md`'s C-H1 for the full finding.
+
+**Fix:** replaced the caller-supplied `init` entrypoint with a real Stylus `#[constructor]` that
+sets `owner` atomically at deploy time, matching the pattern already proven in this workspace
+(`vault-periphery/src/router.rs`'s `#[constructor]`). Stylus constructors run exactly once, as
+part of the deployment transaction itself, before the contract address can receive any other
+call — there is no window in which a separate transaction can race it. The weaker fix
+`cross-reference.md` originally wrote up (`owner = msg_sender()` inside a still-public `init`)
+was deliberately rejected: it only narrows the front-running race to "whoever's transaction lands
+first," it does not close it. The constructor closes the gap at the protocol level instead.
+
+Verified: `no_public_method_other_than_constructor_can_set_owner` (`vault-core/src/core.rs`)
+proves no post-deploy method can set or reassign `owner`. The rig was fully redeployed on
+Arbitrum Sepolia against the constructor-based core (new core, periphery, 4 adapters, 4
+MockVaults — a new core invalidates the whole rig, per the one-shot `adapter.init(vault, core)`
+binding and the periphery's constructor-wired `core` address), and all 16 live e2e tests
+(`sepolia_core_flow`, `sepolia_edge_cases`, `sepolia_periphery`) re-ran green against it.
+
+## C-M2 — `redeem()` permanently reverted on a zero/dust-valued position while `rebalance()` silently cleared it (blind adversarial review, 13-11 gap closure)
+
+**Status: FIXED.** `redeem`'s post-unwind check (`if paid.is_zero() { return Err(errors::zero_amount()) }`)
+ran AFTER `unwind_position`'s unconditional share burn, so a position whose reconciled `owed`
+floored to zero (total loss on that adapter, or a sufficiently small dust position) reverted the
+whole call, undoing the burn and leaving the position permanently stuck for that entrypoint —
+even though `rebalance` ran the identical `unwind_position` call and cleared the same position
+silently. See `docs/security/adversarial-review/cross-reference.md`'s C-M2 for the full finding.
+
+**Fix:** `redeem` (`core.rs:154-173`) skips only the USDC `transfer` call when `paid` is zero and
+always logs/returns the reconciled payout — the share burn and ledger cleanup inside
+`unwind_position` are unchanged. Verified: `redeem_full_exit_on_dust_position_succeeds_and_clears_shares`
+(`vault-core/src/core.rs`) seeds a 1-wei position, devalues the adapter to zero, and asserts
+`redeem(TOTAL_BPS)` succeeds, pays out 0, and clears both `sharesOf` and `adapterTotalShares`. The
+rig was fully redeployed on Arbitrum Sepolia (new core, 4 adapters, 4 MockVaults — see
+`docs/TESTNET.md`'s 13-11 rig) and all 13 live e2e tests re-ran green against it.
+
+## S-M1 — `split_by_bps` on an empty `weights_bps` silently dropped the entire `amount` (blind adversarial review, 13-11 gap closure)
+
+**Status: FIXED.** `split_by_bps` returned `Ok(vec![])` for an empty `weights_bps` and a non-zero
+`amount`, silently violating its own `Σ slices == amount` invariant. Confirmed unreachable via any
+live entrypoint today (`write_weights` rejects an empty adapters array before anything is
+written), so this was a defense-in-depth gap, not a live exploit. See
+`docs/security/adversarial-review/cross-reference.md`'s S-M1 for the full finding.
+
+**Fix:** `split_by_bps` (`share_math.rs:75-79`) now returns `Err(errors::allocation_invalid())`
+when `weights_bps` is empty and `amount` is non-zero, before entering the loop. Verified:
+`split_by_bps_empty_weights_with_nonzero_amount_errors` and
+`split_by_bps_empty_weights_with_zero_amount_is_ok` (`vault-core/src/share_math.rs`).
+
+## WR-01 — `remove_adapter`'s guard read the wrong source (Phase 12.1 / retired by deletion in 13a)
+
+**Status: RETIRED BY DELETION, not mitigated.** The original fix re-pointed the guard at
+`adapterTotalShares` (the ledger) instead of `totalAssets()` (external, spoofable) — but 13a then
+deleted `remove_adapter` entirely (Tier 2 byte-budget trim), so there is no "now it can be removed"
+outcome left to verify. What remains testable is the invariant the fix depended on: a fully redeemed
+position leaves the ledger at zero even when the underlying vault keeps dust
+(`full_exit_zeroes_the_ledger_even_when_the_vault_keeps_dust`,
+`packages/contracts/adapter-e2e/tests/sepolia_edge_cases.rs`, live-green). The Plan 11 checklist
+should record WR-01 as retired-by-deletion, not as "fixed and re-verified".

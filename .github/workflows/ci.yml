@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Must match rust-toolchain.toml: cargo-stylus injects -Z build-std +
+      # panic_immediate_abort only on a non-stable channel, and that lever is what keeps
+      # vault-core under the 22.528-byte mainnet gate. CI on stable would measure a
+      # bigger, different binary than the one that actually gets deployed.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-09-15
+          targets: wasm32-unknown-unknown
+          components: rust-src
+
+      - run: cargo test --workspace --lib --tests
+
+      - run: cargo install cargo-stylus --version 0.10.7 --locked
+
+      # Mainnet gate: Arbitrum One runs ArbOS 51 (no WASM fragments), so the effective
+      # ceiling is ~22KB compressed / 1 fragment. Checking against Sepolia (ArbOS 61)
+      # would green-light a binary that cannot activate on One.
+      - run: cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"
+        working-directory: packages/contracts/vault-adapter
+
+      - run: cargo stylus check --endpoint="https://arb1.arbitrum.io/rpc"
+        working-directory: packages/contracts/vault-core

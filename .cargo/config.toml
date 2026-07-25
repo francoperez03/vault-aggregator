@@ -1,0 +1,16 @@
+# build-std is declared here for documentation/reproducibility purposes, but cargo-stylus
+# (stylus-tools' `build_contract`, see OffchainLabs/stylus-sdk-rs core/build.rs) already injects
+# `-Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort` on its own whenever
+# rust-toolchain.toml's channel contains "nightly" -- this table is redundant with that internal
+# behavior, not an override of it.
+#
+# Do NOT add a `[target.wasm32-unknown-unknown] rustflags = ["-Cpanic=immediate-abort"]` entry
+# here: that is the *new*, real `panic=immediate-abort` codegen strategy, and it is incompatible
+# with cargo-stylus's hardcoded *legacy* `-Z build-std-features=panic_immediate_abort` flag on
+# this pinned nightly. Newer nightlies reject the legacy flag outright ("panic_immediate_abort is
+# now a real panic strategy!") -- cargo-stylus 0.10.7/0.10.8 has not been updated to emit the new
+# flag, so any nightly newer than ~2025-09 breaks the reproducible build/check/verify/deploy
+# path. rust-toolchain.toml is pinned to nightly-2025-09-15 specifically because it is the newest
+# tested date where both hold. Same convention as `coinflip/packages/contracts/.cargo/config.toml`.
+[unstable]
+build-std = ["std", "panic_abort"]

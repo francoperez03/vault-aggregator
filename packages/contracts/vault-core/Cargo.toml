@@ -1,0 +1,31 @@
+[package]
+name = "vault-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+alloy-primitives = "1.5.7"
+alloy-sol-types = "1.5.7"
+stylus-sdk = "0.10.7"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[dev-dependencies]
+stylus-sdk = { version = "0.10.7", features = ["stylus-test"] }
+
+[features]
+# SECURITY (IN-04): never enable `stylus-sdk/reentrant`. The contract's reentrancy safety is
+# load-bearing on cross-contract reentrancy being impossible: `deposit` snapshots each adapter's
+# `total_assets` BEFORE any mutating call and mints against that snapshot, which a reentrant
+# callback could skew. There is no reentrancy guard because, with the feature off, none is needed.
+default = ["mini-alloc"]
+export-abi = ["stylus-sdk/export-abi"]
+debug = ["stylus-sdk/debug"]
+mini-alloc = ["stylus-sdk/mini-alloc"]
+# Swaps the compiled USDC constant to the Sepolia MockUsdc address. Testnet fixture builds only —
+# never deploy a `--features testnet` artifact to mainnet.
+testnet = []
+
+[lints]
+workspace = true
