@@ -43,11 +43,16 @@ sol! {
     function totalAssets() external view returns (uint256);
 }
 
+/// Shared decode-failure mapping for every dispatch fn below: an ABI-decode error on the
+/// underlying vault's return bytes becomes a plain revert reason rather than leaking a raw
+/// `alloy_sol_types::Error` into the adapter's public `Result<_, Vec<u8>>` surface.
 fn decode_error(_err: alloy_sol_types::Error) -> Vec<u8> {
     b"AbiDecodeFailed".to_vec()
 }
 
 /// Deposits `assets` into `vault`, crediting `receiver` with shares. Returns shares minted.
+/// Mutating (`call::call`) — `adapter.rs`'s own `deposit` grants the allowance via `erc20::approve`
+/// immediately before this call, never leaving a standing approval.
 pub fn deposit_to_vault(
     vm: &impl Host,
     call_ctx: impl MutatingCallContext,
@@ -111,21 +116,26 @@ pub fn max_withdraw(vm: &impl Host, vault: Address, owner: Address) -> Result<U2
     maxWithdrawCall::abi_decode_returns(&result).map_err(decode_error)
 }
 
-/// Reads `vault.maxRedeem(owner)`.
+/// Reads `vault.maxRedeem(owner)`. View dispatch — the share-denominated counterpart to
+/// `max_withdraw`'s asset-denominated ceiling, kept alongside it for a vault where the fallback
+/// `redeem_from_vault` path is the one actually exercised.
 pub fn max_redeem(vm: &impl Host, vault: Address, owner: Address) -> Result<U256, Vec<u8>> {
     let calldata = maxRedeemCall { owner }.abi_encode();
     let result = static_call(vm, Call::new(), vault, &calldata)?;
     maxRedeemCall::abi_decode_returns(&result).map_err(decode_error)
 }
 
-/// Reads `vault.convertToAssets(shares)`.
+/// Reads `vault.convertToAssets(shares)`. View dispatch — pure share-price read, no side effects;
+/// callers use this to price a position without moving any funds.
 pub fn convert_to_assets(vm: &impl Host, vault: Address, shares: U256) -> Result<U256, Vec<u8>> {
     let calldata = convertToAssetsCall { shares }.abi_encode();
     let result = static_call(vm, Call::new(), vault, &calldata)?;
     convertToAssetsCall::abi_decode_returns(&result).map_err(decode_error)
 }
 
-/// Reads `vault.totalAssets()`.
+/// Reads `vault.totalAssets()`. View dispatch — the adapter's own `totalAssets()` (its public ABI
+/// surface) is a thin pass-through of this exact read, so the vault's own accounting stays the
+/// single source of truth rather than being shadowed by adapter-local bookkeeping.
 pub fn total_assets(vm: &impl Host, vault: Address) -> Result<U256, Vec<u8>> {
     let calldata = totalAssetsCall {}.abi_encode();
     let result = static_call(vm, Call::new(), vault, &calldata)?;

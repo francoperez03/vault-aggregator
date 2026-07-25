@@ -46,7 +46,10 @@ fn decode_bool_result(result: &[u8]) -> Result<(), Vec<u8>> {
     }
 }
 
-/// Approves `spender` to move `amount` of `token` on the adapter's behalf.
+/// Approves `spender` to move `amount` of `token` on the adapter's behalf. Mutating (`call::call`)
+/// — the adapter grants this in `erc4626.rs::deposit` right before the underlying vault pulls the
+/// USDC, matching the same grant-then-zero discipline vault-core's `usdc.rs` uses on its own side
+/// of the same call.
 pub fn approve(
     vm: &impl Host,
     call_ctx: impl MutatingCallContext,
@@ -59,7 +62,9 @@ pub fn approve(
     decode_bool_result(&result)
 }
 
-/// Pulls `amount` of `token` from `from` to `to` under a pre-existing allowance.
+/// Pulls `amount` of `token` from `from` to `to` under a pre-existing allowance. The adapter's own
+/// intake path: `from` is always the calling core (D-02-adjacent, only-core-callable per
+/// `errors::not_core`), `to` is always the adapter's own contract address.
 pub fn transfer_from(
     vm: &impl Host,
     call_ctx: impl MutatingCallContext,
@@ -73,7 +78,9 @@ pub fn transfer_from(
     decode_bool_result(&result)
 }
 
-/// Reads `token.balanceOf(account)`.
+/// Reads `token.balanceOf(account)`. View dispatch (`static_call`, no `MutatingCallContext`) — used
+/// wherever the adapter needs a plain USDC balance read, distinct from the underlying vault's own
+/// `totalAssets()`/`maxWithdraw()` reads in `erc4626.rs`.
 pub fn balance_of(vm: &impl Host, token: Address, account: Address) -> Result<U256, Vec<u8>> {
     let calldata = balanceOfCall { account }.abi_encode();
     let result = static_call(vm, Call::new(), token, &calldata)?;
