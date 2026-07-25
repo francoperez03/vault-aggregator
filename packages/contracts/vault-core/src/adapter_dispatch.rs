@@ -30,11 +30,17 @@ sol! {
     function maxWithdraw() external view returns (uint256);
 }
 
+/// Shared decode-failure mapping for all four dispatch fns below: any ABI-decode error on an
+/// adapter's return bytes becomes `AdapterDecodeFailed` (errors.rs code 12) rather than a raw
+/// `alloy_sol_types::Error` leaking into `VaultCore`'s public `Result<_, Vec<u8>>` surface.
 fn decode_error(_err: alloy_sol_types::Error) -> Vec<u8> {
     errors::adapter_decode_failed()
 }
 
 /// Calls `adapter.deposit(usdc_amount)`. Returns the shares minted (adapter-side custody, D-02).
+/// Mutating (`call::call`, not `static_call`): the adapter moves USDC and updates its own share
+/// ledger, so this must run inside a real `MutatingCallContext`, matching the guard-before-mutate
+/// convention `core.rs::deposit_leg` calls it under.
 pub fn deposit(
     vm: &impl Host,
     call_ctx: impl MutatingCallContext,
@@ -46,7 +52,10 @@ pub fn deposit(
     depositCall::abi_decode_returns(&result).map_err(decode_error)
 }
 
-/// Calls `adapter.withdraw(usdc_amount)`. Returns the shares burned.
+/// Calls `adapter.withdraw(usdc_amount)`. Returns the shares burned. Mutating, same reasoning as
+/// `deposit` above — `core.rs::unwind_position` calls this only after `unwind_request` has already
+/// clamped the request to `min(total_assets, max_withdraw)` (D-09b), so a throttled adapter is
+/// never asked for more than it can currently pay.
 pub fn withdraw(
     vm: &impl Host,
     call_ctx: impl MutatingCallContext,
@@ -58,14 +67,19 @@ pub fn withdraw(
     withdrawCall::abi_decode_returns(&result).map_err(decode_error)
 }
 
-/// Reads `adapter.totalAssets()`.
+/// Reads `adapter.totalAssets()`. View dispatch (`static_call`, no `MutatingCallContext` needed):
+/// this and `max_withdraw` below are the only two adapter reads the core needs, taken as a snapshot
+/// immediately before each mutating leg so share-price math is never priced off stale state
+/// (Phase 09 view-vs-mutating dispatch split, mirrored from `permit2.rs`).
 pub fn total_assets(vm: &impl Host, adapter: Address) -> Result<U256, Vec<u8>> {
     let calldata = totalAssetsCall {}.abi_encode();
     let result = static_call(vm, Call::new(), adapter, &calldata)?;
     totalAssetsCall::abi_decode_returns(&result).map_err(decode_error)
 }
 
-/// Reads `adapter.maxWithdraw()`.
+/// Reads `adapter.maxWithdraw()`. View dispatch — the FLUID-THROTTLE finding (Phase 09) proved a
+/// live adapter's withdrawable ceiling can sit far below its `total_assets`, so every unwind must
+/// clamp its withdraw request against this value instead of assuming full liquidity.
 pub fn max_withdraw(vm: &impl Host, adapter: Address) -> Result<U256, Vec<u8>> {
     let calldata = maxWithdrawCall {}.abi_encode();
     let result = static_call(vm, Call::new(), adapter, &calldata)?;

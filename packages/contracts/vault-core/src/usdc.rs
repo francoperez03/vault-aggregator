@@ -15,6 +15,10 @@ use stylus_sdk::stylus_core::host::Host;
 
 use crate::errors;
 
+/// Bare `sol!` fn bindings, not `sol_interface!` (ADR 001: `sol_interface!` computes the wrong
+/// selector for struct-shaped calldata params — none of these four params are structs, but the
+/// workspace bans the macro outright rather than re-litigating it per call site). Selectors below
+/// are cross-checked against `cast sig` in each fn's own comment.
 sol! {
     // cast sig "approve(address,uint256)" = 0x095ea7b3
     function approve(address spender, uint256 amount) external returns (bool);
@@ -26,7 +30,8 @@ sol! {
     function balanceOf(address account) external view returns (uint256);
 }
 
-/// Tri-state return decoding shared by `approve`/`transfer_from`/`transfer` (T-09-05 carryover):
+/// Tri-state return decoding shared by `approve`/`transfer_from`/`transfer` (T-09-05 carryover),
+/// because USDC-shaped ERC-20s don't agree on a single revert convention for a failed transfer:
 /// - empty buffer -> success (non-standard tokens that return nothing)
 /// - decodes to `true` -> success
 /// - decodes to `false` -> `Err(TransferFailed)` (the classic non-reverting-failure trap)
@@ -42,7 +47,9 @@ fn decode_bool_result(result: &[u8]) -> Result<(), Vec<u8>> {
     }
 }
 
-/// Approves `spender` to move `amount` of `token` on the core's behalf.
+/// Approves `spender` to move `amount` of `token` on the core's behalf. Mutating — used both to
+/// grant a fresh allowance before `adapter_dispatch::deposit` and to zero it back afterward
+/// (WR-03: no live allowance should outlive the single call it was granted for).
 pub fn approve(
     vm: &impl Host,
     call_ctx: impl MutatingCallContext,
@@ -55,7 +62,9 @@ pub fn approve(
     decode_bool_result(&result)
 }
 
-/// Pulls `amount` of `token` from `from` to `to` under a pre-existing allowance.
+/// Pulls `amount` of `token` from `from` to `to` under a pre-existing allowance. The core's own
+/// intake path (`deposit_for`): `from` is always the payer (`msg.sender`, T-13-05), `to` is always
+/// the core's own contract address, never a caller-supplied destination.
 pub fn transfer_from(
     vm: &impl Host,
     call_ctx: impl MutatingCallContext,
@@ -69,7 +78,9 @@ pub fn transfer_from(
     decode_bool_result(&result)
 }
 
-/// Sends `amount` of `token` directly to `to` (core -> user payout, redeem's Plan 04 path).
+/// Sends `amount` of `token` directly to `to` (core -> user payout, redeem's Plan 04 path). `to` is
+/// always `msg.sender` at the `redeem` call site (F12 D-02) — never a caller-supplied address, so
+/// this fn cannot be used to redirect a payout to a third party.
 pub fn transfer(
     vm: &impl Host,
     call_ctx: impl MutatingCallContext,
@@ -82,7 +93,9 @@ pub fn transfer(
     decode_bool_result(&result)
 }
 
-/// Reads `token.balanceOf(account)`.
+/// Reads `token.balanceOf(account)`. View dispatch (`static_call`) — used by `unwind_position` to
+/// measure the core's own USDC delta across an unwind (D-10's reconciliation gate), never to
+/// price a mint (deposit legs price off the adapter's `total_assets`, not the core's own balance).
 pub fn balance_of(vm: &impl Host, token: Address, account: Address) -> Result<U256, Vec<u8>> {
     let calldata = balanceOfCall { account }.abi_encode();
     let result = static_call(vm, Call::new(), token, &calldata)?;
