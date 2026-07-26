@@ -24,6 +24,16 @@ export function RebalancePanel({ onBack }: { onBack?: () => void }) {
     initialAllocation[id] = bpsToPercent(vaultPosition.perAdapter[id]?.weightBps ?? 0)
   }
 
+  // With nothing stored yet the sliders open evenly split rather than at zero: it already sums to
+  // 100, so the step is confirmable without touching anything, and an even spread is a defensible
+  // proposal (diversified) instead of an empty form the user has to solve.
+  const hasStoredWeights = ADAPTER_IDS.some((id) => (initialAllocation[id] ?? 0) > 0)
+  if (!hasStoredWeights) {
+    const even = Math.floor(100 / ADAPTER_IDS.length)
+    for (const id of ADAPTER_IDS) initialAllocation[id] = even
+    initialAllocation[ADAPTER_IDS[0]]! += 100 - even * ADAPTER_IDS.length
+  }
+
   return (
     <div className="flex flex-col">
       {onBack && (

@@ -4,7 +4,7 @@ import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
 import type { AdapterId } from '@/lib/contracts/config'
 import { getVaults } from '@/lib/vaults'
-import { sumBps } from '@/lib/vault/weights'
+import { redistribute, sumBps } from '@/lib/vault/weights'
 
 const PROTOCOL_COLOR: Record<AdapterId, string> = {
   morpho: 'var(--morpho)',
@@ -18,9 +18,13 @@ interface AllocationSlidersProps {
   onChange: (next: Partial<Record<AdapterId, number>>) => void
 }
 
-/** The focal point of `/rebalancear` (14-UI-SPEC §Visual Hierarchy): the sum-to-100% indicator is
- * the anchor within the slider group. Values are plain percentages (0-100); `normalizeToBps`
- * converts them to contract bps once the user confirms (D-16). */
+/** The focal point of the allocation step (14-UI-SPEC §Visual Hierarchy). Values are plain
+ * percentages (0-100); `normalizeToBps` converts them to contract bps once the user confirms
+ * (D-16).
+ *
+ * Moving one slider pays for it from the others proportionally (`redistribute`), so the group is
+ * always at 100 and the user never has to hunt for the missing point. The total indicator stays as
+ * a guard, not as a task: if it ever reads anything but 100, something upstream is wrong. */
 export function AllocationSliders({ value, onChange }: AllocationSlidersProps) {
   const vaults = getVaults()
   const total = sumBps(value)
@@ -62,7 +66,7 @@ export function AllocationSliders({ value, onChange }: AllocationSlidersProps) {
                   target (UI-SPEC's mobile touch-target rule) without a custom Radix thumb. */}
               <Slider
                 value={[pct]}
-                onValueChange={([next]) => onChange({ ...value, [vault.id]: next })}
+                onValueChange={([next]) => onChange(redistribute(value, vault.id, next))}
                 min={0}
                 max={100}
                 step={5}

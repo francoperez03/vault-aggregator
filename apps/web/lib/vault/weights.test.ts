@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeToBps, sumBps, toContractWeights } from './weights';
+import { normalizeToBps, redistribute, sumBps, toContractWeights } from './weights';
 
 const ADDRESSES = {
   morpho: '0x0000000000000000000000000000000000000001',
@@ -78,5 +78,48 @@ describe('normalizeToBps', () => {
   it('all-zero input normalizes to all-zero bps, not a throw (that guard lives in toContractWeights)', () => {
     const result = normalizeToBps({ morpho: 0, fluid: 0, euler: 0, aave: 0 });
     expect(sumBps(result)).toBe(0);
+  });
+});
+
+describe('redistribute', () => {
+  const sum = (a: Record<string, number>) => Object.values(a).reduce((t, v) => t + v, 0);
+
+  it('the others pay in proportion to what they hold', () => {
+    const next = redistribute({ morpho: 50, fluid: 30, euler: 20, aave: 0 }, 'morpho', 70);
+    expect(next).toEqual({ morpho: 70, fluid: 18, euler: 12, aave: 0 });
+  });
+
+  it('always lands on exactly 100, never 99 nor 101', () => {
+    // 33/33/34 style splits are where naive per-slider rounding drifts off the total.
+    for (const target of [1, 7, 33, 49, 66, 99]) {
+      const next = redistribute({ morpho: 25, fluid: 25, euler: 25, aave: 25 }, 'fluid', target);
+      expect(sum(next)).toBe(100);
+      expect(next.fluid).toBe(target);
+    }
+  });
+
+  it('a protocol left at 0 stays at 0: dropping one is a decision, not a rounding artifact', () => {
+    const next = redistribute({ morpho: 60, fluid: 40, euler: 0, aave: 0 }, 'morpho', 20);
+    expect(next.euler).toBe(0);
+    expect(next.aave).toBe(0);
+    expect(next.fluid).toBe(80);
+  });
+
+  it('splits equally when every other protocol is at 0, instead of refusing the drag', () => {
+    const next = redistribute({ morpho: 100, fluid: 0, euler: 0, aave: 0 }, 'morpho', 40);
+    expect(sum(next)).toBe(100);
+    expect(next.morpho).toBe(40);
+    expect(next.fluid + next.euler + next.aave).toBe(60);
+    expect(Math.max(next.fluid, next.euler, next.aave) - Math.min(next.fluid, next.euler, next.aave)).toBeLessThanOrEqual(1);
+  });
+
+  it('clamps out-of-range input rather than propagating it', () => {
+    expect(redistribute({ morpho: 25, fluid: 25, euler: 25, aave: 25 }, 'aave', 140).aave).toBe(100);
+    expect(redistribute({ morpho: 25, fluid: 25, euler: 25, aave: 25 }, 'aave', -5).aave).toBe(0);
+  });
+
+  it('taking one to 100 empties the rest', () => {
+    const next = redistribute({ morpho: 25, fluid: 25, euler: 25, aave: 25 }, 'euler', 100);
+    expect(next).toEqual({ morpho: 0, fluid: 0, euler: 100, aave: 0 });
   });
 });
