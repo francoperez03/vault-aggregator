@@ -43,7 +43,8 @@ interface UseWithdrawFlowResult {
   /** Measured in step 1, survives a refresh via localStorage (T-14-10-02). */
   pendingAmount: bigint | null;
   phase: TxPhase;
-  redeem: (bps: bigint) => Promise<void>;
+  /** Resolves with the phase it settled on, so a caller that queues the move can report it. */
+  redeem: (bps: bigint) => Promise<TxPhase>;
   settleToLemon: () => Promise<void>;
   /** Clears the flow's state after a `partial` result has been shown and acknowledged. */
   acknowledge: () => void;
@@ -73,10 +74,10 @@ export function useWithdrawFlow(): UseWithdrawFlowResult {
   }, [address]);
 
   const redeem = useCallback(
-    async (bps: bigint) => {
+    async (bps: bigint): Promise<TxPhase> => {
       if (!address || !usdcAddress || !publicClient) {
         setPhase(NOT_CONFIGURED);
-        return;
+        return NOT_CONFIGURED;
       }
 
       setPhase({ kind: 'signing' });
@@ -93,7 +94,7 @@ export function useWithdrawFlow(): UseWithdrawFlowResult {
       // phase (reverted/rejected/timeout) and never as `partial` — that state exists only in step 2.
       if (outcome.kind !== 'success') {
         setPhase(outcome);
-        return;
+        return outcome;
       }
 
       const balanceAfter = (await publicClient.readContract({
@@ -108,6 +109,7 @@ export function useWithdrawFlow(): UseWithdrawFlowResult {
       setPendingAmount(arrived);
       setStep(2);
       setPhase({ kind: 'confirm' });
+      return { kind: 'success', amount: arrived };
     },
     [address, usdcAddress, publicClient, redeemOnChain],
   );

@@ -46,6 +46,9 @@ interface MoveSliderProps {
   walletUsdc: bigint
   poolUsdc: bigint
   busy?: boolean
+  /** Rendered above the balances. Set only where the Lemon step exists, so a browser user never
+   * reads "Paso 2" with no step 1 anywhere on screen. */
+  stepLabel?: string
   onMove: (preview: MovePreview) => void
 }
 
@@ -57,7 +60,7 @@ interface MoveSliderProps {
  *
  * The two numbers are previews while dragging; the real ones come back from the chain after the tx.
  */
-export function MoveSlider({ walletUsdc, poolUsdc, busy, onMove }: MoveSliderProps) {
+export function MoveSlider({ walletUsdc, poolUsdc, busy, stepLabel, onMove }: MoveSliderProps) {
   const restBps = currentPoolBps(walletUsdc, poolUsdc)
   const [targetPct, setTargetPct] = useState<number | null>(null)
   const total = walletUsdc + poolUsdc
@@ -69,6 +72,12 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, onMove }: MoveSliderPro
 
   return (
     <div className="flex flex-col gap-5">
+      {stepLabel && (
+        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
+          {stepLabel}
+        </span>
+      )}
+
       <div className="flex flex-col gap-4">
         <BalanceRow
           label="En tu wallet"

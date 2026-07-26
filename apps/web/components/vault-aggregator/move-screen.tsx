@@ -1,14 +1,13 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { DepositApproveStep } from '@/components/vault-aggregator/deposit-approve-step'
 import { LemonAccountCard } from '@/components/vault-aggregator/lemon-account-card'
 import { MoveSlider } from '@/components/vault-aggregator/move-slider'
-import { TransactionState, type TxPhase } from '@/components/vault-aggregator/transaction-state'
 import { formatUsdc } from '@/lib/format'
 import type { MovePreview } from '@/lib/vault/move'
+import { useMoveQueue } from '@/lib/vault/move-queue'
 import { useUsdcBalance } from '@/hooks/useUsdcBalance'
 import { useVaultPosition } from '@/hooks/useVaultPosition'
 import { useVaultWrite } from '@/hooks/useVaultWrite'
@@ -28,41 +27,36 @@ interface MoveScreenProps {
  * The slider carries both directions because deposit and withdrawal are the same decision — how
  * much of my USDC should be earning — and two separate screens made the user do the subtraction.
  * Here both numbers move under the thumb and the button names what will happen.
+ *
+ * Confirmed moves go to the queue instead of being awaited here, so the screen never freezes
+ * behind a wallet prompt; `MoveQueueStrip` reports each one from wherever the user ends up.
  */
 export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
   const isLemon = isLemonRuntime ?? isLemonWebView()
   const { hasWeights, totalUsdc, refetch: refetchPosition } = useVaultPosition()
   const { balance, isConnected, refetch: refetchBalance } = useUsdcBalance()
   const { pendingAmount, phase: withdrawPhase, redeem, settleToLemon } = useWithdrawFlow()
-  const { deposit, depositStep } = useVaultWrite()
-  const [depositPhase, setDepositPhase] = useState<TxPhase | null>(null)
-  const [lastMove, setLastMove] = useState<MovePreview | null>(null)
+  const { deposit } = useVaultWrite()
+  const { enqueue } = useMoveQueue()
 
   function refetchAll() {
     refetchPosition()
     refetchBalance()
   }
 
-  async function handleMove(preview: MovePreview) {
-    setLastMove(preview)
-    if (preview.kind === 'deposit') {
-      setDepositPhase({ kind: 'signing' })
-      const result = await deposit(preview.amount)
-      setDepositPhase(result)
-      if (result.kind === 'success') refetchAll()
-      return
-    }
-    if (preview.kind === 'withdraw') {
-      // `redeem` owns its own phase (and the pending-settlement bookkeeping) inside useWithdrawFlow.
-      setDepositPhase(null)
-      await redeem(preview.withdrawBps)
+  function handleMove(preview: MovePreview) {
+    const verb = preview.kind === 'deposit' ? 'Depositar' : 'Retirar'
+    enqueue(`${verb} $${formatUsdc(preview.amount)}`, async () => {
+      const result =
+        preview.kind === 'deposit'
+          ? await deposit(preview.amount)
+          : // Withdrawals go out as a fraction of the position, never an absolute amount; the
+            // pending-settlement bookkeeping stays inside useWithdrawFlow.
+            await redeem(preview.withdrawBps)
       refetchAll()
-    }
+      return result
+    })
   }
-
-  const isBusy = depositPhase?.kind === 'signing' || withdrawPhase.kind === 'signing'
-  // Whichever flow is mid-air owns the status area; only one can be at a time.
-  const phase = depositPhase ?? (withdrawPhase.kind !== 'confirm' ? withdrawPhase : null)
 
   if (!isConnected) return null
 
@@ -82,32 +76,13 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
 
       {hasWeights ? (
         <>
-          <MoveSlider walletUsdc={balance} poolUsdc={totalUsdc} busy={isBusy} onMove={handleMove} />
-
-          {phase &&
-            (phase.kind === 'signing' && !isLemon ? (
-              <p className="text-center text-sm text-[var(--text-secondary)]">
-                {depositStep === 'approving' ? 'Aprobando USDC…' : 'Confirmá en tu wallet…'}
-              </p>
-            ) : (
-              <TransactionState
-                phase={phase}
-                onPrimary={() => lastMove && handleMove(lastMove)}
-                onSecondary={() => setDepositPhase(null)}
-                summary={
-                  lastMove ? (
-                    <>
-                      {lastMove.kind === 'deposit' ? 'Depositás' : 'Retirás'} $
-                      {formatUsdc(lastMove.amount)} USDC
-                    </>
-                  ) : null
-                }
-              />
-            ))}
-
-          {lastMove?.kind === 'deposit' && !isLemon && (
-            <DepositApproveStep isLemonRuntime={false} amount={lastMove.amount} />
-          )}
+          <MoveSlider
+            walletUsdc={balance}
+            poolUsdc={totalUsdc}
+            stepLabel={isLemon ? 'Paso 2 · Poner a rendir' : undefined}
+            onMove={handleMove}
+          />
+          <DepositApproveStep isLemonRuntime={isLemon} amount={balance} />
         </>
       ) : (
         <div className="flex flex-col items-center gap-3 py-6 text-center">

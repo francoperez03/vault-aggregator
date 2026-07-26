@@ -103,13 +103,13 @@ describe('MoveScreen', () => {
   it('hides the Lemon card outside Lemon', () => {
     setup()
     render(<MoveScreen isLemonRuntime={false} />)
-    expect(screen.queryByText('Tu cuenta Lemon')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Tu cuenta Lemon/)).not.toBeInTheDocument()
   })
 
   it('shows the Lemon card inside Lemon', () => {
     setup()
     render(<MoveScreen isLemonRuntime />)
-    expect(screen.getByText('Tu cuenta Lemon')).toBeInTheDocument()
+    expect(screen.getByText(/Tu cuenta Lemon/)).toBeInTheDocument()
   })
 
   it('surfaces a pending settlement even outside Lemon: parked money always has a way out', () => {

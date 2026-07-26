@@ -6,6 +6,7 @@ import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
 import { WagmiProvider } from 'wagmi';
 import '@rainbow-me/rainbowkit/styles.css';
 import { hasWalletConnect, wagmiConfig } from '@/lib/wagmi/config';
+import { MoveQueueProvider } from '@/lib/vault/move-queue';
 
 const rainbowTheme = darkTheme({
   accentColor: '#0052FF',
@@ -22,11 +23,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        {hasWalletConnect ? (
-          <RainbowKitProvider theme={rainbowTheme}>{children}</RainbowKitProvider>
-        ) : (
-          children
-        )}
+        <MoveQueueProvider>
+          {hasWalletConnect ? (
+            <RainbowKitProvider theme={rainbowTheme}>{children}</RainbowKitProvider>
+          ) : (
+            children
+          )}
+        </MoveQueueProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );

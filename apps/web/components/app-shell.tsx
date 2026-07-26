@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { isMisconfigured } from '@/lib/contracts/mode'
 import { ConfigErrorBanner } from '@/components/config-error-banner'
 import { FaultInjectionPanel } from '@/components/vault-aggregator/fault-injection-panel'
+import { MoveQueueStrip } from '@/components/vault-aggregator/move-queue-strip'
 
 const NAV_ITEMS = [
   { href: '/', label: 'Inicio', icon: Wallet },
@@ -26,6 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-dvh flex-col">
       <ConfigErrorBanner />
       <main className="flex-1 pb-24">{children}</main>
+      <MoveQueueStrip />
       {!misconfigured && (
         <nav
           aria-label="Navegación principal"
