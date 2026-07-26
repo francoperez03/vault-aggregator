@@ -1,169 +1,124 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { ArrowDown, ArrowUp } from 'lucide-react'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { cn } from '@/lib/utils'
-import { DepositView } from '@/components/vault-aggregator/deposit-view'
-import { WithdrawView } from '@/components/vault-aggregator/withdraw-view'
+import { useState } from 'react'
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { DepositApproveStep } from '@/components/vault-aggregator/deposit-approve-step'
+import { LemonAccountCard } from '@/components/vault-aggregator/lemon-account-card'
+import { MoveSlider } from '@/components/vault-aggregator/move-slider'
+import { TransactionState, type TxPhase } from '@/components/vault-aggregator/transaction-state'
 import { formatUsdc } from '@/lib/format'
+import type { MovePreview } from '@/lib/vault/move'
 import { useUsdcBalance } from '@/hooks/useUsdcBalance'
 import { useVaultPosition } from '@/hooks/useVaultPosition'
+import { useVaultWrite } from '@/hooks/useVaultWrite'
 import { useWithdrawFlow } from '@/hooks/useWithdrawFlow'
 import { isLemonWebView } from '@/lib/lemon/bridge'
 
-export type MoveTab = 'deposit' | 'withdraw'
-
-interface WalletBalanceProps {
-  balance: bigint
-  isLoading: boolean
-}
-
-/** The screen's focal point, same Display treatment as `PositionSummary`'s total (28px/600, mono,
- * tabular-nums) — but labelled "en tu wallet" so it never reads as a second opinion on the vault
- * position. `--` while the read is in flight: a flashed `$0.00` says "no tenés plata", which is a
- * claim we have not read yet. */
-function WalletBalance({ balance, isLoading }: WalletBalanceProps) {
-  return (
-    <div className="flex flex-col items-start gap-1 py-4 text-left">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-        Saldo en tu wallet · USDC
-      </span>
-      <span className="font-mono text-[28px] font-semibold leading-none tabular-nums text-[var(--text-primary)]">
-        {isLoading ? '--' : `$${formatUsdc(balance)}`}
-      </span>
-    </div>
-  )
-}
-
-/** Lemon's own home puts the actions as small labelled circles under the balance; matching that
- * shape keeps the mini-app feeling like part of the host app instead of a web page embedded in it.
- * Still a Radix tab under the hood — the roles, keyboard nav and `aria-selected` come for free,
- * and the visual is only a restyle. */
-const TRIGGER_CLASS =
-  'h-auto flex-none flex-col gap-2 rounded-none border-0 bg-transparent p-0 text-xs font-medium text-[var(--text-secondary)] shadow-none data-[state=active]:bg-transparent data-[state=active]:text-[var(--text-primary)] data-[state=active]:shadow-none'
-
-const CIRCLE_CLASS =
-  'flex size-14 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-overlay)] text-[var(--text-secondary)] transition-colors'
-
-const CIRCLE_ACTIVE_CLASS = 'border-[var(--brand)] bg-[var(--brand)]/15 text-[var(--brand)]'
-
-/** Owns the withdrawal's URL contract (`?paso=2`) now that the route is shared with the deposit
- * tab: the query param stays on whatever path the user is on (`/mover`, `/retirar`), so the
- * pending-settlement deep link keeps working from both. */
-function WithdrawPanel() {
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const urlStep = searchParams.get('paso') === '2' ? 2 : 1
-
-  const { totalUsdc } = useVaultPosition()
-  const { pendingAmount, phase, redeem, settleToLemon, acknowledge } = useWithdrawFlow()
-  // The flow itself is the source of truth once it has measured a pending amount (a refresh with
-  // no `?paso=2` in the URL should still land on step 2, not silently drop the pending settlement).
-  const step = pendingAmount !== null ? 2 : urlStep
-
-  useEffect(() => {
-    const params = new URLSearchParams(searchParams.toString())
-    if (step === 2) params.set('paso', '2')
-    else params.delete('paso')
-    const query = params.toString()
-    const target = query ? `${pathname}?${query}` : pathname
-    if (`${pathname}${window.location.search}` !== target) router.replace(target)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step])
-
-  async function handleRedeem(bps: bigint) {
-    await redeem(bps)
-  }
-
-  return (
-    <WithdrawView
-      totalUsdc={totalUsdc}
-      step={step}
-      pendingAmount={pendingAmount}
-      phase={phase}
-      onRedeem={handleRedeem}
-      onSettle={settleToLemon}
-      onAcknowledge={acknowledge}
-    />
-  )
-}
-
 interface MoveScreenProps {
-  /** Which panel the entry route opens on. Omitted (`/`, `/mover`) means **collapsed**: just the
-   * balance and the two actions, no form until the user asks for one. `/depositar` and `/retirar`
-   * pass theirs so the pending-settlement deep link and any old bookmark still land on the form
-   * directly, without a redirect flash. */
-  initialTab?: MoveTab
-  /** Test seam: injected instead of reading `useWithdrawFlow` twice, which would fork the flow's
-   * state across two hook instances. */
-  hasPendingSettlement?: boolean
+  /** Test seam. Left undefined in the app, where the runtime decides. */
+  isLemonRuntime?: boolean
 }
 
 /**
- * Deposit and withdrawal on one screen, because they are the same decision seen from two sides
- * (move money in, move money out) and the user reads the same wallet balance before either.
+ * Everything that moves money, in the order the money moves: the Lemon account on top (only
+ * reachable through the SDK, so only rendered inside Lemon), then the wallet and the pool with one
+ * slider between them.
  *
- * The tab is local state, not a route: switching sides mid-thought should not push history the
- * back button then has to unwind. One exception overrides the user's choice — an unsettled
- * withdrawal (step 1 done, funds sitting in the mini-app balance) pins the Retirar tab, since
- * showing a deposit form while money is mid-flight is how money gets forgotten there.
+ * The slider carries both directions because deposit and withdrawal are the same decision — how
+ * much of my USDC should be earning — and two separate screens made the user do the subtraction.
+ * Here both numbers move under the thumb and the button names what will happen.
  */
-export function MoveScreen({ initialTab, hasPendingSettlement }: MoveScreenProps) {
-  // `''` is Radix's "no tab selected", which renders neither panel — the collapsed state.
-  const [tab, setTab] = useState<MoveTab | ''>(initialTab ?? '')
-  const { hasWeights } = useVaultPosition()
-  const { balance, isLoading, isConnected } = useUsdcBalance()
-  const { pendingAmount } = useWithdrawFlow()
+export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
+  const isLemon = isLemonRuntime ?? isLemonWebView()
+  const { hasWeights, totalUsdc, refetch: refetchPosition } = useVaultPosition()
+  const { balance, isConnected, refetch: refetchBalance } = useUsdcBalance()
+  const { pendingAmount, phase: withdrawPhase, redeem, settleToLemon } = useWithdrawFlow()
+  const { deposit, depositStep } = useVaultWrite()
+  const [depositPhase, setDepositPhase] = useState<TxPhase | null>(null)
+  const [lastMove, setLastMove] = useState<MovePreview | null>(null)
 
-  const pinnedToWithdraw = hasPendingSettlement ?? pendingAmount !== null
-  const activeTab = pinnedToWithdraw ? 'withdraw' : tab
-
-  /** Tapping the open action closes it. Radix only fires `onValueChange` on an actual change, so
-   * the collapse has to ride on the click itself. Never collapses a pinned withdrawal. */
-  function handleTriggerClick(value: MoveTab) {
-    if (!pinnedToWithdraw && activeTab === value) setTab('')
+  function refetchAll() {
+    refetchPosition()
+    refetchBalance()
   }
 
+  async function handleMove(preview: MovePreview) {
+    setLastMove(preview)
+    if (preview.kind === 'deposit') {
+      setDepositPhase({ kind: 'signing' })
+      const result = await deposit(preview.amount)
+      setDepositPhase(result)
+      if (result.kind === 'success') refetchAll()
+      return
+    }
+    if (preview.kind === 'withdraw') {
+      // `redeem` owns its own phase (and the pending-settlement bookkeeping) inside useWithdrawFlow.
+      setDepositPhase(null)
+      await redeem(preview.withdrawBps)
+      refetchAll()
+    }
+  }
+
+  const isBusy = depositPhase?.kind === 'signing' || withdrawPhase.kind === 'signing'
+  // Whichever flow is mid-air owns the status area; only one can be at a time.
+  const phase = depositPhase ?? (withdrawPhase.kind !== 'confirm' ? withdrawPhase : null)
+
+  if (!isConnected) return null
+
   return (
-    <div className="flex flex-col gap-4 px-4 pt-[calc(1rem+env(safe-area-inset-top))]">
-      {isConnected && <WalletBalance balance={balance} isLoading={isLoading} />}
+    <div className="flex flex-col gap-5 px-4 pt-[calc(1rem+env(safe-area-inset-top))]">
+      {/* Hidden outside Lemon, where the SDK does not exist — except with money parked in the
+          wallet mid-withdrawal, which always needs a visible way out. */}
+      {(isLemon || pendingAmount !== null) && (
+        <LemonAccountCard
+          walletUsdc={balance}
+          pendingAmount={pendingAmount}
+          onSettle={settleToLemon}
+          settlePhase={withdrawPhase}
+          onDone={refetchAll}
+        />
+      )}
 
-      <Tabs value={activeTab} onValueChange={(value) => setTab(value as MoveTab)}>
-        <TabsList className="h-auto w-full justify-center gap-10 bg-transparent p-0">
-          <TabsTrigger
-            value="deposit"
-            className={TRIGGER_CLASS}
-            disabled={pinnedToWithdraw}
-            onClick={() => handleTriggerClick('deposit')}
-          >
-            <span className={cn(CIRCLE_CLASS, activeTab === 'deposit' && CIRCLE_ACTIVE_CLASS)}>
-              <ArrowDown className="size-6" aria-hidden="true" />
-            </span>
-            Depositar
-          </TabsTrigger>
-          <TabsTrigger
-            value="withdraw"
-            className={TRIGGER_CLASS}
-            onClick={() => handleTriggerClick('withdraw')}
-          >
-            <span className={cn(CIRCLE_CLASS, activeTab === 'withdraw' && CIRCLE_ACTIVE_CLASS)}>
-              <ArrowUp className="size-6" aria-hidden="true" />
-            </span>
-            Retirar
-          </TabsTrigger>
-        </TabsList>
+      {hasWeights ? (
+        <>
+          <MoveSlider walletUsdc={balance} poolUsdc={totalUsdc} busy={isBusy} onMove={handleMove} />
 
-        <TabsContent value="deposit">
-          <DepositView hasWeights={hasWeights} isLemonRuntime={isLemonWebView()} />
-        </TabsContent>
+          {phase &&
+            (phase.kind === 'signing' && !isLemon ? (
+              <p className="text-center text-sm text-[var(--text-secondary)]">
+                {depositStep === 'approving' ? 'Aprobando USDC…' : 'Confirmá en tu wallet…'}
+              </p>
+            ) : (
+              <TransactionState
+                phase={phase}
+                onPrimary={() => lastMove && handleMove(lastMove)}
+                onSecondary={() => setDepositPhase(null)}
+                summary={
+                  lastMove ? (
+                    <>
+                      {lastMove.kind === 'deposit' ? 'Depositás' : 'Retirás'} $
+                      {formatUsdc(lastMove.amount)} USDC
+                    </>
+                  ) : null
+                }
+              />
+            ))}
 
-        <TabsContent value="withdraw">
-          <WithdrawPanel />
-        </TabsContent>
-      </Tabs>
+          {lastMove?.kind === 'deposit' && !isLemon && (
+            <DepositApproveStep isLemonRuntime={false} amount={lastMove.amount} />
+          )}
+        </>
+      ) : (
+        <div className="flex flex-col items-center gap-3 py-6 text-center">
+          <p className="text-sm text-[var(--text-secondary)]">
+            Todavía no definiste en qué protocolos invertir.
+          </p>
+          <Button asChild className="min-h-[44px]">
+            <Link href="/rebalancear">Definí tu estrategia</Link>
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,14 +1,11 @@
-import { Suspense } from 'react'
 import { MoveScreen } from '@/components/vault-aggregator/move-screen'
 
-/** Alias of `/mover` opening on the withdrawal tab. `?paso=2` still deep-links into step 2 — the
- * pending-settlement banner on `/` points here. */
+/** Alias of `/mover`. The old `?paso=2` deep link still lands somewhere correct: a pending
+ * settlement always renders its own card at the top of this screen, on any route. */
 export default function RetirarPage() {
   return (
     <main className="min-h-dvh bg-background">
-      <Suspense fallback={null}>
-        <MoveScreen initialTab="withdraw" />
-      </Suspense>
+      <MoveScreen />
     </main>
   )
 }
