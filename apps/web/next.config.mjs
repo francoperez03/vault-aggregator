@@ -3,8 +3,14 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// Allow the Lemon in-app QA tunnel to load Next dev chunks over ngrok (fixes 403 + infinite
+// "Loading…" on mobile). Reuses CoinFlip's reserved ngrok host so Lemon's existing mini-app
+// registration (531c…) resolves to this app; override with NGROK_HOST.
+const ngrokHost = process.env.NGROK_HOST?.trim() ?? 'christian-actinographic-impliedly.ngrok-free.dev'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  allowedDevOrigins: [ngrokHost],
   typescript: {
     ignoreBuildErrors: true,
   },
