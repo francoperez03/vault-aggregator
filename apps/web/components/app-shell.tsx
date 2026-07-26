@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ArrowDownCircle, ArrowUpCircle, RefreshCw, Wallet } from 'lucide-react'
+import { ArrowDownUp, RefreshCw, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { isMisconfigured } from '@/lib/contracts/mode'
 import { ConfigErrorBanner } from '@/components/config-error-banner'
@@ -10,10 +10,14 @@ import { FaultInjectionPanel } from '@/components/vault-aggregator/fault-injecti
 
 const NAV_ITEMS = [
   { href: '/', label: 'Posición', icon: Wallet },
-  { href: '/depositar', label: 'Depositar', icon: ArrowDownCircle },
+  { href: '/mover', label: 'Mover', icon: ArrowDownUp },
   { href: '/rebalancear', label: 'Rebalancear', icon: RefreshCw },
-  { href: '/retirar', label: 'Retirar', icon: ArrowUpCircle },
 ] as const
+
+/** `/depositar` and `/retirar` are aliases of `/mover` (same screen, other tab), so the Mover item
+ * has to light up on all three — a plain `pathname === href` would leave the nav looking inert
+ * exactly when the user is deep in a deposit or a withdrawal. */
+const MOVE_ALIASES = ['/mover', '/depositar', '/retirar']
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -30,7 +34,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href
+            const active = href === '/mover' ? MOVE_ALIASES.includes(pathname) : pathname === href
             return (
               <Link
                 key={href}

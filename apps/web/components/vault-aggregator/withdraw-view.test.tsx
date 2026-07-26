@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { WithdrawView } from './page'
+import { WithdrawView } from './withdraw-view'
 import type { TxPhase } from '@/components/vault-aggregator/transaction-state'
 
 afterEach(cleanup)
