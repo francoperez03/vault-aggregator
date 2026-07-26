@@ -100,6 +100,15 @@ describe('MoveScreen', () => {
     expect(depositMock).toHaveBeenCalledWith(25n * U)
   })
 
+  it('MAX puts everything in the pool, MIN takes everything out', () => {
+    setup()
+    render(<MoveScreen />)
+    fireEvent.click(screen.getByRole('button', { name: 'MAX' }))
+    expect(screen.getByRole('button', { name: 'Depositar $50.00' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'MIN' }))
+    expect(screen.getByRole('button', { name: 'Retirar $50.00' })).toBeEnabled()
+  })
+
   it('hides the Lemon card outside Lemon', () => {
     setup()
     render(<MoveScreen isLemonRuntime={false} />)

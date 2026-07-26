@@ -3,41 +3,38 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
-import { cn } from '@/lib/utils'
 import { formatUsdc } from '@/lib/format'
 import { currentPoolBps, previewMove, type MovePreview } from '@/lib/vault/move'
 
-interface BalanceRowProps {
+interface JarProps {
   label: string
   amount: bigint
-  /** Share of wallet+pool this row holds, 0-100, for the proportional bar. */
+  /** Fill height, 0-100. */
   pct: number
   color: string
   emphasis?: boolean
 }
 
-function BalanceRow({ label, amount, pct, color, emphasis }: BalanceRowProps) {
+/** A tank that fills from the bottom. Two of them side by side turn the split into something you
+ * read at a glance instead of comparing two numbers — and the levels swap as the thumb moves, so
+ * the transfer is legible before it is signed. */
+function Jar({ label, amount, pct, color, emphasis }: JarProps) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-          {label}
-        </span>
-        <span
-          className={cn(
-            'font-mono font-semibold tabular-nums text-[var(--text-primary)]',
-            emphasis ? 'text-[22px]' : 'text-base',
-          )}
-        >
-          ${formatUsdc(amount)}
-        </span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-[var(--bg-overlay)]">
+    <div className="flex flex-1 flex-col items-center gap-2">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
+        {label}
+      </span>
+      <div className="relative h-32 w-full overflow-hidden rounded-[12px] border border-[var(--border-subtle)] bg-[var(--bg-overlay)]">
         <div
-          className="h-full rounded-full transition-[width] duration-150"
-          style={{ width: `${pct}%`, backgroundColor: color }}
+          className="absolute inset-x-0 bottom-0 transition-[height] duration-150"
+          style={{ height: `${pct}%`, backgroundColor: color, opacity: emphasis ? 0.9 : 0.35 }}
         />
       </div>
+      {/* Same type size on both sides on purpose: a bigger number under one tank would misalign
+          the two columns and read as a different kind of value. Emphasis lives in the fill. */}
+      <span className="font-mono text-lg font-semibold tabular-nums text-[var(--text-primary)]">
+        ${formatUsdc(amount)}
+      </span>
     </div>
   )
 }
@@ -46,8 +43,8 @@ interface MoveSliderProps {
   walletUsdc: bigint
   poolUsdc: bigint
   busy?: boolean
-  /** Rendered above the balances. Set only where the Lemon step exists, so a browser user never
-   * reads "Paso 2" with no step 1 anywhere on screen. */
+  /** Rendered above the jars. Set only where the Lemon step exists, so a browser user never reads
+   * "Paso 2" with no step 1 anywhere on screen. */
   stepLabel?: string
   onMove: (preview: MovePreview) => void
 }
@@ -55,10 +52,10 @@ interface MoveSliderProps {
 /**
  * One control for both directions: the slider sets what share of the user's USDC should sit in the
  * pool, and the gap against where it sits today *is* the transaction. Right of rest deposits, left
- * of rest withdraws — there is no mode to pick first, and both balances move under the thumb so the
+ * of rest withdraws — there is no mode to pick first, and both tanks move under the thumb so the
  * consequence is visible before signing anything.
  *
- * The two numbers are previews while dragging; the real ones come back from the chain after the tx.
+ * The two amounts are previews while dragging; the real ones come back from the chain after the tx.
  */
 export function MoveSlider({ walletUsdc, poolUsdc, busy, stepLabel, onMove }: MoveSliderProps) {
   const restBps = currentPoolBps(walletUsdc, poolUsdc)
@@ -67,45 +64,70 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stepLabel, onMove }: Mo
 
   const effectiveBps = targetPct === null ? restBps : BigInt(targetPct) * 100n
   const preview = previewMove(walletUsdc, poolUsdc, effectiveBps)
-
   const poolPct = total === 0n ? 0 : Number((preview.poolUsdc * 100n) / total)
+  const disabled = total === 0n || busy
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4">
       {stepLabel && (
         <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
           {stepLabel}
         </span>
       )}
 
-      <div className="flex flex-col gap-4">
-        <BalanceRow
+      <div className="flex items-stretch gap-4">
+        <Jar
           label="En tu wallet"
           amount={preview.walletUsdc}
           pct={100 - poolPct}
           color="var(--text-secondary)"
         />
-        <BalanceRow
-          label="En el pool"
-          amount={preview.poolUsdc}
-          pct={poolPct}
-          color="var(--brand)"
-          emphasis
-        />
+        <Jar label="En el pool" amount={preview.poolUsdc} pct={poolPct} color="var(--brand)" emphasis />
       </div>
 
-      {/* ponytail: the ::after pseudo-element pads the visual thumb to a 44px touch target, same
-          trick as allocation-sliders.tsx. */}
-      <Slider
-        value={[Number(effectiveBps / 100n)]}
-        onValueChange={([next]) => setTargetPct(next)}
-        min={0}
-        max={100}
-        step={1}
-        disabled={total === 0n || busy}
-        aria-label="Cuánto de tu USDC querés tener en el pool"
-        className="py-2 [&_[data-slot=slider-thumb]]:relative [&_[data-slot=slider-thumb]]:after:absolute [&_[data-slot=slider-thumb]]:after:-inset-[13px] [&_[data-slot=slider-thumb]]:after:content-['']"
-      />
+      <p className="text-center text-sm text-[var(--text-secondary)]">
+        <span className="font-mono font-semibold tabular-nums text-[var(--text-primary)]">
+          {poolPct}%
+        </span>{' '}
+        en el pool
+      </p>
+
+      <div className="flex items-center gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="min-h-[44px] px-3 text-xs font-semibold"
+          disabled={disabled}
+          onClick={() => setTargetPct(0)}
+        >
+          MIN
+        </Button>
+
+        {/* ponytail: the ::after pseudo-element pads the visual thumb to a 44px touch target, same
+            trick as allocation-sliders.tsx. */}
+        <Slider
+          value={[Number(effectiveBps / 100n)]}
+          onValueChange={([next]) => setTargetPct(next)}
+          min={0}
+          max={100}
+          step={1}
+          disabled={disabled}
+          aria-label="Cuánto de tu USDC querés tener en el pool"
+          className="flex-1 py-2 [&_[data-slot=slider-thumb]]:relative [&_[data-slot=slider-thumb]]:after:absolute [&_[data-slot=slider-thumb]]:after:-inset-[13px] [&_[data-slot=slider-thumb]]:after:content-['']"
+        />
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="min-h-[44px] px-3 text-xs font-semibold"
+          disabled={disabled}
+          onClick={() => setTargetPct(100)}
+        >
+          MAX
+        </Button>
+      </div>
 
       <Button
         type="button"
