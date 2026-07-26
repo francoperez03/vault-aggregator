@@ -26,9 +26,9 @@ interface WalletBalanceProps {
  * claim we have not read yet. */
 function WalletBalance({ balance, isLoading }: WalletBalanceProps) {
   return (
-    <div className="flex flex-col items-center gap-1 py-4 text-center">
+    <div className="flex flex-col items-start gap-1 py-4 text-left">
       <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-        Saldo en tu wallet
+        Saldo en tu wallet · USDC
       </span>
       <span className="font-mono text-[28px] font-semibold leading-none tabular-nums text-[var(--text-primary)]">
         {isLoading ? '--' : `$${formatUsdc(balance)}`}

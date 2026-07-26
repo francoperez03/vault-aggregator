@@ -51,7 +51,7 @@ describe('MoveScreen', () => {
     useUsdcBalanceMock.mockReturnValue({ balance: 13_596_595n, isLoading: false, isConnected: true })
     withFlow(null)
     render(<MoveScreen />)
-    expect(screen.getByText('Saldo en tu wallet')).toBeInTheDocument()
+    expect(screen.getByText(/Saldo en tu wallet/)).toBeInTheDocument()
     expect(screen.getByText('$13.59')).toBeInTheDocument()
   })
 
@@ -66,7 +66,7 @@ describe('MoveScreen', () => {
     useUsdcBalanceMock.mockReturnValue({ balance: 0n, isLoading: false, isConnected: false })
     withFlow(null)
     render(<MoveScreen />)
-    expect(screen.queryByText('Saldo en tu wallet')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Saldo en tu wallet/)).not.toBeInTheDocument()
   })
 
   it('opens on the tab the entry route asks for', () => {

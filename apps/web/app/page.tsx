@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import { useAccount } from 'wagmi'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
@@ -7,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { PositionSummary } from '@/components/vault-aggregator/position-summary'
 import { ProtocolBreakdown } from '@/components/vault-aggregator/protocol-breakdown'
 import { PendingSettlementBanner } from '@/components/vault-aggregator/pending-settlement-banner'
+import { MoveScreen } from '@/components/vault-aggregator/move-screen'
 import { WalletBar } from '@/components/wallet-bar'
 import { ADAPTER_IDS, type AdapterId } from '@/lib/contracts/config'
 import { useVaultPosition } from '@/hooks/useVaultPosition'
@@ -69,17 +71,11 @@ export function HomePositionView({
               <ProtocolBreakdown position={position} yieldByAdapter={yieldByAdapter} />
             </CardContent>
           </Card>
-          <div className="flex gap-2">
-            <Button asChild size="lg" className="min-h-[44px] flex-1">
-              <Link href="/depositar">Depositar</Link>
-            </Button>
-            <Button asChild variant="outline" size="lg" className="min-h-[44px] flex-1">
-              <Link href="/rebalancear">Rebalancear</Link>
-            </Button>
-            <Button asChild variant="outline" size="lg" className="min-h-[44px] flex-1">
-              <Link href="/retirar">Retirar</Link>
-            </Button>
-          </div>
+          {/* Depositar and Retirar used to live here as two more buttons; they are the screen
+              above now, so the only thing left to navigate to is the allocation. */}
+          <Button asChild variant="outline" size="lg" className="min-h-[44px] w-full">
+            <Link href="/rebalancear">Rebalancear</Link>
+          </Button>
         </>
       ) : position.hasWeights ? (
         <Card className="rounded-[14px] border-[var(--border-subtle)] px-4 py-8 text-center">
@@ -97,12 +93,12 @@ export function HomePositionView({
         <Card className="rounded-[14px] border-dashed border-[var(--border-subtle)] px-4 py-8 text-center">
           <CardContent className="flex flex-col items-center gap-3 p-0">
             <h1 className="text-xl font-semibold text-[var(--text-primary)]">Todavía no tenés posición</h1>
+            {/* No CTA here on purpose: the deposit panel above this view already offers the
+                only next step, and two "Definí tu estrategia" buttons on one screen read as two
+                different actions. */}
             <p className="text-sm text-[var(--text-secondary)]">
               Definí tu estrategia y hacé tu primer depósito: se reparte solo entre los protocolos que elijas.
             </p>
-            <Button asChild size="lg" className="mt-2 min-h-[44px]">
-              <Link href="/rebalancear">Definí tu estrategia</Link>
-            </Button>
           </CardContent>
         </Card>
       )}
@@ -169,12 +165,19 @@ export default function Page() {
           </Card>
         </div>
       ) : (
-        <HomePositionView
-          position={toPositionState(vaultPosition, pendingAmount)}
-          yieldByAdapter={vaultYield.perAdapter}
-          totalDisplayedUsdc={vaultYield.totalDisplayedUsdc}
-          totalState={deriveTotalState(vaultYield.perAdapter)}
-        />
+        <>
+          {/* Move first, position second: the reason to open the app is to put money in or take
+              it out; the position is what you check on the way past. */}
+          <Suspense fallback={null}>
+            <MoveScreen />
+          </Suspense>
+          <HomePositionView
+            position={toPositionState(vaultPosition, pendingAmount)}
+            yieldByAdapter={vaultYield.perAdapter}
+            totalDisplayedUsdc={vaultYield.totalDisplayedUsdc}
+            totalState={deriveTotalState(vaultYield.perAdapter)}
+          />
+        </>
       )}
     </main>
   )

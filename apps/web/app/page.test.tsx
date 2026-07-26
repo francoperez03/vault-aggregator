@@ -19,13 +19,20 @@ vi.mock('@/hooks/useWithdrawFlow', () => ({ useWithdrawFlow: () => useWithdrawFl
 
 vi.mock('@/components/wallet-bar', () => ({ WalletBar: () => null }))
 
+// The move actions now sit on top of `/`; they have their own suite (move-screen.test.tsx) and
+// pull the whole wagmi config, which this file deliberately mocks down to two hooks.
+vi.mock('@/components/vault-aggregator/move-screen', () => ({
+  MoveScreen: () => <div data-testid="move-screen" />,
+}))
+
 afterEach(cleanup)
 
 describe('HomePositionView', () => {
-  it('MOCK_EMPTY: shows the empty state and the define-strategy CTA', () => {
+  it('MOCK_EMPTY: shows the empty state without a second define-strategy CTA', () => {
     render(<HomePositionView position={MOCK_EMPTY} />)
     expect(screen.getByText('Todavía no tenés posición')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Definí tu estrategia' })).toHaveAttribute('href', '/rebalancear')
+    // The only "Definí tu estrategia" on `/` is the deposit panel's, rendered above this view.
+    expect(screen.queryByRole('link', { name: 'Definí tu estrategia' })).not.toBeInTheDocument()
   })
 
   it('MOCK_WEIGHTS_ONLY: shows "Estrategia guardada" and no define-strategy CTA', () => {
@@ -35,14 +42,15 @@ describe('HomePositionView', () => {
     expect(screen.queryByRole('link', { name: 'Definí tu estrategia' })).not.toBeInTheDocument()
   })
 
-  it('MOCK_FUNDED: shows the total, the protocol breakdown, and deposit/rebalance/withdraw actions', () => {
+  it('MOCK_FUNDED: shows the total, the protocol breakdown, and only the rebalance action', () => {
     render(<HomePositionView position={MOCK_FUNDED} />)
     // VFE-02: the total now renders through YieldCounter at 6-dp precision (formatUsdcPrecise).
     expect(screen.getByText('$10,000.000000')).toBeInTheDocument()
     expect(screen.getByText('Aave')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Depositar' })).toHaveAttribute('href', '/depositar')
     expect(screen.getByRole('link', { name: 'Rebalancear' })).toHaveAttribute('href', '/rebalancear')
-    expect(screen.getByRole('link', { name: 'Retirar' })).toHaveAttribute('href', '/retirar')
+    // Depositar/Retirar are the MoveScreen above this view now, not two more buttons here.
+    expect(screen.queryByRole('link', { name: 'Depositar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Retirar' })).not.toBeInTheDocument()
   })
 
   it('shows the persistent pending-withdrawal banner (D-19) when set, never as a toast', () => {
