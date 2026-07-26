@@ -69,6 +69,24 @@ describe('MoveScreen', () => {
     expect(screen.queryByText(/Saldo en tu wallet/)).not.toBeInTheDocument()
   })
 
+  it('starts collapsed: balance and actions only, no form until asked', () => {
+    useUsdcBalanceMock.mockReturnValue({ balance: 0n, isLoading: false, isConnected: true })
+    withFlow(null)
+    render(<MoveScreen />)
+    expect(screen.getByRole('tab', { name: 'Depositar' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('tab', { name: 'Retirar' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.queryByRole('button', { name: 'Depositar USDC' })).not.toBeInTheDocument()
+  })
+
+  it('tapping the open action collapses it again', () => {
+    useUsdcBalanceMock.mockReturnValue({ balance: 0n, isLoading: false, isConnected: true })
+    withFlow(null)
+    render(<MoveScreen initialTab="withdraw" />)
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Retirar' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Retirar' }))
+    expect(screen.getByRole('tab', { name: 'Retirar' })).toHaveAttribute('aria-selected', 'false')
+  })
+
   it('opens on the tab the entry route asks for', () => {
     useUsdcBalanceMock.mockReturnValue({ balance: 0n, isLoading: false, isConnected: true })
     withFlow(null)

@@ -93,12 +93,14 @@ export function HomePositionView({
         <Card className="rounded-[14px] border-dashed border-[var(--border-subtle)] px-4 py-8 text-center">
           <CardContent className="flex flex-col items-center gap-3 p-0">
             <h1 className="text-xl font-semibold text-[var(--text-primary)]">Todavía no tenés posición</h1>
-            {/* No CTA here on purpose: the deposit panel above this view already offers the
-                only next step, and two "Definí tu estrategia" buttons on one screen read as two
-                different actions. */}
             <p className="text-sm text-[var(--text-secondary)]">
               Definí tu estrategia y hacé tu primer depósito: se reparte solo entre los protocolos que elijas.
             </p>
+            {/* The deposit panel above starts collapsed, so this is the only CTA on screen for a
+                user with no allocation yet — without it the state has no way out but the nav. */}
+            <Button asChild size="lg" className="mt-2 min-h-[44px]">
+              <Link href="/rebalancear">Definí tu estrategia</Link>
+            </Button>
           </CardContent>
         </Card>
       )}

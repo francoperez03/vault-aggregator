@@ -92,9 +92,10 @@ function WithdrawPanel() {
 }
 
 interface MoveScreenProps {
-  /** Which tab the entry route opens on. `/retirar` and `/depositar` survive as aliases of
-   * `/mover` precisely so the home buttons and the pending-settlement deep link keep landing where
-   * they always did, without a redirect flash. */
+  /** Which panel the entry route opens on. Omitted (`/`, `/mover`) means **collapsed**: just the
+   * balance and the two actions, no form until the user asks for one. `/depositar` and `/retirar`
+   * pass theirs so the pending-settlement deep link and any old bookmark still land on the form
+   * directly, without a redirect flash. */
   initialTab?: MoveTab
   /** Test seam: injected instead of reading `useWithdrawFlow` twice, which would fork the flow's
    * state across two hook instances. */
@@ -110,8 +111,9 @@ interface MoveScreenProps {
  * withdrawal (step 1 done, funds sitting in the mini-app balance) pins the Retirar tab, since
  * showing a deposit form while money is mid-flight is how money gets forgotten there.
  */
-export function MoveScreen({ initialTab = 'deposit', hasPendingSettlement }: MoveScreenProps) {
-  const [tab, setTab] = useState<MoveTab>(initialTab)
+export function MoveScreen({ initialTab, hasPendingSettlement }: MoveScreenProps) {
+  // `''` is Radix's "no tab selected", which renders neither panel — the collapsed state.
+  const [tab, setTab] = useState<MoveTab | ''>(initialTab ?? '')
   const { hasWeights } = useVaultPosition()
   const { balance, isLoading, isConnected } = useUsdcBalance()
   const { pendingAmount } = useWithdrawFlow()
@@ -119,19 +121,34 @@ export function MoveScreen({ initialTab = 'deposit', hasPendingSettlement }: Mov
   const pinnedToWithdraw = hasPendingSettlement ?? pendingAmount !== null
   const activeTab = pinnedToWithdraw ? 'withdraw' : tab
 
+  /** Tapping the open action closes it. Radix only fires `onValueChange` on an actual change, so
+   * the collapse has to ride on the click itself. Never collapses a pinned withdrawal. */
+  function handleTriggerClick(value: MoveTab) {
+    if (!pinnedToWithdraw && activeTab === value) setTab('')
+  }
+
   return (
     <div className="flex flex-col gap-4 px-4 pt-[calc(1rem+env(safe-area-inset-top))]">
       {isConnected && <WalletBalance balance={balance} isLoading={isLoading} />}
 
       <Tabs value={activeTab} onValueChange={(value) => setTab(value as MoveTab)}>
         <TabsList className="h-auto w-full justify-center gap-10 bg-transparent p-0">
-          <TabsTrigger value="deposit" className={TRIGGER_CLASS} disabled={pinnedToWithdraw}>
+          <TabsTrigger
+            value="deposit"
+            className={TRIGGER_CLASS}
+            disabled={pinnedToWithdraw}
+            onClick={() => handleTriggerClick('deposit')}
+          >
             <span className={cn(CIRCLE_CLASS, activeTab === 'deposit' && CIRCLE_ACTIVE_CLASS)}>
               <ArrowDown className="size-6" aria-hidden="true" />
             </span>
             Depositar
           </TabsTrigger>
-          <TabsTrigger value="withdraw" className={TRIGGER_CLASS}>
+          <TabsTrigger
+            value="withdraw"
+            className={TRIGGER_CLASS}
+            onClick={() => handleTriggerClick('withdraw')}
+          >
             <span className={cn(CIRCLE_CLASS, activeTab === 'withdraw' && CIRCLE_ACTIVE_CLASS)}>
               <ArrowUp className="size-6" aria-hidden="true" />
             </span>

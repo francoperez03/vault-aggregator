@@ -28,11 +28,11 @@ vi.mock('@/components/vault-aggregator/move-screen', () => ({
 afterEach(cleanup)
 
 describe('HomePositionView', () => {
-  it('MOCK_EMPTY: shows the empty state without a second define-strategy CTA', () => {
+  it('MOCK_EMPTY: shows the empty state and the define-strategy CTA', () => {
     render(<HomePositionView position={MOCK_EMPTY} />)
     expect(screen.getByText('Todavía no tenés posición')).toBeInTheDocument()
-    // The only "Definí tu estrategia" on `/` is the deposit panel's, rendered above this view.
-    expect(screen.queryByRole('link', { name: 'Definí tu estrategia' })).not.toBeInTheDocument()
+    // The deposit panel above starts collapsed, so this is the only CTA on screen.
+    expect(screen.getByRole('link', { name: 'Definí tu estrategia' })).toHaveAttribute('href', '/rebalancear')
   })
 
   it('MOCK_WEIGHTS_ONLY: shows "Estrategia guardada" and no define-strategy CTA', () => {
