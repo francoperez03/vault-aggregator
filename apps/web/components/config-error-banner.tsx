@@ -9,7 +9,7 @@ export function ConfigErrorBanner() {
   return (
     <div
       role="alert"
-      className="bg-[var(--error)]/10 border-b border-[var(--error)] px-4 py-3 text-sm text-[var(--text-primary)]"
+      className="bg-[var(--danger)]/10 border-b border-[var(--danger)] px-4 py-3 text-sm text-[var(--text-primary)]"
     >
       Falta configurar las direcciones de los contratos. La app no puede mostrar tu posición real.
     </div>

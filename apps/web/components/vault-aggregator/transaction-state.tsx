@@ -90,7 +90,7 @@ export function TransactionState({ phase, onPrimary, onSecondary, summary }: Tra
     case 'reverted':
       return (
         <div className="flex flex-col gap-4 p-4">
-          <p className="text-sm text-[var(--error)]">
+          <p className="text-sm text-[var(--danger)]">
             La transacción no se completó{phase.reason ? ` (${phase.reason})` : ''}. No se movió plata.
           </p>
           <Button onClick={onPrimary}>Reintentar transacción</Button>

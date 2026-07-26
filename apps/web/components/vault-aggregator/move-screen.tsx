@@ -88,7 +88,7 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
           <p className="text-sm text-[var(--text-secondary)]">
             Todavía no definiste en qué protocolos invertir.
           </p>
-          <Button asChild className="min-h-[44px]">
+          <Button asChild >
             <Link href="/rebalancear">Definí tu estrategia</Link>
           </Button>
         </div>

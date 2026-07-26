@@ -15,7 +15,7 @@ export function RebalanceCostDisclosure({ onConfirm }: RebalanceCostDisclosurePr
       <p className="text-sm text-[var(--text-primary)]">
         Rebalancear retira de todos los protocolos y vuelve a depositar según tus pesos nuevos. Puede haber una diferencia chica por redondeo o slippage, y el rendimiento acumulado hasta ahora se realiza en esta operación.
       </p>
-      <Button type="button" size="lg" className="min-h-[44px]" onClick={onConfirm}>
+      <Button type="button" size="lg"  onClick={onConfirm}>
         Confirmar rebalanceo
       </Button>
     </div>

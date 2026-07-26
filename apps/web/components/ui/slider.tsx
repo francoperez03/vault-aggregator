@@ -7,12 +7,13 @@ import { cn } from '@/lib/utils'
 
 function Slider({
   className,
+  rangeClassName,
   defaultValue,
   value,
   min = 0,
   max = 100,
   ...props
-}: React.ComponentProps<typeof SliderPrimitive.Root>) {
+}: React.ComponentProps<typeof SliderPrimitive.Root> & { rangeClassName?: string }) {
   const _values = React.useMemo(
     () =>
       Array.isArray(value)
@@ -44,16 +45,19 @@ function Slider({
       >
         <SliderPrimitive.Range
           data-slot="slider-range"
-          className={
-            'absolute data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full bg-gradient-to-r from-primary to-[var(--yield)]'
-          }
+          // Defaults to the brand ramp; `rangeClassName` lets a caller tint the fill with the
+          // colour it already has in hand (allocation-sliders knows each protocol's colour).
+          className={cn(
+            'absolute data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full bg-gradient-to-r from-[var(--brand-dim)] to-[var(--brand)]',
+            rangeClassName,
+          )}
         />
       </SliderPrimitive.Track>
       {Array.from({ length: _values.length }, (_, index) => (
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           key={index}
-          className="border-0 block size-[18px] min-w-[18px] min-h-[18px] shrink-0 rounded-full bg-white shadow-[0_0_8px_var(--brand-glow),0_2px_4px_rgba(0,0,0,0.4)] transition-transform hover:scale-110 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 touch-manipulation cursor-grab active:cursor-grabbing"
+          className="block size-[18px] min-w-[18px] min-h-[18px] shrink-0 rounded-full border-[1.5px] border-[var(--brand)] bg-[var(--text-primary)] shadow-[0_0_10px_var(--brand-glow)] transition-transform hover:scale-110 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 touch-manipulation cursor-grab active:cursor-grabbing"
         />
       ))}
     </SliderPrimitive.Root>

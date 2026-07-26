@@ -33,7 +33,7 @@ export function ProtocolBreakdown({ position, yieldByAdapter }: ProtocolBreakdow
 
   return (
     <div className="space-y-2">
-      <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
+      <h3 className="kicker mb-3 block">
         Por protocolo
       </h3>
       <div className="space-y-2">

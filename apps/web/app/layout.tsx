@@ -1,15 +1,22 @@
 import type { Metadata, Viewport } from 'next'
-import { DM_Sans, JetBrains_Mono } from 'next/font/google'
+import { Chakra_Petch, Inter, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AppToaster } from '@/components/app-toaster'
 import { AppShell } from '@/components/app-shell'
 import { Providers } from '@/app/providers'
 import './globals.css'
 
-const dmSans = DM_Sans({
+// Same three families as CoinFlip, same roles: Chakra Petch for display (uppercase chrome),
+// Inter for body, JetBrains Mono for every number.
+const inter = Inter({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
-  variable: '--font-dm-sans',
+  variable: '--font-inter',
+})
+const chakraPetch = Chakra_Petch({
+  subsets: ['latin'],
+  weight: ['500', '600', '700'],
+  variable: '--font-chakra-petch',
 })
 const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
@@ -58,7 +65,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" style={{ colorScheme: 'dark' }}>
       <body
-        className={`${dmSans.variable} ${jetbrainsMono.variable} font-sans antialiased max-w-[430px] mx-auto min-h-dvh w-full overflow-y-auto overscroll-y-auto touch-pan-y`}
+        className={`${inter.variable} ${chakraPetch.variable} ${jetbrainsMono.variable} font-sans antialiased max-w-[430px] mx-auto min-h-dvh w-full overflow-y-auto overscroll-y-auto touch-pan-y`}
       >
         <Providers>
           <AppShell>{children}</AppShell>

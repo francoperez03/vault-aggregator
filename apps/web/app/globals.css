@@ -3,9 +3,21 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ── Vault Aggregator Design System ── */
+/* ── Vault Aggregator Design System ──
+ *
+ * Shares CoinFlip's visual language (same program, same client): near-black canvas with an ambient
+ * cyan drift, cyan for identity, electric blue for actions, chamfered surfaces, glow instead of
+ * shadow. Ported from `coinflip/apps/web/app/globals.css`, which is the real system — that repo's
+ * DESIGN_SYSTEM.md is stale and must not be used as a source.
+ *
+ * Two deliberate divergences from CoinFlip, both documented in ../../DESIGN.md:
+ *   - money stays green (`--yield`), because here the number is a live rate display, not a payout;
+ *   - the action color is `--action`, not CoinFlip's `--accent`, because shadcn already owns
+ *     `--accent` as its hover-surface token and redefining it would repaint every primitive.
+ */
 :root {
   /* Backgrounds */
+  --bg-void: #05070A;
   --bg-base: #0A0C0F;
   --bg-surface: #111418;
   --bg-elevated: #181D24;
@@ -14,32 +26,65 @@
   --border-subtle: #1F2733;
   --border-default: #2A3444;
   --border-strong: #3A4A60;
-  /* Brand — Arbitrum Blue */
+  /* Brand — cyan. Identity, focus and glow. Never a CTA fill. */
   --brand: #12AAFF;
   --brand-light: #4DC4FF;
-  --brand-dim: #0D7FBE;
+  --brand-dim: #0B7FC4;
   --brand-ghost: rgba(18, 170, 255, 0.12);
-  --brand-glow: rgba(18, 170, 255, 0.25);
+  --brand-glow: rgba(18, 170, 255, 0.30);
+  /* Action — electric blue. Buttons only. Hue held at OKLCH ~260deg (CoinFlip's note): the least
+     violet-leaning blue sRGB holds at this chroma, so actions read blue and not purple. */
+  --action: #0160E4;
+  --action-light: #2679FE;
+  --action-ghost: rgba(1, 96, 228, 0.12);
+  --action-glow: rgba(1, 96, 228, 0.30);
   /* Yield — USDC Green */
   --yield: #26D48A;
-  --yield-light: #4DEBB0;
-  --yield-dim: #1A9962;
-  --yield-ghost: rgba(38, 212, 138, 0.10);
   --yield-glow: rgba(38, 212, 138, 0.20);
   /* Semantic */
-  --error: #FF4D6A;
+  --danger: #FF4D5E;
+  --danger-ghost: rgba(255, 77, 94, 0.12);
   --warning: #FFB020;
   /* Text */
   --text-primary: #F0F4FF;
   --text-secondary: #8A9BB8;
-  --text-tertiary: #4A5A72;
+  --text-dim: #566178; /* 3.15:1 on base — decorative only (disabled chrome), never body text */
   /* Protocols */
   --aave: #B6509E;
   --morpho: #5B8EFA;
   --fluid: #00D4FF;
   --euler: #2AE5B9; /* Euler's official mint accent, confirmed from euler.finance/brand (logo SVG fill + UI accent) */
-  /* Easing */
+
+  /* Type — display is uppercase-only, so tracking is positive throughout */
+  --tracking-display: 0.04em;
+  --tracking-eyebrow: 0.12em;
+  --tracking-label: 0.08em;
+
+  /* Chamfer: two opposite corners cut. The signature shape — no soft radius anywhere it applies. */
+  --chamfer: 10px;
+  --chamfer-clip: polygon(
+    var(--chamfer) 0,
+    100% 0,
+    100% calc(100% - var(--chamfer)),
+    calc(100% - var(--chamfer)) 100%,
+    0 100%,
+    0 var(--chamfer)
+  );
+  --chamfer-sm: 4px;
+  --chamfer-clip-sm: polygon(
+    var(--chamfer-sm) 0,
+    100% 0,
+    100% calc(100% - var(--chamfer-sm)),
+    calc(100% - var(--chamfer-sm)) 100%,
+    0 100%,
+    0 var(--chamfer-sm)
+  );
+
+  /* Motion */
   --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 150ms;
+  --dur-base: 250ms;
+  --dur-slow: 400ms;
 
   /* shadcn semantic mapping */
   --background: var(--bg-base);
@@ -56,7 +101,7 @@
   --muted-foreground: var(--text-secondary);
   --accent: var(--bg-overlay);
   --accent-foreground: var(--text-primary);
-  --destructive: var(--error);
+  --destructive: var(--danger);
   --destructive-foreground: var(--text-primary);
   --border: var(--border-default);
   --input: var(--border-default);
@@ -67,13 +112,14 @@
   --chart-3: var(--fluid);
   --chart-4: var(--euler);
   --chart-5: var(--yield);
-  /* Radius (design system: 6, 10, 14, 20, 28px) */
-  --radius: 0.625rem;
-  --radius-sm: 6px;
-  --radius-md: 10px;
+  /* Radius is 0 by design: surfaces are chamfered (`.chamfer`), not rounded. The scale stays for
+     the few round things left (status dots, the wallet avatar). */
+  --radius: 0;
+  --radius-sm: 4px;
+  --radius-md: 8px;
   --radius-lg: 14px;
   --radius-xl: 20px;
-  --radius-2xl: 28px;
+  --radius-2xl: 999px;
   /* Sidebar */
   --sidebar: var(--bg-surface);
   --sidebar-foreground: var(--text-primary);
@@ -100,7 +146,7 @@
   --muted-foreground: var(--text-secondary);
   --accent: var(--bg-overlay);
   --accent-foreground: var(--text-primary);
-  --destructive: var(--error);
+  --destructive: var(--danger);
   --destructive-foreground: var(--text-primary);
   --border: var(--border-default);
   --input: var(--border-default);
@@ -108,7 +154,8 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-chakra-petch), var(--font-inter), sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -144,8 +191,10 @@
   --color-sidebar-ring: var(--sidebar-ring);
   /* Design system extras */
   --color-yield: var(--yield);
+  --color-action: var(--action);
+  --color-action-light: var(--action-light);
+  --color-action-ghost: var(--action-ghost);
   --color-brand-ghost: var(--brand-ghost);
-  --color-yield-ghost: var(--yield-ghost);
   --color-aave: var(--aave);
   --color-morpho: var(--morpho);
   --color-fluid: var(--fluid);
@@ -157,87 +206,29 @@
   --radius-2xl: var(--radius-2xl);
 }
 
-@keyframes apyPulse {
-  0%, 100% { box-shadow: 0 0 0 transparent; }
-  50% { box-shadow: 0 0 14px var(--yield-glow); }
-}
-@keyframes dotBlink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
-}
-
-/* Degradado que se mueve sobre el botón — vivo y dinámico */
-@keyframes gradientSweep {
-  0% { background-position: 0% 50%; }
-  20% { background-position: 45% 50%; }
-  50% { background-position: 70% 50%; }
-  80% { background-position: 95% 50%; }
-  100% { background-position: 100% 50%; }
+/* ── Ambient canvas ──
+   Cyan drift plus film grain, ported from CoinFlip. Both layers are fixed to the viewport, not the
+   body: this app's body is capped at a 430px column (layout.tsx), and painting them there would
+   trap the ambience inside that column on desktop. */
+@keyframes bgDrift {
+  0% { background-position: 20% 20%, 80% 70%, 60% 10%; }
+  50% { background-position: 26% 24%, 74% 64%, 54% 16%; }
+  100% { background-position: 20% 20%, 80% 70%, 60% 10%; }
 }
 
-/* Destello diagonal que cruza el CTA */
-@keyframes ctaShine {
-  0% { transform: translate(-120%, -120%) skewX(-15deg); opacity: 0; }
-  20% { opacity: 0.2; }
-  40% { transform: translate(0%, 0%) skewX(-15deg); opacity: 0.8; }
-  60% { opacity: 0.5; }
-  80% { transform: translate(120%, 120%) skewX(-15deg); opacity: 0.15; }
-  100% { transform: translate(150%, 150%) skewX(-15deg); opacity: 0; }
+@keyframes grainDrift {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-1.5%, 1%); }
+  50% { transform: translate(1%, -1.5%); }
+  75% { transform: translate(-1%, -1%); }
+  100% { transform: translate(0, 0); }
 }
 
-/* Destello que recorre todo el botón (gradiente ancho + background-position) */
-@keyframes ctaShineFull {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-}
-
-/* Círculo verde que se mueve en varias direcciones sobre el botón Deposit */
-@keyframes depositCircleMove {
-  0%, 100% {
-    left: 10%;
-    top: 20%;
-    transform: translate(-50%, -50%);
-  }
-  20% {
-    left: 85%;
-    top: 15%;
-    transform: translate(-50%, -50%);
-  }
-  40% {
-    left: 80%;
-    top: 80%;
-    transform: translate(-50%, -50%);
-  }
-  60% {
-    left: 15%;
-    top: 85%;
-    transform: translate(-50%, -50%);
-  }
-  80% {
-    left: 5%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-  }
-}
-
-/* Borde animado con gradiente conic (estilo aurora) */
-@property --border-angle {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
-@keyframes borderGradientRotate {
-  to { --border-angle: 360deg; }
-}
-
-/* Glow pulse suave para el CTA Deposit */
-@keyframes depositGlowPulse {
-  0%, 100% {
-    box-shadow: 0 0 16px rgba(0, 192, 255, 0.15), 0 0 24px rgba(60, 199, 128, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  }
-  50% {
-    box-shadow: 0 0 24px rgba(0, 192, 255, 0.28), 0 0 40px rgba(60, 199, 128, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  }
+/* One-shot cyan sweep across the primary CTA on hover. Not looping: it reads as the system
+   answering a pointer, not as decoration waiting to be noticed. */
+@keyframes ctaSweep {
+  from { opacity: 0.7; transform: translateX(-120%); }
+  to { opacity: 0; transform: translateX(120%); }
 }
 
 /* VFE-02 yield counter (15-UI-SPEC.md §Tick/animation contract): the one allowed animated
@@ -268,5 +259,72 @@
     padding-bottom: env(safe-area-inset-bottom);
     min-height: 100dvh;
     -webkit-overflow-scrolling: touch; /* scroll suave en iOS */
+  }
+}
+
+/* ── Utilities ── */
+
+/* The signature shape. Applied to buttons, panels and inputs; `-sm` for compact controls where a
+   10px cut would eat the whole corner. */
+.chamfer {
+  border-radius: 0;
+  clip-path: var(--chamfer-clip);
+}
+
+.chamfer-sm {
+  border-radius: 0;
+  clip-path: var(--chamfer-clip-sm);
+}
+
+/* The brand kicker. One per screen region — never one per element (see DESIGN.md). */
+.kicker {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* ── Ambient layers ── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 20% 20%, rgba(18, 170, 255, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 70% 50% at 80% 70%, rgba(1, 96, 228, 0.06) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 40% at 60% 10%, rgba(18, 170, 255, 0.05) 0%, transparent 50%);
+  background-size: 100% 100%;
+  animation: bgDrift 26s ease-in-out infinite;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url('/noise-v2.png');
+  background-repeat: repeat;
+  background-size: 256px 256px;
+  animation: grainDrift 9s steps(4) infinite;
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Motion is a layer, not the content. Everything above degrades to a still frame. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

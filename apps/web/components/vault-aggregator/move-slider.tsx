@@ -21,13 +21,18 @@ interface JarProps {
 function Jar({ label, amount, pct, color, emphasis }: JarProps) {
   return (
     <div className="flex flex-1 flex-col items-center gap-2">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-        {label}
-      </span>
-      <div className="relative h-32 w-full overflow-hidden rounded-[12px] border border-[var(--border-subtle)] bg-[var(--bg-overlay)]">
+      {/* Sentence case, not a kicker: two tanks side by side with their own uppercase labels was
+          the eyebrow reflex — one kicker per region is the rule (DESIGN.md). */}
+      <span className="text-xs text-[var(--text-secondary)]">{label}</span>
+      <div className="chamfer relative h-32 w-full overflow-hidden border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-void)]">
         <div
-          className="absolute inset-x-0 bottom-0 transition-[height] duration-150"
-          style={{ height: `${pct}%`, backgroundColor: color, opacity: emphasis ? 0.9 : 0.35 }}
+          className="absolute inset-x-0 bottom-0 transition-[height] duration-[var(--dur-base)] ease-[var(--ease-snap)]"
+          style={{
+            height: `${pct}%`,
+            backgroundColor: color,
+            opacity: emphasis ? 0.85 : 0.3,
+            boxShadow: emphasis ? `0 0 24px ${color}` : undefined,
+          }}
         />
       </div>
       {/* Same type size on both sides on purpose: a bigger number under one tank would misalign
@@ -69,11 +74,7 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stepLabel, onMove }: Mo
 
   return (
     <div className="flex flex-col gap-4">
-      {stepLabel && (
-        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-          {stepLabel}
-        </span>
-      )}
+      {stepLabel && <span className="kicker">{stepLabel}</span>}
 
       <div className="flex items-stretch gap-4">
         <Jar
@@ -97,7 +98,7 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stepLabel, onMove }: Mo
           type="button"
           variant="outline"
           size="sm"
-          className="min-h-[44px] px-3 text-xs font-semibold"
+          className="chamfer-sm px-3"
           disabled={disabled}
           onClick={() => setTargetPct(0)}
         >
@@ -121,7 +122,7 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stepLabel, onMove }: Mo
           type="button"
           variant="outline"
           size="sm"
-          className="min-h-[44px] px-3 text-xs font-semibold"
+          className="chamfer-sm px-3"
           disabled={disabled}
           onClick={() => setTargetPct(100)}
         >
@@ -135,7 +136,7 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stepLabel, onMove }: Mo
         // At rest the CTA is a hint, not an offer — a full-brand button for a disabled control
         // reads as "tap me" and gets tapped.
         variant={preview.kind === 'none' ? 'outline' : 'default'}
-        className="min-h-[44px] w-full"
+        className="w-full"
         disabled={preview.kind === 'none' || busy}
         onClick={() => onMove(preview)}
       >
@@ -143,7 +144,7 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stepLabel, onMove }: Mo
           ? `Depositar $${formatUsdc(preview.amount)}`
           : preview.kind === 'withdraw'
             ? `Retirar $${formatUsdc(preview.amount)}`
-            : 'Mové la barra para depositar o retirar'}
+            : 'Mové la barra'}
       </Button>
     </div>
   )

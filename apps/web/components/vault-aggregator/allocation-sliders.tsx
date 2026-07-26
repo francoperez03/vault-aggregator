@@ -33,7 +33,7 @@ export function AllocationSliders({ value, onChange }: AllocationSlidersProps) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
+        <span className="kicker">
           Tu estrategia
         </span>
         <span

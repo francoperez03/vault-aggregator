@@ -41,21 +41,21 @@ describe('TransactionState', () => {
   it('success: uses the yield token class and never the error token class', () => {
     const { container } = render(<TransactionState phase={{ kind: 'success' }} onPrimary={noop} />);
     expect(container.innerHTML).toMatch(/--yield/);
-    expect(container.innerHTML).not.toMatch(/--error/);
+    expect(container.innerHTML).not.toMatch(/--danger/);
   });
 
   it('rejected: exact copy, CTA "Volver a firmar", never the error token class', () => {
     const { container } = render(<TransactionState phase={{ kind: 'rejected' }} onPrimary={noop} />);
     expect(screen.getByText('Cancelaste la firma. No pasó nada, no se movió plata.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Volver a firmar' })).toBeInTheDocument();
-    expect(container.innerHTML).not.toMatch(/--error/);
+    expect(container.innerHTML).not.toMatch(/--danger/);
   });
 
   it('reverted: uses the error token class, shows the reason, CTA "Reintentar transacción"', () => {
     const { container } = render(
       <TransactionState phase={{ kind: 'reverted', reason: 'slippage' }} onPrimary={noop} />,
     );
-    expect(container.innerHTML).toMatch(/--error/);
+    expect(container.innerHTML).toMatch(/--danger/);
     expect(screen.getByText(/slippage/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reintentar transacción' })).toBeInTheDocument();
   });

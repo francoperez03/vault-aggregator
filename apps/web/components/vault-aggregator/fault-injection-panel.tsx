@@ -66,7 +66,7 @@ export function FaultInjectionPanel() {
                   <Button
                     variant={!selected[call] ? 'secondary' : 'ghost'}
                     size="sm"
-                    className="h-9 min-h-[44px] justify-start text-xs"
+                    className="h-9 justify-start text-xs"
                     onClick={() => choose(call, null)}
                   >
                     None
@@ -76,7 +76,7 @@ export function FaultInjectionPanel() {
                       key={fault}
                       variant={selected[call] === fault ? 'secondary' : 'ghost'}
                       size="sm"
-                      className="h-9 min-h-[44px] justify-start text-xs"
+                      className="h-9 justify-start text-xs"
                       onClick={() => choose(call, fault)}
                     >
                       {FAULT_LABELS[fault]}

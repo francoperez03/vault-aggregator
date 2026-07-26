@@ -54,7 +54,7 @@ export function RebalanceView({ isBootstrap, initialAllocation }: RebalanceViewP
           {showDisclosure ? (
             <RebalanceCostDisclosure onConfirm={armAndSign} />
           ) : (
-            <Button type="button" size="lg" className="min-h-[44px]" disabled={!isValid} onClick={handlePrimary}>
+            <Button type="button" size="lg"  disabled={!isValid} onClick={handlePrimary}>
               {isBootstrap ? 'Definí tu estrategia' : 'Confirmar rebalanceo'}
             </Button>
           )}

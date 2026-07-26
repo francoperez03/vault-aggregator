@@ -11,7 +11,7 @@ interface PositionSummaryProps {
 export function PositionSummary({ displayedValueUsdc, state }: PositionSummaryProps) {
   return (
     <div className="flex flex-col items-center gap-1 py-6 text-center">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
+      <span className="kicker">
         Tu posición
       </span>
       <YieldCounter displayedValueUsdc={displayedValueUsdc} state={state} size="total" />

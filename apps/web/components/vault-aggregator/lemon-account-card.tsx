@@ -55,9 +55,9 @@ export function LemonAccountCard({
   }
 
   return (
-    <Card className="rounded-[14px] border-[var(--border-subtle)]">
+    <Card>
       <CardContent className="flex flex-col gap-3 p-4">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-secondary)]">
+        <span className="kicker">
           Paso 1 · Tu cuenta Lemon
         </span>
 
@@ -65,7 +65,7 @@ export function LemonAccountCard({
           <Button
             type="button"
             variant={direction === 'in' ? 'default' : 'outline'}
-            className="min-h-[44px] flex-1"
+            className="flex-1"
             onClick={() => setDirection(direction === 'in' ? null : 'in')}
           >
             <ArrowDownLeft className="size-4" aria-hidden="true" />
@@ -74,7 +74,7 @@ export function LemonAccountCard({
           <Button
             type="button"
             variant={direction === 'out' ? 'default' : 'outline'}
-            className="min-h-[44px] flex-1"
+            className="flex-1"
             onClick={() => setDirection(direction === 'out' ? null : 'out')}
           >
             <ArrowUpRight className="size-4" aria-hidden="true" />
@@ -93,7 +93,6 @@ export function LemonAccountCard({
             <Button
               type="button"
               size="lg"
-              className="min-h-[44px]"
               disabled={amount === 0n || (direction === 'out' && amount > walletUsdc) || isBusy}
               onClick={() => run(direction)}
             >

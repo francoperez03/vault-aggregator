@@ -28,18 +28,18 @@ export function MoveQueueStrip() {
           <div
             key={id}
             className={cn(
-              'flex items-center gap-2 rounded-[12px] border px-3 py-2 text-xs',
+              'chamfer-sm flex items-center gap-2 border-[1.5px] px-3 py-2 font-mono text-xs',
               done
                 ? 'border-[var(--yield)]/40 bg-[var(--yield)]/10 text-[var(--text-primary)]'
                 : failed
-                  ? 'border-[var(--error)]/40 bg-[var(--error)]/10 text-[var(--text-primary)]'
+                  ? 'border-[var(--danger)]/40 bg-[var(--danger)]/10 text-[var(--text-primary)]'
                   : 'border-[var(--border-default)] bg-[var(--bg-surface)] text-[var(--text-secondary)]',
             )}
           >
             {done ? (
               <Check className="size-4 shrink-0 text-[var(--yield)]" aria-hidden="true" />
             ) : failed ? (
-              <X className="size-4 shrink-0 text-[var(--error)]" aria-hidden="true" />
+              <X className="size-4 shrink-0 text-[var(--danger)]" aria-hidden="true" />
             ) : (
               <Loader2 className="size-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />
             )}

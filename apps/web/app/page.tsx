@@ -56,7 +56,7 @@ function RebalanceCta({
         type="button"
         size="lg"
         variant={variant}
-        className={cn('min-h-[44px] w-full', className)}
+        className={cn('w-full', className)}
         onClick={onRebalance}
       >
         {label}
@@ -64,7 +64,7 @@ function RebalanceCta({
     )
   }
   return (
-    <Button asChild size="lg" variant={variant} className={cn('min-h-[44px] w-full', className)}>
+    <Button asChild size="lg" variant={variant} className={cn('w-full', className)}>
       <Link href="/rebalancear">{label}</Link>
     </Button>
   )
@@ -100,7 +100,7 @@ export function HomePositionView({
       {isFunded ? (
         <>
           <PositionSummary displayedValueUsdc={totalDisplayedUsdc ?? position.totalUsdc} state={totalState} />
-          <Card className="mb-4 rounded-[14px] border-[var(--border-subtle)] px-4 py-4">
+          <Card className="mb-4 px-4 py-4">
             <CardContent className="p-0">
               <ProtocolBreakdown position={position} yieldByAdapter={yieldByAdapter} />
             </CardContent>
@@ -110,19 +110,19 @@ export function HomePositionView({
           <RebalanceCta onRebalance={onRebalance} label="Rebalancear" variant="outline" />
         </>
       ) : position.hasWeights ? (
-        <Card className="rounded-[14px] border-[var(--border-subtle)] px-4 py-8 text-center">
+        <Card className="px-4 py-8 text-center">
           <CardContent className="flex flex-col items-center gap-3 p-0">
             <h1 className="text-xl font-semibold text-[var(--text-primary)]">Estrategia guardada</h1>
             <p className="text-sm text-[var(--text-secondary)]">
               Tu asignación está definida en {weightedAdapterCount} protocolos. Depositá cuando quieras.
             </p>
-            <Button asChild size="lg" className="mt-2 min-h-[44px]">
+            <Button asChild size="lg" className="mt-2 ">
               <Link href="/mover">Depositar ahora</Link>
             </Button>
           </CardContent>
         </Card>
       ) : (
-        <Card className="rounded-[14px] border-dashed border-[var(--border-subtle)] px-4 py-8 text-center">
+        <Card className="border-dashed px-4 py-8 text-center">
           <CardContent className="flex flex-col items-center gap-3 p-0">
             <h1 className="text-xl font-semibold text-[var(--text-primary)]">Todavía no tenés posición</h1>
             <p className="text-sm text-[var(--text-secondary)]">
@@ -175,7 +175,7 @@ export default function Page() {
       <WalletBar />
       {!isConnected ? (
         <div className="px-4 pt-8">
-          <Card className="rounded-[14px] border-dashed border-[var(--border-subtle)] px-4 py-8 text-center">
+          <Card className="border-dashed px-4 py-8 text-center">
             <CardContent className="flex flex-col items-center gap-3 p-0">
               <h1 className="text-xl font-semibold text-[var(--text-primary)]">Conectá tu wallet</h1>
               <p className="text-sm text-[var(--text-secondary)]">
@@ -186,10 +186,10 @@ export default function Page() {
         </div>
       ) : isWrongNetwork ? (
         <div className="px-4 pt-8">
-          <Card className="rounded-[14px] border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-8 text-center">
+          <Card className="border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-8 text-center">
             <CardContent className="flex flex-col items-center gap-3 p-0">
               <p className="text-sm text-[var(--text-primary)]">Cambiá a Arbitrum {expectedName} para continuar.</p>
-              <Button type="button" size="lg" className="min-h-[44px]" onClick={switchNetwork}>
+              <Button type="button" size="lg"  onClick={switchNetwork}>
                 Cambiar de red
               </Button>
             </CardContent>
@@ -201,7 +201,7 @@ export default function Page() {
         // dropping the scroll position on the way back.
         <div className="overflow-x-hidden">
           <div
-            className="flex w-[200%] transition-transform duration-300 ease-out motion-reduce:transition-none"
+            className="flex w-[200%] transition-transform duration-[var(--dur-slow)] ease-[var(--ease-snap)] motion-reduce:transition-none"
             style={{ transform: step === 'rebalance' ? 'translateX(-50%)' : 'translateX(0)' }}
           >
             <div className="w-1/2" aria-hidden={step === 'rebalance'}>
