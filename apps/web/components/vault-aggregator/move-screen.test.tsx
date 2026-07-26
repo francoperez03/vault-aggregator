@@ -121,10 +121,11 @@ describe('MoveScreen', () => {
     expect(screen.getByText(/Tu cuenta Lemon/)).toBeInTheDocument()
   })
 
-  it('surfaces a pending settlement even outside Lemon: parked money always has a way out', () => {
+  it('parked money seeds the Lemon send instead of a banner: the wallet tank already shows it', () => {
     setup({ pendingAmount: 4n * U })
-    render(<MoveScreen isLemonRuntime={false} />)
-    expect(screen.getByRole('button', { name: 'Enviar $4.00 a Lemon' })).toBeInTheDocument()
+    render(<MoveScreen isLemonRuntime />)
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }))
+    expect(screen.getByRole('textbox')).toHaveValue('4.00')
   })
 
   it('gates on a defined strategy before offering to move anything into the pool', () => {

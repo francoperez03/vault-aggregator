@@ -1,14 +1,15 @@
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, useState } from 'react'
 import { useAccount } from 'wagmi'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { PositionSummary } from '@/components/vault-aggregator/position-summary'
 import { ProtocolBreakdown } from '@/components/vault-aggregator/protocol-breakdown'
-import { PendingSettlementBanner } from '@/components/vault-aggregator/pending-settlement-banner'
 import { MoveScreen } from '@/components/vault-aggregator/move-screen'
+import { RebalancePanel } from '@/components/vault-aggregator/rebalance-panel'
 import { WalletBar } from '@/components/wallet-bar'
 import { ADAPTER_IDS, type AdapterId } from '@/lib/contracts/config'
 import { useVaultPosition } from '@/hooks/useVaultPosition'
@@ -35,8 +36,44 @@ interface PositionState {
   pendingWithdrawalUsdc?: bigint
 }
 
+/** One CTA, two behaviours: inside the home stepper it slides the allocation panel in, and
+ * anywhere the callback is absent (direct render, tests) it degrades to the plain route link so
+ * the step is never unreachable. */
+function RebalanceCta({
+  onRebalance,
+  label,
+  variant,
+  className,
+}: {
+  onRebalance?: () => void
+  label: string
+  variant?: 'outline'
+  className?: string
+}) {
+  if (onRebalance) {
+    return (
+      <Button
+        type="button"
+        size="lg"
+        variant={variant}
+        className={cn('min-h-[44px] w-full', className)}
+        onClick={onRebalance}
+      >
+        {label}
+      </Button>
+    )
+  }
+  return (
+    <Button asChild size="lg" variant={variant} className={cn('min-h-[44px] w-full', className)}>
+      <Link href="/rebalancear">{label}</Link>
+    </Button>
+  )
+}
+
 interface HomePositionViewProps {
   position: PositionState
+  /** Slides the allocation step in. Absent (tests, the standalone route) falls back to a link. */
+  onRebalance?: () => void
   /** VFE-02 live yield, threaded from `useVaultYield`. Optional so direct-render tests keep
    * working: absent → the total falls back to `position.totalUsdc` flat, rows to their static
    * `valueUsdc` (see `ProtocolBreakdown`). */
@@ -50,6 +87,7 @@ interface HomePositionViewProps {
  * Plan 15 threads the live yield in (VFE-02) while keeping the fixture-only fallback. */
 export function HomePositionView({
   position,
+  onRebalance,
   yieldByAdapter,
   totalDisplayedUsdc,
   totalState = 'flat',
@@ -58,11 +96,7 @@ export function HomePositionView({
   const isFunded = position.totalUsdc > 0n
 
   return (
-    <div className="px-4 pt-[calc(1rem+env(safe-area-inset-top))]">
-      {position.pendingWithdrawalUsdc !== undefined && position.pendingWithdrawalUsdc > 0n && (
-        <PendingSettlementBanner pendingAmount={position.pendingWithdrawalUsdc} />
-      )}
-
+    <div className="px-4">
       {isFunded ? (
         <>
           <PositionSummary displayedValueUsdc={totalDisplayedUsdc ?? position.totalUsdc} state={totalState} />
@@ -72,10 +106,8 @@ export function HomePositionView({
             </CardContent>
           </Card>
           {/* Depositar and Retirar used to live here as two more buttons; they are the screen
-              above now, so the only thing left to navigate to is the allocation. */}
-          <Button asChild variant="outline" size="lg" className="min-h-[44px] w-full">
-            <Link href="/rebalancear">Rebalancear</Link>
-          </Button>
+              above now, so the only thing left is the allocation step. */}
+          <RebalanceCta onRebalance={onRebalance} label="Rebalancear" variant="outline" />
         </>
       ) : position.hasWeights ? (
         <Card className="rounded-[14px] border-[var(--border-subtle)] px-4 py-8 text-center">
@@ -85,7 +117,7 @@ export function HomePositionView({
               Tu asignación está definida en {weightedAdapterCount} protocolos. Depositá cuando quieras.
             </p>
             <Button asChild size="lg" className="mt-2 min-h-[44px]">
-              <Link href="/depositar">Depositar ahora</Link>
+              <Link href="/mover">Depositar ahora</Link>
             </Button>
           </CardContent>
         </Card>
@@ -96,11 +128,7 @@ export function HomePositionView({
             <p className="text-sm text-[var(--text-secondary)]">
               Definí tu estrategia y hacé tu primer depósito: se reparte solo entre los protocolos que elijas.
             </p>
-            {/* The deposit panel above starts collapsed, so this is the only CTA on screen for a
-                user with no allocation yet — without it the state has no way out but the nav. */}
-            <Button asChild size="lg" className="mt-2 min-h-[44px]">
-              <Link href="/rebalancear">Definí tu estrategia</Link>
-            </Button>
+            <RebalanceCta onRebalance={onRebalance} label="Definí tu estrategia" className="mt-2" />
           </CardContent>
         </Card>
       )}
@@ -140,6 +168,7 @@ export default function Page() {
   // D-19: the banner (plan 03/08) is only real once step 1 of a withdrawal actually measured and
   // persisted an amount, which is what useWithdrawFlow reads back from localStorage on mount.
   const { pendingAmount } = useWithdrawFlow()
+  const [step, setStep] = useState<'move' | 'rebalance'>('move')
 
   return (
     <main className="min-h-dvh bg-background">
@@ -167,19 +196,33 @@ export default function Page() {
           </Card>
         </div>
       ) : (
-        <>
-          {/* Move first, position second: the reason to open the app is to put money in or take
-              it out; the position is what you check on the way past. */}
-          <Suspense fallback={null}>
-            <MoveScreen />
-          </Suspense>
-          <HomePositionView
-            position={toPositionState(vaultPosition, pendingAmount)}
-            yieldByAdapter={vaultYield.perAdapter}
-            totalDisplayedUsdc={vaultYield.totalDisplayedUsdc}
-            totalState={deriveTotalState(vaultYield.perAdapter)}
-          />
-        </>
+        // Two steps side by side on one rail. Rebalancing is a detour from the same money, not a
+        // different place, so it slides in over the same screen instead of navigating away and
+        // dropping the scroll position on the way back.
+        <div className="overflow-x-hidden">
+          <div
+            className="flex w-[200%] transition-transform duration-300 ease-out motion-reduce:transition-none"
+            style={{ transform: step === 'rebalance' ? 'translateX(-50%)' : 'translateX(0)' }}
+          >
+            <div className="w-1/2" aria-hidden={step === 'rebalance'}>
+              {/* Move first, position second: the reason to open the app is to put money in or
+                  take it out; the position is what you check on the way past. */}
+              <Suspense fallback={null}>
+                <MoveScreen />
+              </Suspense>
+              <HomePositionView
+                position={toPositionState(vaultPosition, pendingAmount)}
+                yieldByAdapter={vaultYield.perAdapter}
+                totalDisplayedUsdc={vaultYield.totalDisplayedUsdc}
+                totalState={deriveTotalState(vaultYield.perAdapter)}
+                onRebalance={() => setStep('rebalance')}
+              />
+            </div>
+            <div className="w-1/2" aria-hidden={step === 'move'}>
+              <RebalancePanel onBack={() => setStep('move')} />
+            </div>
+          </div>
+        </div>
       )}
     </main>
   )

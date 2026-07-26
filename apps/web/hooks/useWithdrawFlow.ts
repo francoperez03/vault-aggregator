@@ -48,6 +48,9 @@ interface UseWithdrawFlowResult {
   settleToLemon: () => Promise<void>;
   /** Clears the flow's state after a `partial` result has been shown and acknowledged. */
   acknowledge: () => void;
+  /** Forgets the parked amount once it left for Lemon by some other path — the account card sends
+   * arbitrary amounts, not only the exact one a redeem measured. */
+  clearPending: () => void;
 }
 
 /**
@@ -170,5 +173,12 @@ export function useWithdrawFlow(): UseWithdrawFlowResult {
     setPhase({ kind: 'confirm' });
   }, []);
 
-  return { step, pendingAmount, phase, redeem, settleToLemon, acknowledge };
+  const clearPending = useCallback(() => {
+    if (!address) return;
+    writePendingAmount(address, null);
+    setPendingAmount(null);
+    setStep(1);
+  }, [address]);
+
+  return { step, pendingAmount, phase, redeem, settleToLemon, acknowledge, clearPending };
 }

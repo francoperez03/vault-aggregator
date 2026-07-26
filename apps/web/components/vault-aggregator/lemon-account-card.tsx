@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { AmountInput } from '@/components/vault-aggregator/amount-input'
-import { TransactionState, type TxPhase } from '@/components/vault-aggregator/transaction-state'
+import { TransactionState } from '@/components/vault-aggregator/transaction-state'
 import { formatUsdc } from '@/lib/format'
 import { useLemonTransfer, type LemonDirection } from '@/hooks/useLemonTransfer'
 
@@ -13,10 +13,11 @@ interface LemonAccountCardProps {
   /** Ceiling for the outbound direction. The inbound one has no ceiling we can know: the SDK
    * exposes no read of the Lemon account balance. */
   walletUsdc: bigint
-  /** Set when a withdrawal has landed in the wallet and has not been sent to Lemon yet. */
+  /** USDC a withdrawal left parked in the wallet. Used only to prefill the outbound amount — the
+   * tank on this screen already shows the money, so it needs no banner shouting about it. */
   pendingAmount: bigint | null
-  onSettle: () => void
-  settlePhase: TxPhase
+  /** Called after a successful send, to forget a parked amount that has now left. */
+  onSent: () => void
   onDone: () => void
 }
 
@@ -32,43 +33,25 @@ interface LemonAccountCardProps {
 export function LemonAccountCard({
   walletUsdc,
   pendingAmount,
-  onSettle,
-  settlePhase,
+  onSent,
   onDone,
 }: LemonAccountCardProps) {
   const [direction, setDirection] = useState<LemonDirection | null>(null)
   const [amount, setAmount] = useState(0n)
   const { phase, isBusy, bringFromLemon, sendToLemon, reset } = useLemonTransfer()
 
-  if (pendingAmount !== null) {
-    return (
-      <Card className="rounded-[14px] border-[var(--warning)]/40 bg-[var(--warning)]/10">
-        <CardContent className="flex flex-col gap-3 p-4">
-          <p className="text-sm text-[var(--text-primary)]">
-            Tenés ${formatUsdc(pendingAmount)} USDC en la wallet de la mini-app. Enviálos a tu cuenta
-            de Lemon para terminar.
-          </p>
-          <Button type="button" size="lg" className="min-h-[44px]" onClick={onSettle}>
-            Enviar ${formatUsdc(pendingAmount)} a Lemon
-          </Button>
-          {settlePhase.kind !== 'confirm' && (
-            <TransactionState
-              phase={settlePhase}
-              onPrimary={onSettle}
-              summary={<>Enviás ${formatUsdc(pendingAmount)} USDC a Lemon</>}
-            />
-          )}
-        </CardContent>
-      </Card>
-    )
-  }
+  // Parked money is the likeliest thing the user came to send, so it seeds the field — as a
+  // default they can overwrite, never as a decision made for them.
+  useEffect(() => {
+    if (pendingAmount !== null) setAmount(pendingAmount)
+  }, [pendingAmount])
 
   async function run(dir: LemonDirection) {
     const result = dir === 'in' ? await bringFromLemon(amount) : await sendToLemon(amount)
-    if (result.kind === 'success') {
-      setDirection(null)
-      onDone()
-    }
+    if (result.kind !== 'success') return
+    if (dir === 'out') onSent()
+    setDirection(null)
+    onDone()
   }
 
   return (

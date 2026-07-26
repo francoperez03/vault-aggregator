@@ -25,6 +25,11 @@ vi.mock('@/components/vault-aggregator/move-screen', () => ({
   MoveScreen: () => <div data-testid="move-screen" />,
 }))
 
+// Same reason for the allocation step, which `/` now carries as its second panel.
+vi.mock('@/components/vault-aggregator/rebalance-panel', () => ({
+  RebalancePanel: () => <div data-testid="rebalance-panel" />,
+}))
+
 afterEach(cleanup)
 
 describe('HomePositionView', () => {
@@ -38,7 +43,7 @@ describe('HomePositionView', () => {
   it('MOCK_WEIGHTS_ONLY: shows "Estrategia guardada" and no define-strategy CTA', () => {
     render(<HomePositionView position={MOCK_WEIGHTS_ONLY} />)
     expect(screen.getByText('Estrategia guardada')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Depositar ahora' })).toHaveAttribute('href', '/depositar')
+    expect(screen.getByRole('link', { name: 'Depositar ahora' })).toHaveAttribute('href', '/mover')
     expect(screen.queryByRole('link', { name: 'Definí tu estrategia' })).not.toBeInTheDocument()
   })
 
@@ -53,9 +58,9 @@ describe('HomePositionView', () => {
     expect(screen.queryByRole('link', { name: 'Retirar' })).not.toBeInTheDocument()
   })
 
-  it('shows the persistent pending-withdrawal banner (D-19) when set, never as a toast', () => {
+  it('no banner for parked money: the wallet tank above already shows it', () => {
     render(<HomePositionView position={{ ...MOCK_FUNDED, pendingWithdrawalUsdc: 500_000_000n }} />)
-    expect(screen.getByText(/Moviste \$500.00 USDC al saldo de la app/)).toBeInTheDocument()
+    expect(screen.queryByText(/al saldo de la app/)).not.toBeInTheDocument()
   })
 })
 
@@ -103,7 +108,7 @@ describe('Page (default export)', () => {
     expect(screen.getAllByText('$10.000000').length).toBeGreaterThan(0)
   })
 
-  it('con un monto pendiente medido por useWithdrawFlow, muestra el banner persistente', () => {
+  it('un monto pendiente ya no dispara banner: vive en el tanque de la wallet y en el envío a Lemon', () => {
     useAccountMock.mockReturnValue({ isConnected: true })
     useNetworkGuardMock.mockReturnValue({ isWrongNetwork: false, expectedName: 'Sepolia', switchNetwork: vi.fn() })
     useVaultPositionMock.mockReturnValue({
@@ -117,6 +122,6 @@ describe('Page (default export)', () => {
 
     render(<Page />)
 
-    expect(screen.getByText(/Moviste \$0.50 USDC al saldo de la app/)).toBeInTheDocument()
+    expect(screen.queryByText(/al saldo de la app/)).not.toBeInTheDocument()
   })
 })

@@ -19,7 +19,7 @@ export function MoveQueueStrip() {
   return (
     <div
       aria-live="polite"
-      className="fixed bottom-[76px] left-1/2 z-40 flex w-full max-w-[430px] -translate-x-1/2 flex-col gap-1.5 px-4"
+      className="fixed bottom-4 left-1/2 z-40 flex w-full max-w-[430px] -translate-x-1/2 flex-col gap-1.5 px-4"
     >
       {jobs.map(({ id, label, phase }) => {
         const done = phase.kind === 'success'

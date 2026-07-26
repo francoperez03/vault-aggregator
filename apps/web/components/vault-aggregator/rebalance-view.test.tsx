@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { RebalanceView } from './page'
+import { RebalanceView } from './rebalance-view'
 
 afterEach(() => {
   cleanup()

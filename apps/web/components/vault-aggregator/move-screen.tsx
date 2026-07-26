@@ -35,7 +35,7 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
   const isLemon = isLemonRuntime ?? isLemonWebView()
   const { hasWeights, totalUsdc, refetch: refetchPosition } = useVaultPosition()
   const { balance, isConnected, refetch: refetchBalance } = useUsdcBalance()
-  const { pendingAmount, phase: withdrawPhase, redeem, settleToLemon } = useWithdrawFlow()
+  const { pendingAmount, redeem, clearPending } = useWithdrawFlow()
   const { deposit } = useVaultWrite()
   const { enqueue } = useMoveQueue()
 
@@ -62,14 +62,13 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
 
   return (
     <div className="flex flex-col gap-5 px-4 pt-[calc(1rem+env(safe-area-inset-top))]">
-      {/* Hidden outside Lemon, where the SDK does not exist — except with money parked in the
-          wallet mid-withdrawal, which always needs a visible way out. */}
-      {(isLemon || pendingAmount !== null) && (
+      {/* Hidden outside Lemon: the SDK is the only way across this boundary, so the buttons would
+          be decoration anywhere else. Parked money still shows — it is sitting in the wallet tank. */}
+      {isLemon && (
         <LemonAccountCard
           walletUsdc={balance}
           pendingAmount={pendingAmount}
-          onSettle={settleToLemon}
-          settlePhase={withdrawPhase}
+          onSent={clearPending}
           onDone={refetchAll}
         />
       )}
