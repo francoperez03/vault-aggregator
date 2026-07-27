@@ -63,14 +63,25 @@ describe('RebalanceView', () => {
     expect(screen.getByText('Confirmá en tu wallet…')).toBeInTheDocument()
   })
 
-  it('a successful rebalance renders success and refetches the position', async () => {
+  it('a success keeps the sliders on screen and refetches, so a second pass starts from the chain', async () => {
     rebalanceMock.mockResolvedValue({ kind: 'success' })
     render(<RebalanceView isBootstrap initialAllocation={{ morpho: 100, fluid: 0, euler: 0, aave: 0 }} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Definí tu estrategia' }))
 
-    await waitFor(() => expect(screen.getByText('¡Listo!')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Listo\./)).toBeInTheDocument())
     expect(refetchMock).toHaveBeenCalled()
+    // The dead end this replaced: success used to swap the sliders out for a confirmation panel.
+    expect(screen.getAllByRole('slider')).toHaveLength(4)
+    expect(screen.getByRole('button', { name: 'Definí tu estrategia' })).toBeEnabled()
+  })
+
+  it('re-seeds the sliders when the chain reports different weights', async () => {
+    const { rerender } = render(
+      <RebalanceView isBootstrap={false} initialAllocation={{ morpho: 100, fluid: 0, euler: 0, aave: 0 }} />,
+    )
+    rerender(<RebalanceView isBootstrap={false} initialAllocation={{ morpho: 25, fluid: 25, euler: 25, aave: 25 }} />)
+    expect(screen.getAllByText('25%')).toHaveLength(4)
   })
 
   it('a rejected signature renders the rejected copy, never the partial state', async () => {
