@@ -35,26 +35,10 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'Vault Aggregator',
   description: 'Allocate USDC across multiple yield vaults through a single transaction. Built on Arbitrum ERC-4626.',
-  generator: 'v0.app',
   formatDetection: { telephone: false, email: false },
   appleWebApp: { capable: true, statusBarStyle: 'default' },
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
-  },
+  // Icons come from the app-directory file conventions (`app/icon.svg`, `app/apple-icon.png`);
+  // listing them here too would only duplicate the tags.
 }
 
 export default function RootLayout({
