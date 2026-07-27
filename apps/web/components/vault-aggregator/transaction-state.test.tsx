@@ -38,6 +38,12 @@ describe('TransactionState', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
+  it('success renders the amount as USDC, never as atomic units', () => {
+    render(<TransactionState phase={{ kind: 'success', amount: 25_000_000n }} onPrimary={noop} />);
+    expect(screen.getByText('$25.00')).toBeInTheDocument();
+    expect(screen.queryByText('$25000000')).not.toBeInTheDocument();
+  });
+
   it('success: uses the yield token class and never the error token class', () => {
     const { container } = render(<TransactionState phase={{ kind: 'success' }} onPrimary={noop} />);
     expect(container.innerHTML).toMatch(/--yield/);

@@ -11,11 +11,11 @@ interface RebalanceCostDisclosureProps {
  * destroy anything (14-UI-SPEC §Copywriting Contract). */
 export function RebalanceCostDisclosure({ onConfirm }: RebalanceCostDisclosureProps) {
   return (
-    <div className="flex flex-col gap-4 rounded-[12px] border border-[var(--warning)]/40 bg-[var(--warning)]/10 p-4">
-      <p className="text-sm text-[var(--text-primary)]">
+    <div className="chamfer flex flex-col gap-5 border-[1.5px] border-[var(--warning)]/40 bg-[var(--warning)]/10 p-5">
+      <p className="text-[15px] leading-relaxed text-[var(--text-primary)]">
         Rebalancear retira de todos los protocolos y vuelve a depositar según tus pesos nuevos. Puede haber una diferencia chica por redondeo o slippage, y el rendimiento acumulado hasta ahora se realiza en esta operación.
       </p>
-      <Button type="button" size="lg"  onClick={onConfirm}>
+      <Button type="button" size="lg" onClick={onConfirm}>
         Confirmar rebalanceo
       </Button>
     </div>

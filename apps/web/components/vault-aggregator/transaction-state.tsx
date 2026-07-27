@@ -34,16 +34,16 @@ export function TransactionState({ phase, onPrimary, onSecondary, summary }: Tra
   switch (phase.kind) {
     case 'confirm':
       return (
-        <div className="flex flex-col gap-6 p-4">
-          <div className="text-sm text-[var(--text-secondary)]">{summary}</div>
+        <div className="flex flex-col gap-6 p-5">
+          <div className="text-[15px] leading-relaxed text-[var(--text-secondary)]">{summary}</div>
           <Button onClick={onPrimary}>Confirmar</Button>
         </div>
       )
 
     case 'signing':
       return (
-        <div className="flex flex-col items-center gap-4 p-4 text-center">
-          <p className="text-sm text-[var(--text-secondary)]">Confirmá en tu wallet…</p>
+        <div className="flex flex-col items-center gap-4 p-5 text-center">
+          <p className="text-[15px] leading-relaxed text-[var(--text-secondary)]">Confirmá en tu wallet…</p>
           <Button onClick={onPrimary} disabled>
             Confirmando
           </Button>
@@ -52,8 +52,8 @@ export function TransactionState({ phase, onPrimary, onSecondary, summary }: Tra
 
     case 'pending':
       return (
-        <div className="flex flex-col items-center gap-4 p-4 text-center">
-          <p className="text-sm text-[var(--text-secondary)]">Tu transacción está en curso.</p>
+        <div className="flex flex-col items-center gap-4 p-5 text-center">
+          <p className="text-[15px] leading-relaxed text-[var(--text-secondary)]">Tu transacción está en curso.</p>
           {phase.txHash && (
             <a
               href={arbiscanTxUrl(phase.txHash)}
@@ -69,18 +69,20 @@ export function TransactionState({ phase, onPrimary, onSecondary, summary }: Tra
 
     case 'success':
       return (
-        <div className="flex flex-col items-center gap-4 p-4 text-center">
-          <p className="text-2xl font-mono tabular-nums font-semibold text-[var(--yield)]">¡Listo!</p>
+        <div className="flex flex-col items-center gap-4 p-5 text-center">
+          <p className="font-mono text-[28px] font-semibold leading-none tabular-nums text-[var(--yield)] [text-shadow:0_0_24px_var(--yield-glow)]">¡Listo!</p>
           {phase.amount !== undefined && (
-            <p className="font-mono tabular-nums text-[var(--yield)]">${phase.amount.toString()}</p>
+            // Atomic units are the contract's currency, never the screen's: this printed
+            // "$25000000" for a 25-USDC deposit.
+            <p className="font-mono text-lg tabular-nums text-[var(--yield)]">${formatUsdc(phase.amount)}</p>
           )}
         </div>
       )
 
     case 'rejected':
       return (
-        <div className="flex flex-col gap-4 p-4">
-          <p className="text-sm text-[var(--text-primary)]">
+        <div className="flex flex-col gap-4 p-5">
+          <p className="text-[15px] leading-relaxed text-[var(--text-primary)]">
             Cancelaste la firma. No pasó nada, no se movió plata.
           </p>
           <Button onClick={onPrimary}>Volver a firmar</Button>
@@ -89,8 +91,8 @@ export function TransactionState({ phase, onPrimary, onSecondary, summary }: Tra
 
     case 'reverted':
       return (
-        <div className="flex flex-col gap-4 p-4">
-          <p className="text-sm text-[var(--danger)]">
+        <div className="flex flex-col gap-4 p-5">
+          <p className="text-[15px] leading-relaxed text-[var(--danger)]">
             La transacción no se completó{phase.reason ? ` (${phase.reason})` : ''}. No se movió plata.
           </p>
           <Button onClick={onPrimary}>Reintentar transacción</Button>
@@ -99,8 +101,8 @@ export function TransactionState({ phase, onPrimary, onSecondary, summary }: Tra
 
     case 'timeout':
       return (
-        <div className="flex flex-col gap-4 p-4">
-          <p className="text-sm text-[var(--warning)]">
+        <div className="flex flex-col gap-4 p-5">
+          <p className="text-[15px] leading-relaxed text-[var(--warning)]">
             No obtuvimos respuesta a tiempo. Puede que la transacción siga en curso.
           </p>
           <div className="flex gap-2">
@@ -114,8 +116,8 @@ export function TransactionState({ phase, onPrimary, onSecondary, summary }: Tra
 
     case 'partial':
       return (
-        <div className="flex flex-col gap-4 p-4">
-          <p className="text-sm text-[var(--warning)]">
+        <div className="flex flex-col gap-4 p-5">
+          <p className="text-[15px] leading-relaxed text-[var(--warning)]">
             Pediste ${formatUsdc(phase.requested)}, se movieron ${formatUsdc(phase.actual)}, quedan $
             {formatUsdc(phase.remaining)} en el saldo de la app.
           </p>

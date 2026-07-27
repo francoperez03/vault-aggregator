@@ -83,8 +83,8 @@ export function RebalanceView({ isBootstrap, initialAllocation }: RebalanceViewP
       <AllocationSliders value={allocation} onChange={setAllocation} />
 
       {confirmed && (
-        <p className="chamfer-sm flex items-center gap-2 border-[1.5px] border-[var(--yield)]/40 bg-[var(--yield)]/10 px-3 py-2 text-xs text-[var(--text-primary)]">
-          <Check className="size-4 shrink-0 text-[var(--yield)]" aria-hidden="true" />
+        <p className="chamfer flex items-center gap-3 border-[1.5px] border-[var(--yield)]/40 bg-[var(--yield)]/10 px-4 py-3.5 text-[15px] text-[var(--text-primary)]">
+          <Check className="size-5 shrink-0 text-[var(--yield)]" aria-hidden="true" />
           Listo. Tu estrategia quedó aplicada.
         </p>
       )}
