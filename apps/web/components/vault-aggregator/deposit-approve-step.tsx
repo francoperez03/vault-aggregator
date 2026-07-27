@@ -25,12 +25,12 @@ export function DepositApproveStep({ isLemonRuntime, amount }: DepositApproveSte
 
   if (!needsApproval) {
     return (
-      <p className="text-xs text-[var(--text-secondary)]">USDC ya aprobado · ${formatUsdc(amount)}</p>
+      <p className="text-sm text-[var(--text-secondary)]">USDC ya aprobado · ${formatUsdc(amount)}</p>
     )
   }
 
   return (
-    <p className="text-xs text-[var(--text-secondary)]">
+    <p className="text-sm text-[var(--text-secondary)]">
       Vas a firmar dos veces: primero aprobás el monto exacto, después depositás.
     </p>
   )
