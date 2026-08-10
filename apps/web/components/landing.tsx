@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
+import { animate } from 'animejs'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useConnect } from 'wagmi'
 import { Button } from '@/components/ui/button'
@@ -56,34 +58,109 @@ function InjectedCta() {
 }
 
 const PROTOCOLS = [
-  { name: 'Aave', dot: 'var(--aave)' },
-  { name: 'Morpho', dot: 'var(--morpho)' },
-  { name: 'Fluid', dot: 'var(--fluid)' },
-  { name: 'Euler', dot: 'var(--euler)' },
+  { name: 'Aave', color: 'var(--aave)' },
+  { name: 'Morpho', color: 'var(--morpho)' },
+  { name: 'Fluid', color: 'var(--fluid)' },
+  { name: 'Euler', color: 'var(--euler)' },
 ] as const
 
-/** The example split the whole product is about: one deposit, four protocols. The percentages
- * are illustrative (the app's suggested default), not live data. */
-const SPLIT = [
-  { pct: 40, color: 'var(--aave)' },
-  { pct: 30, color: 'var(--morpho)' },
-  { pct: 20, color: 'var(--fluid)' },
-  { pct: 10, color: 'var(--euler)' },
-] as const
+/** Strategies the hero cycles through — the product's whole pitch is that this split is yours
+ * to change, so the cover shows it changing. Each row sums 100. */
+const STRATEGIES: ReadonlyArray<readonly [number, number, number, number]> = [
+  [40, 30, 20, 10],
+  [10, 25, 40, 25],
+  [25, 25, 25, 25],
+  [55, 15, 10, 20],
+]
+
+const CYCLE_MS = 3200
+const TWEEN_MS = 1100
+
+/** The mechanism as the living hero: one bar, four protocols, weights rebalancing on their own.
+ * anime.js tweens a plain values object and paints widths + mono labels on every frame. */
+function LiveSplit() {
+  const segRefs = useRef<Array<HTMLSpanElement | null>>([])
+  const labelRefs = useRef<Array<HTMLSpanElement | null>>([])
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+    const values = { a: 40, b: 30, c: 20, d: 10 }
+    const keys = ['a', 'b', 'c', 'd'] as const
+    let step = 0
+    let cancelled = false
+
+    const paint = () => {
+      keys.forEach((k, i) => {
+        const seg = segRefs.current[i]
+        const label = labelRefs.current[i]
+        const pct = values[k]
+        if (seg) seg.style.width = `${pct}%`
+        if (label) {
+          label.style.width = `${pct}%`
+          label.textContent = `${Math.round(pct)}%`
+        }
+      })
+    }
+
+    const tick = () => {
+      if (cancelled) return
+      step = (step + 1) % STRATEGIES.length
+      const [a, b, c, d] = STRATEGIES[step]
+      animate(values, {
+        a,
+        b,
+        c,
+        d,
+        duration: TWEEN_MS,
+        ease: 'outQuint',
+        onUpdate: paint,
+      })
+    }
+
+    const interval = window.setInterval(tick, CYCLE_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [])
+
+  return (
+    <div aria-hidden="true">
+      <div className="chamfer-sm flex h-3 w-full overflow-hidden bg-[var(--bg-surface)]">
+        {PROTOCOLS.map((p, i) => (
+          <span
+            key={p.name}
+            ref={(el) => {
+              segRefs.current[i] = el
+            }}
+            className="h-full"
+            style={{ width: `${STRATEGIES[0][i]}%`, background: p.color }}
+          />
+        ))}
+      </div>
+      <div className="mt-2 flex w-full font-mono text-[11px] tabular-nums text-[var(--text-secondary)]">
+        {PROTOCOLS.map((p, i) => (
+          <span
+            key={p.name}
+            ref={(el) => {
+              labelRefs.current[i] = el
+            }}
+            className="overflow-hidden whitespace-nowrap"
+            style={{ width: `${STRATEGIES[0][i]}%` }}
+          >
+            {STRATEGIES[0][i]}%
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 const STEPS = [
-  {
-    title: 'Definí tu estrategia',
-    body: 'Elegí en qué protocolos y con qué peso. Vos ponés los porcentajes; nada se mueve sin tu firma.',
-  },
-  {
-    title: 'Depositá una vez',
-    body: 'Una sola transacción reparte tu USDC entre los protocolos que elegiste, en la proporción exacta.',
-  },
-  {
-    title: 'Mirá cómo rinde',
-    body: 'Tu posición crece en tiempo real. Rebalanceá cuando cambies de idea o retirá todo cuando quieras.',
-  },
+  { title: 'Definí tu estrategia', body: 'Protocolos y porcentajes, a tu criterio.' },
+  { title: 'Depositá una vez', body: 'Una transacción reparte tu USDC.' },
+  { title: 'Salí cuando quieras', body: 'Rebalanceá o retirá todo, sin permiso.' },
 ] as const
 
 /** Unconnected web home: the pitch. Inside Lemon this never renders — the wallet is automatic
@@ -95,75 +172,47 @@ export function Landing() {
         <VaultyWordmark />
       </header>
 
-      <section className="mt-14 flex flex-col gap-5">
-        <p className="kicker landing-rise" style={{ animationDelay: '60ms' }}>
-          USDC · Arbitrum One
-        </p>
+      <section className="mt-16 flex flex-col gap-5">
         <h1
           className="landing-rise max-w-[16ch] font-display text-[clamp(2rem,9vw,3rem)] font-bold leading-[1.08] text-[var(--text-primary)] [text-wrap:balance]"
-          style={{ animationDelay: '120ms', letterSpacing: '-0.02em' }}
+          style={{ animationDelay: '80ms', letterSpacing: '-0.02em' }}
         >
           Tu plata, rindiendo donde vos digas.
         </h1>
-        <p className="landing-rise max-w-[42ch] text-[15px] leading-relaxed text-[var(--text-secondary)]" style={{ animationDelay: '180ms' }}>
-          Vaulty reparte tu USDC entre cuatro protocolos de préstamo de Arbitrum, en la proporción
-          que vos definas. Un depósito, una posición, salida total cuando quieras.
-        </p>
 
-        {/* The mechanism as the hero visual: one deposit becoming four weighted positions. */}
-        <div className="landing-rise mt-2" style={{ animationDelay: '240ms' }} aria-hidden="true">
-          <div className="chamfer-sm flex h-3 w-full overflow-hidden bg-[var(--bg-surface)]">
-            {SPLIT.map((seg, i) => (
-              <span
-                key={seg.color}
-                className="landing-seg h-full"
-                style={{ width: `${seg.pct}%`, background: seg.color, animationDelay: `${420 + i * 90}ms` }}
-              />
-            ))}
-          </div>
-          <div className="mt-2 flex w-full font-mono text-[11px] tabular-nums text-[var(--text-secondary)]">
-            {SPLIT.map((seg) => (
-              <span key={seg.color} style={{ width: `${seg.pct}%` }}>
-                {seg.pct}%
-              </span>
-            ))}
-          </div>
+        <div className="landing-rise mt-1" style={{ animationDelay: '160ms' }}>
+          <LiveSplit />
         </div>
 
-        <div className="landing-rise mt-3 flex flex-col gap-3" style={{ animationDelay: '300ms' }}>
+        <ul className="landing-rise flex flex-wrap items-center gap-x-5 gap-y-2" style={{ animationDelay: '220ms' }}>
+          {PROTOCOLS.map((p) => (
+            <li key={p.name} className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+              <span className="size-2 rounded-full" style={{ background: p.color }} aria-hidden="true" />
+              {p.name}
+            </li>
+          ))}
+        </ul>
+
+        <div className="landing-rise mt-4 flex flex-col gap-3" style={{ animationDelay: '280ms' }}>
           <ConnectCta />
           <p className="text-center text-xs text-[var(--text-secondary)]">
-            Sin custodia · tu posición vive on-chain
+            USDC en Arbitrum · sin custodia
           </p>
         </div>
       </section>
 
-      <section className="mt-12">
-        <ul className="flex flex-wrap items-center gap-x-5 gap-y-2">
-          {PROTOCOLS.map((p) => (
-            <li key={p.name} className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-              <span className="size-2 rounded-full" style={{ background: p.dot }} aria-hidden="true" />
-              {p.name}
-            </li>
-          ))}
-          <li className="font-mono text-[11px] text-[var(--text-secondary)]/70">
-            vaults ERC-4626 verificados
-          </li>
-        </ul>
-      </section>
-
       {/* A real sequence — the numbers carry order, they are not section decoration. */}
-      <section className="mt-12">
+      <section className="mt-14">
         <ol className="flex flex-col">
           {STEPS.map((step, i) => (
-            <li key={step.title} className="relative flex gap-4 pb-8 last:pb-0">
+            <li key={step.title} className="relative flex gap-4 pb-7 last:pb-0">
               {i < STEPS.length - 1 && (
                 <span aria-hidden="true" className="absolute left-[13px] top-8 h-[calc(100%-2rem)] w-px bg-[var(--border-subtle,#1E242E)]" />
               )}
               <span className="chamfer-sm mt-0.5 flex size-7 shrink-0 items-center justify-center border border-[var(--border-default,#2A313C)] font-mono text-xs text-[var(--brand)]">
                 {i + 1}
               </span>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-0.5">
                 <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">{step.title}</h2>
                 <p className="max-w-[46ch] text-sm leading-relaxed text-[var(--text-secondary)]">{step.body}</p>
               </div>
