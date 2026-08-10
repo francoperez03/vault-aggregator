@@ -93,9 +93,13 @@ describe('Page (default export)', () => {
 
     render(<Page />)
 
-    expect(screen.getByText('Cambiá a Arbitrum Sepolia para continuar.')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Cambiar de red' }))
+    expect(
+      screen.getByText('Tu wallet está en otra red. Cambiá a Arbitrum Sepolia para continuar.'),
+    ).toBeInTheDocument()
+    // The switch prompt fires on its own on arrival (once), and the button retries it.
     expect(switchNetwork).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar de red' }))
+    expect(switchNetwork).toHaveBeenCalledTimes(2)
   })
 
   it('conectada y en la red correcta, arma la posición desde useVaultPosition', () => {

@@ -185,6 +185,20 @@ export default function Page() {
   // RebalanceView seeds it (bootstrap's even split included).
   const [draftAllocation, setDraftAllocation] = useState<Partial<Record<AdapterId, number>> | null>(null)
 
+  // A wallet arriving on another network (Ethereum, usually) gets taken to the app's chain
+  // without having to find the button: the switch prompt fires once per wrong-network episode.
+  // The card below stays as the fallback for a rejected/unsupported prompt.
+  const attemptedSwitchRef = useRef(false)
+  useEffect(() => {
+    if (!isConnected || !isWrongNetwork) {
+      attemptedSwitchRef.current = false
+      return
+    }
+    if (attemptedSwitchRef.current) return
+    attemptedSwitchRef.current = true
+    switchNetwork()
+  }, [isConnected, isWrongNetwork, switchNetwork])
+
   // Unconnected web visitors get the pitch, not a sad empty card. Inside Lemon the injected
   // wallet connects on its own, so the landing never flashes there; the mounted gate keeps the
   // server-rendered markup stable while isLemonWebView() waits for `window`.
@@ -254,7 +268,9 @@ export default function Page() {
         <div className="px-4 pt-8">
           <Card className="border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-8 text-center">
             <CardContent className="flex flex-col items-center gap-3 p-0">
-              <p className="text-sm text-[var(--text-primary)]">Cambiá a Arbitrum {expectedName} para continuar.</p>
+              <p className="text-sm text-[var(--text-primary)]">
+                Tu wallet está en otra red. Cambiá a Arbitrum {expectedName} para continuar.
+              </p>
               <Button type="button" size="lg"  onClick={switchNetwork}>
                 Cambiar de red
               </Button>
