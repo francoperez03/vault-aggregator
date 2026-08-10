@@ -1,7 +1,5 @@
 'use client'
 
-import Link from 'next/link'
-import { Button } from '@/components/ui/button'
 import { DepositApproveStep } from '@/components/vault-aggregator/deposit-approve-step'
 import { LemonAccountCard } from '@/components/vault-aggregator/lemon-account-card'
 import { MoveSlider } from '@/components/vault-aggregator/move-slider'
@@ -73,7 +71,10 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
         />
       )}
 
-      {hasWeights ? (
+      {/* Without weights this screen renders nothing extra: the "Todavía no tenés posición"
+          card below (HomePositionView) owns the empty state, so a second hint + CTA here was
+          the same call to action twice on one screen. */}
+      {hasWeights && (
         <>
           <MoveSlider
             walletUsdc={balance}
@@ -83,15 +84,6 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
           />
           <DepositApproveStep isLemonRuntime={isLemon} amount={balance} />
         </>
-      ) : (
-        <div className="flex flex-col items-center gap-3 py-6 text-center">
-          <p className="text-sm text-[var(--text-secondary)]">
-            Todavía no definiste en qué protocolos invertir.
-          </p>
-          <Button asChild >
-            <Link href="/rebalancear">Definí tu estrategia</Link>
-          </Button>
-        </div>
       )}
     </div>
   )

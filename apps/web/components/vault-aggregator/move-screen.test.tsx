@@ -128,11 +128,19 @@ describe('MoveScreen', () => {
     expect(screen.getByRole('textbox')).toHaveValue('4.00')
   })
 
-  it('gates on a defined strategy before offering to move anything into the pool', () => {
+  it('renders no mover UI and NO duplicate CTA without a strategy — the position card owns the empty state', () => {
     setup({ hasWeights: false })
     render(<MoveScreen />)
-    expect(screen.getByRole('link', { name: 'Definí tu estrategia' })).toHaveAttribute('href', '/rebalancear')
+    expect(screen.queryByRole('link', { name: 'Definí tu estrategia' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/no definiste/)).not.toBeInTheDocument()
     expect(screen.queryByRole('slider')).not.toBeInTheDocument()
+  })
+
+  it('keeps the Lemon account card without a strategy: bringing money in is still step 1', () => {
+    setup({ hasWeights: false })
+    render(<MoveScreen isLemonRuntime />)
+    expect(screen.getByText(/Tu cuenta Lemon/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Definí tu estrategia' })).not.toBeInTheDocument()
   })
 
   it('renders nothing without a connected wallet', () => {
