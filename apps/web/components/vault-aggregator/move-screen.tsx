@@ -6,6 +6,7 @@ import { MoveSlider } from '@/components/vault-aggregator/move-slider'
 import { formatUsdc } from '@/lib/format'
 import type { MovePreview } from '@/lib/vault/move'
 import { useMoveQueue } from '@/lib/vault/move-queue'
+import { toButtonStage, type TxButtonStage } from '@/components/vault-aggregator/tx-button'
 import { useUsdcBalance } from '@/hooks/useUsdcBalance'
 import { useVaultPosition } from '@/hooks/useVaultPosition'
 import { useVaultWrite } from '@/hooks/useVaultWrite'
@@ -33,9 +34,21 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
   const isLemon = isLemonRuntime ?? isLemonWebView()
   const { hasWeights, totalUsdc, refetch: refetchPosition } = useVaultPosition()
   const { balance, isConnected, refetch: refetchBalance } = useUsdcBalance()
-  const { pendingAmount, redeem, clearPending } = useWithdrawFlow()
-  const { deposit } = useVaultWrite()
-  const { enqueue } = useMoveQueue()
+  const { pendingAmount, redeem, clearPending, txStage: withdrawTxStage } = useWithdrawFlow()
+  const { deposit, txStage: depositTxStage } = useVaultWrite()
+  const { enqueue, jobs } = useMoveQueue()
+
+  // The slider CTA's lifecycle: while any queued job is unresolved the button is in flight
+  // (confirming vs pending refined by whichever write hook is actually working); once the
+  // latest job settles, its outcome plays the success/error beat and TxButton walks back.
+  const txStage = depositTxStage !== 'idle' ? depositTxStage : withdrawTxStage
+  const activeJob = jobs.find((j) => j.phase.kind === 'signing' || j.phase.kind === 'confirm')
+  const lastJob = jobs.length > 0 ? jobs[jobs.length - 1] : undefined
+  const sliderStage: TxButtonStage = activeJob
+    ? txStage === 'pending'
+      ? 'pending'
+      : 'confirming'
+    : toButtonStage(lastJob?.phase ?? null, txStage)
 
   function refetchAll() {
     refetchPosition()
@@ -80,6 +93,7 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
             walletUsdc={balance}
             poolUsdc={totalUsdc}
             stepLabel={isLemon ? 'Paso 2 · Poner a rendir' : undefined}
+            stage={sliderStage}
             onMove={handleMove}
           />
           <DepositApproveStep isLemonRuntime={isLemon} amount={balance} />

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { AmountInput } from '@/components/vault-aggregator/amount-input'
 import { TransactionState } from '@/components/vault-aggregator/transaction-state'
+import { TxButton, toButtonStage } from '@/components/vault-aggregator/tx-button'
 import { formatUsdc } from '@/lib/format'
 import { useLemonTransfer, type LemonDirection } from '@/hooks/useLemonTransfer'
 
@@ -66,6 +67,7 @@ export function LemonAccountCard({
             type="button"
             variant={direction === 'in' ? 'default' : 'outline'}
             className="flex-1"
+            disabled={isBusy}
             onClick={() => setDirection(direction === 'in' ? null : 'in')}
           >
             <ArrowDownLeft className="size-4" aria-hidden="true" />
@@ -75,6 +77,7 @@ export function LemonAccountCard({
             type="button"
             variant={direction === 'out' ? 'default' : 'outline'}
             className="flex-1"
+            disabled={isBusy}
             onClick={() => setDirection(direction === 'out' ? null : 'out')}
           >
             <ArrowUpRight className="size-4" aria-hidden="true" />
@@ -90,18 +93,16 @@ export function LemonAccountCard({
                 ? 'De tu cuenta de Lemon a la wallet de la mini-app. Cuánto tenés en Lemon lo ves en su pantalla de confirmación: la mini-app no puede leer ese saldo.'
                 : `De la wallet de la mini-app a tu cuenta de Lemon. Disponible: $${formatUsdc(walletUsdc)}.`}
             </p>
-            <Button
-              type="button"
-              size="lg"
-              disabled={amount === 0n || (direction === 'out' && amount > walletUsdc) || isBusy}
+            <TxButton
+              label={direction === 'in' ? 'Traer de Lemon' : 'Enviar a Lemon'}
+              stage={toButtonStage(phase ?? null, 'idle')}
+              disabled={amount === 0n || (direction === 'out' && amount > walletUsdc)}
               onClick={() => run(direction)}
-            >
-              {direction === 'in' ? 'Traer de Lemon' : 'Enviar a Lemon'}
-            </Button>
+            />
           </>
         )}
 
-        {phase && phase.kind !== 'confirm' && (
+        {phase && (phase.kind === 'partial' || phase.kind === 'timeout') && (
           <TransactionState
             phase={phase}
             onPrimary={() => direction && run(direction)}

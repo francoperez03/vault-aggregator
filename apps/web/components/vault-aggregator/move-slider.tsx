@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { formatUsdc } from '@/lib/format'
 import { currentPoolBps, previewMove, type MovePreview } from '@/lib/vault/move'
+import { TxButton, type TxButtonStage } from '@/components/vault-aggregator/tx-button'
 
 interface JarProps {
   label: string
@@ -48,6 +49,8 @@ interface MoveSliderProps {
   walletUsdc: bigint
   poolUsdc: bigint
   busy?: boolean
+  /** The CTA's transaction lifecycle stage (see TxButton). */
+  stage?: TxButtonStage
   /** Rendered above the jars. Set only where the Lemon step exists, so a browser user never reads
    * "Paso 2" with no step 1 anywhere on screen. */
   stepLabel?: string
@@ -62,7 +65,7 @@ interface MoveSliderProps {
  *
  * The two amounts are previews while dragging; the real ones come back from the chain after the tx.
  */
-export function MoveSlider({ walletUsdc, poolUsdc, busy, stepLabel, onMove }: MoveSliderProps) {
+export function MoveSlider({ walletUsdc, poolUsdc, busy, stage = 'idle', stepLabel, onMove }: MoveSliderProps) {
   const restBps = currentPoolBps(walletUsdc, poolUsdc)
   const [targetPct, setTargetPct] = useState<number | null>(null)
   const total = walletUsdc + poolUsdc
@@ -70,7 +73,8 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stepLabel, onMove }: Mo
   const effectiveBps = targetPct === null ? restBps : BigInt(targetPct) * 100n
   const preview = previewMove(walletUsdc, poolUsdc, effectiveBps)
   const poolPct = total === 0n ? 0 : Number((preview.poolUsdc * 100n) / total)
-  const disabled = total === 0n || busy
+  const inFlight = stage === 'confirming' || stage === 'pending'
+  const disabled = total === 0n || busy || inFlight
 
   return (
     <div className="flex flex-col gap-4">
@@ -130,22 +134,24 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stepLabel, onMove }: Mo
         </Button>
       </div>
 
-      <Button
-        type="button"
-        size="lg"
+      {/* The CTA lives the whole tx lifecycle (TxButton): rest -> wallet confirm -> in
+          flight -> success/failure -> back. While in flight it is disabled, so a second tap
+          can't enqueue the same move twice. */}
+      <TxButton
+        label={
+          preview.kind === 'deposit'
+            ? `Depositar $${formatUsdc(preview.amount)}`
+            : preview.kind === 'withdraw'
+              ? `Retirar $${formatUsdc(preview.amount)}`
+              : 'Mové la barra'
+        }
+        stage={stage}
         // At rest the CTA is a hint, not an offer — a full-brand button for a disabled control
         // reads as "tap me" and gets tapped.
         variant={preview.kind === 'none' ? 'outline' : 'default'}
-        className="w-full"
         disabled={preview.kind === 'none' || busy}
         onClick={() => onMove(preview)}
-      >
-        {preview.kind === 'deposit'
-          ? `Depositar $${formatUsdc(preview.amount)}`
-          : preview.kind === 'withdraw'
-            ? `Retirar $${formatUsdc(preview.amount)}`
-            : 'Mové la barra'}
-      </Button>
+      />
     </div>
   )
 }

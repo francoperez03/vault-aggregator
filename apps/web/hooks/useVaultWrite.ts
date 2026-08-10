@@ -42,10 +42,16 @@ function browserErrorToPhase(error: unknown): TxPhase {
 
 type DepositStep = 'idle' | 'approving' | 'depositing';
 
+/** The button-lifecycle stage of whatever write is in flight: `confirming` while the wallet
+ * sheet is open (the whole Lemon `callSmartContract` counts — the sheet IS the confirmation),
+ * `pending` between the hash and the receipt. */
+export type TxStage = 'idle' | 'confirming' | 'pending';
+
 interface UseVaultWriteResult {
   /** Browser runtime only: which of the two signatures is in flight (D-09's two visible steps). */
   depositStep: DepositStep;
   isSubmitting: boolean;
+  txStage: TxStage;
   deposit: (amount: bigint) => Promise<TxPhase>;
   rebalance: (allocation: AllocationBps) => Promise<TxPhase>;
   redeem: (bps: bigint) => Promise<TxPhase>;
@@ -78,6 +84,7 @@ export function useVaultWrite(): UseVaultWriteResult {
   const { writeContractAsync } = useWriteContract();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [depositStep, setDepositStep] = useState<DepositStep>('idle');
+  const [txStage, setTxStage] = useState<TxStage>('idle');
   const { refetch: refetchPosition } = useVaultPosition();
   // amount is irrelevant here — only `refetch` is used, to invalidate the same allowance read
   // deposit-approve-step.tsx subscribes to (T-14-09-04).
@@ -102,6 +109,7 @@ export function useVaultWrite(): UseVaultWriteResult {
           const nowSeconds = BigInt(Math.floor(Date.now() / 1000));
           const deadline = nowSeconds + BigInt(9);
           const nonce = BigInt(Date.now());
+          setTxStage('confirming');
           const outcome = await getLemonBridge().callSmartContract({
             contracts: [
               {
@@ -125,15 +133,18 @@ export function useVaultWrite(): UseVaultWriteResult {
         }
 
         setDepositStep('approving');
+        setTxStage('confirming');
         const approveHash = await writeContractAsync({
           address: usdcAddress,
           abi: usdcAbi,
           functionName: 'approve',
           args: [coreAddress, amount],
         });
+        setTxStage('pending');
         await waitForTransactionReceipt(wagmiConfig, { hash: approveHash });
 
         setDepositStep('depositing');
+        setTxStage('confirming');
         const depositHash = await writeContractAsync({
           address: coreAddress,
           abi: coreAbi,
@@ -141,6 +152,7 @@ export function useVaultWrite(): UseVaultWriteResult {
           args: [amount],
           gas: STYLUS_WRITE_GAS,
         });
+        setTxStage('pending');
         await waitForTransactionReceipt(wagmiConfig, { hash: depositHash });
 
         return { kind: 'success', amount };
@@ -148,6 +160,7 @@ export function useVaultWrite(): UseVaultWriteResult {
         return browserErrorToPhase(error);
       } finally {
         setDepositStep('idle');
+        setTxStage('idle');
         setIsSubmitting(false);
         invalidate();
       }
@@ -170,12 +183,14 @@ export function useVaultWrite(): UseVaultWriteResult {
       setIsSubmitting(true);
       try {
         if (isLemonWebView()) {
+          setTxStage('confirming');
           const outcome = await getLemonBridge().callSmartContract({
             contracts: [{ address: coreAddress, functionName: 'rebalance', functionParams: [adapters, weightsBps] }],
           });
           return toTxPhase(outcome);
         }
 
+        setTxStage('confirming');
         const hash = await writeContractAsync({
           address: coreAddress,
           abi: coreAbi,
@@ -183,11 +198,13 @@ export function useVaultWrite(): UseVaultWriteResult {
           args: [adapters, weightsBps],
           gas: STYLUS_WRITE_GAS,
         });
+        setTxStage('pending');
         await waitForTransactionReceipt(wagmiConfig, { hash });
         return { kind: 'success' };
       } catch (error) {
         return browserErrorToPhase(error);
       } finally {
+        setTxStage('idle');
         setIsSubmitting(false);
         invalidate();
       }
@@ -202,12 +219,14 @@ export function useVaultWrite(): UseVaultWriteResult {
       setIsSubmitting(true);
       try {
         if (isLemonWebView()) {
+          setTxStage('confirming');
           const outcome = await getLemonBridge().callSmartContract({
             contracts: [{ address: coreAddress, functionName: 'redeem', functionParams: [bps] }],
           });
           return toTxPhase(outcome);
         }
 
+        setTxStage('confirming');
         const hash = await writeContractAsync({
           address: coreAddress,
           abi: coreAbi,
@@ -215,11 +234,13 @@ export function useVaultWrite(): UseVaultWriteResult {
           args: [bps],
           gas: STYLUS_WRITE_GAS,
         });
+        setTxStage('pending');
         await waitForTransactionReceipt(wagmiConfig, { hash });
         return { kind: 'success' };
       } catch (error) {
         return browserErrorToPhase(error);
       } finally {
+        setTxStage('idle');
         setIsSubmitting(false);
         invalidate();
       }
@@ -227,5 +248,5 @@ export function useVaultWrite(): UseVaultWriteResult {
     [coreAddress, writeContractAsync, invalidate],
   );
 
-  return { depositStep, isSubmitting, deposit, rebalance, redeem };
+  return { depositStep, isSubmitting, txStage, deposit, rebalance, redeem };
 }

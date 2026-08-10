@@ -23,7 +23,15 @@ const GAP = CIRC * 0.016
  * tween through anime.js so a redistribution reads as weight flowing between protocols, not as a
  * repaint. Idle it turns, slowly — the same "system is on" language as the app's ambient layers.
  */
-export function StrategyRing({ allocation }: { allocation: Partial<Record<AdapterId, number>> }) {
+export function StrategyRing({
+  allocation,
+  funded = true,
+}: {
+  allocation: Partial<Record<AdapterId, number>>
+  /** False when the strategy exists but the account holds nothing yet: the center stops
+   * claiming "100% asignado" (of what?) and asks for the deposit instead. */
+  funded?: boolean
+}) {
   const arcRefs = useRef<Partial<Record<AdapterId, SVGCircleElement | null>>>({})
   const values = useRef<Record<AdapterId, number>>({ morpho: 0, fluid: 0, euler: 0, aave: 0 })
   const total = sumBps(allocation)
@@ -97,16 +105,27 @@ export function StrategyRing({ allocation }: { allocation: Partial<Record<Adapte
       </svg>
       {!isEmpty && (
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span
-            className={cn(
-              'font-mono text-2xl font-semibold tabular-nums',
-              total === 100 ? 'text-[var(--text-primary)]' : 'text-[var(--warning)]',
-            )}
-          >
-            {total}%
-          </span>
-          {/* Plain text, not .kicker — the sliders below already own this region's kicker. */}
-          <span className="text-xs text-[var(--text-secondary)]">asignado</span>
+          {funded ? (
+            <>
+              <span
+                className={cn(
+                  'font-mono text-2xl font-semibold tabular-nums',
+                  total === 100 ? 'text-[var(--text-primary)]' : 'text-[var(--warning)]',
+                )}
+              >
+                {total}%
+              </span>
+              {/* Plain text, not .kicker — the sliders below already own this region's kicker. */}
+              <span className="text-xs text-[var(--text-secondary)]">asignado</span>
+            </>
+          ) : (
+            <>
+              <span className="font-mono text-2xl font-semibold tabular-nums text-[var(--text-secondary)]">
+                $0
+              </span>
+              <span className="text-xs text-[var(--text-secondary)]">sin fondos aún</span>
+            </>
+          )}
         </div>
       )}
     </div>

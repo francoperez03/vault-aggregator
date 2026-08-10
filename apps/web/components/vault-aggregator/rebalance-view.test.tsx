@@ -73,7 +73,8 @@ describe('RebalanceView', () => {
     expect(refetchMock).toHaveBeenCalled()
     // The dead end this replaced: success used to swap the sliders out for a confirmation panel.
     expect(screen.getAllByRole('slider')).toHaveLength(4)
-    expect(screen.getByRole('button', { name: 'Definí tu estrategia' })).toBeEnabled()
+    // The button plays its success beat (TxButton) instead of vanishing.
+    expect(screen.getByRole('button', { name: 'Estrategia aplicada' })).toBeInTheDocument()
   })
 
   it('re-seeds the sliders when the chain reports different weights', async () => {
@@ -84,15 +85,16 @@ describe('RebalanceView', () => {
     expect(screen.getAllByText('25%')).toHaveLength(4)
   })
 
-  it('a rejected signature renders the rejected copy, never the partial state', async () => {
+  it('a rejected signature walks the button straight back to rest — cancelling is not an error', async () => {
     rebalanceMock.mockResolvedValue({ kind: 'rejected' })
     render(<RebalanceView isBootstrap initialAllocation={{ morpho: 100, fluid: 0, euler: 0, aave: 0 }} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Definí tu estrategia' }))
 
     await waitFor(() =>
-      expect(screen.getByText('Cancelaste la firma. No pasó nada, no se movió plata.')).toBeInTheDocument(),
+      expect(screen.getByRole('button', { name: 'Definí tu estrategia' })).toBeEnabled(),
     )
+    expect(screen.queryByText(/Cancelaste/)).not.toBeInTheDocument()
   })
 
   it('a throttled rebalance is the normal reverted state, never the partial state (Pitfall 4)', async () => {
@@ -101,7 +103,10 @@ describe('RebalanceView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Definí tu estrategia' }))
 
-    await waitFor(() => expect(screen.getByText(/La transacción no se completó/)).toBeInTheDocument())
+    // The failure lives in the button as a retry, never as the partial state's panel.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Falló · Reintentar' })).toBeInTheDocument(),
+    )
     expect(screen.queryByText(/quedan \$/)).not.toBeInTheDocument()
   })
 })

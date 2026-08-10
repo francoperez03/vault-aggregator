@@ -303,6 +303,9 @@ export default function Page() {
                   ? draftAllocation
                   : toRingAllocation(toPositionState(vaultPosition, pendingAmount))
               }
+              // Editing shows percentages (they are the validation guard); at rest the center
+              // only claims a number when there is actually money behind it.
+              funded={step === 'rebalance' || vaultPosition.totalUsdc > 0n}
             />
           </div>
           {/* Two steps side by side on one rail. Rebalancing is a detour from the same money, not

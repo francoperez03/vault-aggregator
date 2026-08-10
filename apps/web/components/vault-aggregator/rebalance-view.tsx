@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { AllocationSliders } from '@/components/vault-aggregator/allocation-sliders'
 import { StrategyRing } from '@/components/vault-aggregator/strategy-ring'
 import { RebalanceCostDisclosure } from '@/components/vault-aggregator/rebalance-cost-disclosure'
+import { TxButton, toButtonStage } from '@/components/vault-aggregator/tx-button'
 import { TransactionState, type TxPhase } from '@/components/vault-aggregator/transaction-state'
 import { normalizeToBps, sumBps } from '@/lib/vault/weights'
 import { type AdapterId } from '@/lib/contracts/config'
@@ -51,7 +51,7 @@ export function RebalanceView({
   const [showDisclosure, setShowDisclosure] = useState(false)
   const [phase, setPhase] = useState<TxPhase | null>(null)
   const [confirmed, setConfirmed] = useState(false)
-  const { rebalance } = useVaultWrite()
+  const { rebalance, txStage } = useVaultWrite()
   const { refetch } = useVaultPosition()
 
   const isValid = sumBps(allocation) === 100
@@ -76,10 +76,16 @@ export function RebalanceView({
     setPhase({ kind: 'signing' })
     const result = await rebalance(normalizeToBps(allocation))
     if (result.kind === 'success') {
-      // Back to the sliders immediately; the note carries the outcome while the refetch lands.
-      setPhase(null)
+      // The button holds its success beat while the green note carries the outcome and the
+      // refetch lands; TxButton's onSettled walks the phase back to null.
+      setPhase(result)
       setConfirmed(true)
       refetch()
+      return
+    }
+    if (result.kind === 'rejected') {
+      // Cancelling the wallet sheet is the user's own act — straight back to rest.
+      setPhase(null)
       return
     }
     setPhase(result)
@@ -105,20 +111,32 @@ export function RebalanceView({
         </p>
       )}
 
-      {phase === null ? (
-        showDisclosure ? (
-          <RebalanceCostDisclosure onConfirm={armAndSign} />
-        ) : (
-          <Button type="button" size="lg" disabled={!isValid} onClick={handlePrimary}>
-            {isBootstrap ? 'Definí tu estrategia' : 'Confirmar rebalanceo'}
-          </Button>
-        )
-      ) : (
+      {/* The whole lifecycle lives in the button: rest → wallet confirm → tx in flight →
+          success/failure → back to normal. The panel survives only for `timeout`, which
+          carries the Arbiscan link the button can't. */}
+      {phase?.kind === 'timeout' ? (
         <TransactionState
           phase={phase}
           onPrimary={() => void armAndSign()}
           onSecondary={() => setPhase(null)}
           summary={<>Estrategia con {sumBps(allocation)}% asignado</>}
+        />
+      ) : showDisclosure && phase === null ? (
+        <RebalanceCostDisclosure onConfirm={armAndSign} />
+      ) : (
+        <TxButton
+          label={isBootstrap ? 'Definí tu estrategia' : 'Confirmar rebalanceo'}
+          successLabel="Estrategia aplicada"
+          stage={toButtonStage(phase, txStage)}
+          disabled={!isValid}
+          onClick={() => {
+            if (phase?.kind === 'reverted') {
+              void armAndSign()
+              return
+            }
+            handlePrimary()
+          }}
+          onSettled={() => setPhase(null)}
         />
       )}
     </div>
