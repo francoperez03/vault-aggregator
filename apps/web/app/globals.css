@@ -368,3 +368,20 @@ body > * {
     animation: none;
   }
 }
+
+/* The strategy ring's idle turn — the "system is on" language, arcs only (text sits outside). */
+@keyframes strategy-ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.strategy-ring-spin {
+  animation: strategy-ring-spin 60s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .strategy-ring-spin {
+    animation: none;
+  }
+}

@@ -11,6 +11,7 @@ import { ProtocolBreakdown } from '@/components/vault-aggregator/protocol-breakd
 import { MoveScreen } from '@/components/vault-aggregator/move-screen'
 import { RebalancePanel } from '@/components/vault-aggregator/rebalance-panel'
 import { WalletBar } from '@/components/wallet-bar'
+import { StrategyRing } from '@/components/vault-aggregator/strategy-ring'
 import { Landing, VaultyWordmark } from '@/components/landing'
 import { isLemonWebView } from '@/lib/lemon/bridge'
 import { ADAPTER_IDS, type AdapterId } from '@/lib/contracts/config'
@@ -112,7 +113,9 @@ export function HomePositionView({
           <RebalanceCta onRebalance={onRebalance} label="Rebalancear" variant="outline" />
         </>
       ) : position.hasWeights ? (
-        <Card className="px-4 py-8 text-center">
+        <>
+        <StrategyRing allocation={toRingAllocation(position)} />
+        <Card className="mt-4 px-4 py-8 text-center">
           <CardContent className="flex flex-col items-center gap-3 p-0">
             <h1 className="text-xl font-semibold text-[var(--text-primary)]">Estrategia guardada</h1>
             <p className="text-sm text-[var(--text-secondary)]">
@@ -123,8 +126,12 @@ export function HomePositionView({
             </Button>
           </CardContent>
         </Card>
+        </>
       ) : (
-        <Card className="border-dashed px-4 py-8 text-center">
+        <>
+        {/* The wheel, all gray: the strategy's shape holding the space until one exists. */}
+        <StrategyRing allocation={{}} />
+        <Card className="mt-4 border-dashed px-4 py-8 text-center">
           <CardContent className="flex flex-col items-center gap-3 p-0">
             <h1 className="text-xl font-semibold text-[var(--text-primary)]">Todavía no tenés posición</h1>
             <p className="text-sm text-[var(--text-secondary)]">
@@ -133,8 +140,16 @@ export function HomePositionView({
             <RebalanceCta onRebalance={onRebalance} label="Definí tu estrategia" className="mt-2" />
           </CardContent>
         </Card>
+        </>
       )}
     </div>
+  )
+}
+
+/** The stored weights as slider-style percentages for the StrategyRing. */
+function toRingAllocation(position: PositionState): Partial<Record<AdapterId, number>> {
+  return Object.fromEntries(
+    ADAPTER_IDS.map((id) => [id, position.perAdapter[id].weightBps / 100]),
   )
 }
 

@@ -83,7 +83,7 @@ function LiveSplit() {
   const labelRefs = useRef<Array<HTMLSpanElement | null>>([])
 
   useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
     const values = { a: 40, b: 30, c: 20, d: 10 }
     const keys = ['a', 'b', 'c', 'd'] as const
@@ -193,11 +193,8 @@ export function Landing() {
           ))}
         </ul>
 
-        <div className="landing-rise mt-4 flex flex-col gap-3" style={{ animationDelay: '280ms' }}>
+        <div className="landing-rise mt-4" style={{ animationDelay: '280ms' }}>
           <ConnectCta />
-          <p className="text-center text-xs text-[var(--text-secondary)]">
-            USDC en Arbitrum · sin custodia
-          </p>
         </div>
       </section>
 

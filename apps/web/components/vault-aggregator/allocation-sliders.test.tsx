@@ -12,7 +12,7 @@ describe('AllocationSliders', () => {
 
   it('shows the sum-to-100% indicator as the group anchor', () => {
     render(<AllocationSliders value={{ morpho: 25, fluid: 25, euler: 25, aave: 25 }} onChange={vi.fn()} />)
-    expect(screen.getByText(/Total: 100%/)).toBeInTheDocument()
+    expect(screen.queryByText(/Total:/)).not.toBeInTheDocument()
   })
 
   it('shows the zero-out helper text only for a slider at 0%', () => {

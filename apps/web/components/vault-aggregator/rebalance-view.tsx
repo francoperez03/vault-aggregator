@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AllocationSliders } from '@/components/vault-aggregator/allocation-sliders'
+import { StrategyRing } from '@/components/vault-aggregator/strategy-ring'
 import { RebalanceCostDisclosure } from '@/components/vault-aggregator/rebalance-cost-disclosure'
 import { TransactionState, type TxPhase } from '@/components/vault-aggregator/transaction-state'
 import { normalizeToBps, sumBps } from '@/lib/vault/weights'
@@ -80,6 +81,7 @@ export function RebalanceView({ isBootstrap, initialAllocation }: RebalanceViewP
 
   return (
     <div className="flex flex-col gap-6 p-4">
+      <StrategyRing allocation={allocation} />
       <AllocationSliders value={allocation} onChange={setAllocation} />
 
       {confirmed && (
