@@ -53,6 +53,12 @@ interface UseVaultWriteResult {
 
 const NOT_CONFIGURED: TxPhase = { kind: 'reverted', reason: 'La wallet o el contrato no están configurados.' };
 
+/** Explicit gas limit for every write against the Stylus core: `eth_estimateGas` under-reports
+ * for Stylus→EVM calls and produced two live OOG failures on Arbitrum One (RUNBOOK-M2.md —
+ * Morpho's withdraw alone needs ~578k). Unused gas is refunded on Arbitrum, so the buffer is
+ * free. Mirrors `adapter_e2e::TX_GAS_LIMIT`. The plain-EVM USDC `approve` keeps auto-estimation. */
+const STYLUS_WRITE_GAS = 2_000_000n;
+
 /**
  * Dual-runtime write hook (D-11): browser fires `approve` then `deposit` as two explicit
  * `writeContractAsync` calls, each awaiting its own receipt, spender == core. Lemon instead
@@ -133,6 +139,7 @@ export function useVaultWrite(): UseVaultWriteResult {
           abi: coreAbi,
           functionName: 'deposit',
           args: [amount],
+          gas: STYLUS_WRITE_GAS,
         });
         await waitForTransactionReceipt(wagmiConfig, { hash: depositHash });
 
@@ -174,6 +181,7 @@ export function useVaultWrite(): UseVaultWriteResult {
           abi: coreAbi,
           functionName: 'rebalance',
           args: [adapters, weightsBps],
+          gas: STYLUS_WRITE_GAS,
         });
         await waitForTransactionReceipt(wagmiConfig, { hash });
         return { kind: 'success' };
@@ -205,6 +213,7 @@ export function useVaultWrite(): UseVaultWriteResult {
           abi: coreAbi,
           functionName: 'redeem',
           args: [bps],
+          gas: STYLUS_WRITE_GAS,
         });
         await waitForTransactionReceipt(wagmiConfig, { hash });
         return { kind: 'success' };
