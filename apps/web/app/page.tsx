@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useAccount } from 'wagmi'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
@@ -11,6 +11,8 @@ import { ProtocolBreakdown } from '@/components/vault-aggregator/protocol-breakd
 import { MoveScreen } from '@/components/vault-aggregator/move-screen'
 import { RebalancePanel } from '@/components/vault-aggregator/rebalance-panel'
 import { WalletBar } from '@/components/wallet-bar'
+import { Landing, VaultyWordmark } from '@/components/landing'
+import { isLemonWebView } from '@/lib/lemon/bridge'
 import { ADAPTER_IDS, type AdapterId } from '@/lib/contracts/config'
 import { useVaultPosition } from '@/hooks/useVaultPosition'
 import { useVaultYield, type UseVaultYieldResult } from '@/hooks/useVaultYield'
@@ -170,20 +172,29 @@ export default function Page() {
   const { pendingAmount } = useWithdrawFlow()
   const [step, setStep] = useState<'move' | 'rebalance'>('move')
 
+  // Unconnected web visitors get the pitch, not a sad empty card. Inside Lemon the injected
+  // wallet connects on its own, so the landing never flashes there; the mounted gate keeps the
+  // server-rendered markup stable while isLemonWebView() waits for `window`.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const showLanding = mounted && !isConnected && !isLemonWebView()
+
+  if (showLanding) {
+    return (
+      <main className="min-h-dvh bg-background">
+        <Landing />
+      </main>
+    )
+  }
+
   return (
     <main className="min-h-dvh bg-background">
-      <WalletBar />
+      <header className="flex items-center justify-between pl-4 pt-[calc(0.5rem+env(safe-area-inset-top))]">
+        <VaultyWordmark compact />
+        <WalletBar />
+      </header>
       {!isConnected ? (
-        <div className="px-4 pt-8">
-          <Card className="border-dashed px-4 py-8 text-center">
-            <CardContent className="flex flex-col items-center gap-3 p-0">
-              <h1 className="text-xl font-semibold text-[var(--text-primary)]">Conectá tu wallet</h1>
-              <p className="text-sm text-[var(--text-secondary)]">
-                Necesitás conectar tu wallet para ver tu posición.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        <div className="px-4 pt-8" />
       ) : isWrongNetwork ? (
         <div className="px-4 pt-8">
           <Card className="border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-8 text-center">

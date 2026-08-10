@@ -328,3 +328,43 @@ body > * {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* ── Landing entrance ── */
+/* Content is visible by default direction-wise: these are entrance-only transforms whose end
+   state equals the static layout, and the global reduced-motion block freezes them to frame 1. */
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.landing-rise {
+  animation: landing-rise var(--dur-slow) var(--ease-snap) both;
+}
+
+/* The split bar draws itself left-to-right, one protocol at a time. */
+@keyframes landing-seg {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.landing-seg {
+  transform-origin: left;
+  animation: landing-seg var(--dur-slow) var(--ease-snap) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-rise,
+  .landing-seg {
+    animation: none;
+  }
+}

@@ -33,8 +33,8 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'Vault Aggregator',
-  description: 'Allocate USDC across multiple yield vaults through a single transaction. Built on Arbitrum ERC-4626.',
+  title: 'Vaulty',
+  description: 'Tu USDC rindiendo en los mejores protocolos de Arbitrum, repartido como vos digas. Sin custodia, salida cuando quieras.',
   formatDetection: { telephone: false, email: false },
   appleWebApp: { capable: true, statusBarStyle: 'default' },
   // Icons come from the app-directory file conventions (`app/icon.svg`, `app/apple-icon.png`);

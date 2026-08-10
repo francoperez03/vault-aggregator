@@ -7,10 +7,10 @@ import type { MetadataRoute } from 'next'
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Vault Aggregator',
-    short_name: 'Vault',
+    name: 'Vaulty',
+    short_name: 'Vaulty',
     description:
-      'Allocate USDC across multiple yield vaults through a single transaction. Built on Arbitrum ERC-4626.',
+      'Tu USDC rindiendo en los mejores protocolos de Arbitrum, repartido como vos digas.',
     start_url: '/',
     display: 'standalone',
     orientation: 'portrait',
