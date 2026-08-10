@@ -1,11 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <!-- Same construction as CoinFlip's mark: one solid brand circle with the glyph knocked out in
-       the canvas colour, so it reads at 16px and sits on any surface. The glyph is this app's own
-       subject — three columns at different levels, the allocation split across protocols. -->
-  <circle cx="12" cy="12" r="12" fill="#12aaff" />
-  <g fill="#0a0c0f">
-    <rect x="5.6" y="12.4" width="3.4" height="5.6" rx="1.7" />
-    <rect x="10.3" y="8.6" width="3.4" height="9.4" rx="1.7" />
-    <rect x="15" y="6" width="3.4" height="12" rx="1.7" />
+  <!-- Vaulty's mark: the strategy ring itself — one circle split in four, one arc per protocol
+       (Aave / Morpho / Fluid / Euler identity colors), on the app's own canvas. Quarter arcs with
+       a hairline gap so it still reads as a segmented wheel at 16px. -->
+  <circle cx="12" cy="12" r="12" fill="#0A0C0F" />
+  <g transform="rotate(-90 12 12)" fill="none" stroke-width="4.6" stroke-dasharray="12.15 41.25">
+    <circle cx="12" cy="12" r="8.5" stroke="#B6509E" stroke-dashoffset="-0.6" />
+    <circle cx="12" cy="12" r="8.5" stroke="#5B8EFA" stroke-dashoffset="-13.95" />
+    <circle cx="12" cy="12" r="8.5" stroke="#00D4FF" stroke-dashoffset="-27.3" />
+    <circle cx="12" cy="12" r="8.5" stroke="#2AE5B9" stroke-dashoffset="-40.65" />
   </g>
 </svg>

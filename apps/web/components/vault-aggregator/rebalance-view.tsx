@@ -19,6 +19,11 @@ interface RebalanceViewProps {
   /** D-13: with position cero the same route degenerates to writing weights, no cost to disclose. */
   isBootstrap: boolean
   initialAllocation: Partial<Record<AdapterId, number>>
+  /** Mirrors every allocation change (user drags AND chain re-seeds) to a parent that renders
+   * the ring itself — the home stepper's single persistent circle. */
+  onAllocationChange?: (next: Partial<Record<AdapterId, number>>) => void
+  /** True when a parent already owns the StrategyRing (home); the standalone route keeps its own. */
+  hideRing?: boolean
 }
 
 /**
@@ -32,8 +37,17 @@ interface RebalanceViewProps {
  * themselves from the chain as soon as the refetch lands — so a second adjustment starts from what
  * the vault actually holds, not from what was on screen before the transaction.
  */
-export function RebalanceView({ isBootstrap, initialAllocation }: RebalanceViewProps) {
-  const [allocation, setAllocation] = useState(initialAllocation)
+export function RebalanceView({
+  isBootstrap,
+  initialAllocation,
+  onAllocationChange,
+  hideRing = false,
+}: RebalanceViewProps) {
+  const [allocation, setAllocationState] = useState(initialAllocation)
+  const setAllocation = (next: Partial<Record<AdapterId, number>>) => {
+    setAllocationState(next)
+    onAllocationChange?.(next)
+  }
   const [showDisclosure, setShowDisclosure] = useState(false)
   const [phase, setPhase] = useState<TxPhase | null>(null)
   const [confirmed, setConfirmed] = useState(false)
@@ -81,7 +95,7 @@ export function RebalanceView({ isBootstrap, initialAllocation }: RebalanceViewP
 
   return (
     <div className="flex flex-col gap-6 p-4">
-      <StrategyRing allocation={allocation} />
+      {!hideRing && <StrategyRing allocation={allocation} />}
       <AllocationSliders value={allocation} onChange={setAllocation} />
 
       {confirmed && (

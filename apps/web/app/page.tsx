@@ -1,6 +1,8 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { animate } from 'animejs'
+import { ArrowLeft } from 'lucide-react'
 import { useAccount } from 'wagmi'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
@@ -113,9 +115,7 @@ export function HomePositionView({
           <RebalanceCta onRebalance={onRebalance} label="Rebalancear" variant="outline" />
         </>
       ) : position.hasWeights ? (
-        <>
-        <StrategyRing allocation={toRingAllocation(position)} />
-        <Card className="mt-4 px-4 py-8 text-center">
+        <Card className="px-4 py-8 text-center">
           <CardContent className="flex flex-col items-center gap-3 p-0">
             <h1 className="text-xl font-semibold text-[var(--text-primary)]">Estrategia guardada</h1>
             <p className="text-sm text-[var(--text-secondary)]">
@@ -126,12 +126,8 @@ export function HomePositionView({
             </Button>
           </CardContent>
         </Card>
-        </>
       ) : (
-        <>
-        {/* The wheel, all gray: the strategy's shape holding the space until one exists. */}
-        <StrategyRing allocation={{}} />
-        <Card className="mt-4 border-dashed px-4 py-8 text-center">
+        <Card className="border-dashed px-4 py-8 text-center">
           <CardContent className="flex flex-col items-center gap-3 p-0">
             <h1 className="text-xl font-semibold text-[var(--text-primary)]">Todavía no tenés posición</h1>
             <p className="text-sm text-[var(--text-secondary)]">
@@ -140,7 +136,6 @@ export function HomePositionView({
             <RebalanceCta onRebalance={onRebalance} label="Definí tu estrategia" className="mt-2" />
           </CardContent>
         </Card>
-        </>
       )}
     </div>
   )
@@ -186,6 +181,9 @@ export default function Page() {
   // persisted an amount, which is what useWithdrawFlow reads back from localStorage on mount.
   const { pendingAmount } = useWithdrawFlow()
   const [step, setStep] = useState<'move' | 'rebalance'>('move')
+  // The single persistent ring's draft source while the allocation step is editing. Null until
+  // RebalanceView seeds it (bootstrap's even split included).
+  const [draftAllocation, setDraftAllocation] = useState<Partial<Record<AdapterId, number>> | null>(null)
 
   // Unconnected web visitors get the pitch, not a sad empty card. Inside Lemon the injected
   // wallet connects on its own, so the landing never flashes there; the mounted gate keeps the
@@ -193,6 +191,48 @@ export default function Page() {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   const showLanding = mounted && !isConnected && !isLemonWebView()
+
+  const prefersReducedMotion = () =>
+    typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  // The rail slides under the fixed ring; anime drives it so the motion shares the ring's easing
+  // language instead of a parallel CSS timing.
+  const railRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const rail = railRef.current
+    if (!rail) return
+    const to = step === 'rebalance' ? -50 : 0
+    if (prefersReducedMotion()) {
+      rail.style.transform = `translateX(${to}%)`
+      return
+    }
+    const animation = animate(rail, { translateX: `${to}%`, duration: 550, ease: 'outQuint' })
+    return () => {
+      animation.pause()
+    }
+  }, [step])
+
+  // "Volver" fades in above the ring when the allocation step is active; the row keeps its
+  // height in both steps so the ring never jumps.
+  const backRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const el = backRef.current
+    if (!el) return
+    const show = step === 'rebalance'
+    if (prefersReducedMotion()) {
+      el.style.opacity = show ? '1' : '0'
+      return
+    }
+    const animation = animate(el, {
+      opacity: show ? 1 : 0,
+      translateY: show ? 0 : -6,
+      duration: 350,
+      ease: 'outQuad',
+    })
+    return () => {
+      animation.pause()
+    }
+  }, [step])
 
   if (showLanding) {
     return (
@@ -222,14 +262,38 @@ export default function Page() {
           </Card>
         </div>
       ) : (
-        // Two steps side by side on one rail. Rebalancing is a detour from the same money, not a
-        // different place, so it slides in over the same screen instead of navigating away and
-        // dropping the scroll position on the way back.
-        <div className="overflow-x-hidden">
-          <div
-            className="flex w-[200%] transition-transform duration-[var(--dur-slow)] ease-[var(--ease-snap)] motion-reduce:transition-none"
-            style={{ transform: step === 'rebalance' ? 'translateX(-50%)' : 'translateX(0)' }}
+        // One circle, fixed; what moves is everything below it. The ring is the app's constant —
+        // gray with no strategy, the stored weights on the move step, the live draft while
+        // editing (anime morphs between states because only the prop changes).
+        <>
+          <button
+            ref={backRef}
+            type="button"
+            onClick={() => setStep('move')}
+            tabIndex={step === 'rebalance' ? 0 : -1}
+            aria-hidden={step === 'move'}
+            className={cn(
+              'flex min-h-[44px] items-center gap-2 px-4 text-sm text-[var(--text-secondary)] opacity-0',
+              step === 'move' && 'pointer-events-none',
+            )}
           >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            Volver
+          </button>
+          <div>
+            <StrategyRing
+              allocation={
+                step === 'rebalance' && draftAllocation
+                  ? draftAllocation
+                  : toRingAllocation(toPositionState(vaultPosition, pendingAmount))
+              }
+            />
+          </div>
+          {/* Two steps side by side on one rail. Rebalancing is a detour from the same money, not
+              a different place, so it slides in under the fixed ring instead of navigating away
+              and dropping the scroll position on the way back. */}
+          <div className="overflow-x-hidden">
+          <div ref={railRef} className="flex w-[200%]">
             <div className="w-1/2" aria-hidden={step === 'rebalance'}>
               {/* Move first, position second: the reason to open the app is to put money in or
                   take it out; the position is what you check on the way past. */}
@@ -245,10 +309,12 @@ export default function Page() {
               />
             </div>
             <div className="w-1/2" aria-hidden={step === 'move'}>
-              <RebalancePanel onBack={() => setStep('move')} />
+              {/* No onBack: the shared "Volver" above the ring owns the way back now. */}
+              <RebalancePanel onAllocationChange={setDraftAllocation} hideRing />
             </div>
           </div>
-        </div>
+          </div>
+        </>
       )}
     </main>
   )
