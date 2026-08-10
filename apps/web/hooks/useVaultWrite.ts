@@ -56,8 +56,8 @@ const NOT_CONFIGURED: TxPhase = { kind: 'reverted', reason: 'La wallet o el cont
 /** Explicit gas limit for every write against the Stylus core: `eth_estimateGas` under-reports
  * for Stylus→EVM calls and produced two live OOG failures on Arbitrum One (RUNBOOK-M2.md —
  * Morpho's withdraw alone needs ~578k). Unused gas is refunded on Arbitrum, so the buffer is
- * free. Mirrors `adapter_e2e::TX_GAS_LIMIT`. The plain-EVM USDC `approve` keeps auto-estimation. */
-const STYLUS_WRITE_GAS = 2_000_000n;
+ * free. Measured on the production mainnet smoke test: deposit 1.6M, redeem 1.74M, rebalance 2.6M — a 2M limit OOG'd the real rebalance. The plain-EVM USDC `approve` keeps auto-estimation. */
+const STYLUS_WRITE_GAS = 6_000_000n;
 
 /**
  * Dual-runtime write hook (D-11): browser fires `approve` then `deposit` as two explicit

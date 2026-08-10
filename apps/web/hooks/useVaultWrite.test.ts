@@ -100,7 +100,7 @@ describe('useVaultWrite.deposit', () => {
     );
     expect(writeContractAsyncMock).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ address: CORE_ADDRESS, functionName: 'deposit', args: [500n], gas: 2_000_000n }),
+      expect.objectContaining({ address: CORE_ADDRESS, functionName: 'deposit', args: [500n], gas: 6_000_000n }),
     );
     expect(waitForTransactionReceiptMock).toHaveBeenCalledTimes(2);
     expect(refetchPositionMock).toHaveBeenCalled();
@@ -188,7 +188,7 @@ describe('useVaultWrite.rebalance', () => {
           [MORPHO_ADDRESS, EULER_ADDRESS],
           [6000n, 4000n],
         ],
-        gas: 2_000_000n,
+        gas: 6_000_000n,
       }),
     );
   });
@@ -221,7 +221,7 @@ describe('useVaultWrite.redeem', () => {
 
     expect(phase).toEqual({ kind: 'success' });
     expect(writeContractAsyncMock).toHaveBeenCalledWith(
-      expect.objectContaining({ address: CORE_ADDRESS, functionName: 'redeem', args: [5000n], gas: 2_000_000n }),
+      expect.objectContaining({ address: CORE_ADDRESS, functionName: 'redeem', args: [5000n], gas: 6_000_000n }),
     );
   });
 });

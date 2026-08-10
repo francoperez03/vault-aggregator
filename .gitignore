@@ -2,3 +2,4 @@
 
 # Temporary key copy for cargo stylus deploy's Docker build (never commit keys)
 .deploy-key.tmp
+node_modules

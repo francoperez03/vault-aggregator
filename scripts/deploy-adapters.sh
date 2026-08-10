@@ -47,16 +47,19 @@ MIN_USDC=5000000 # 5 USDC at 6 decimals — lowered from 10 (Phase 10 Plan 04): 
 [ -r "$KEY_PATH" ] || { echo "No key file at $KEY_PATH — see docs/RUNBOOK-M2.md" >&2; exit 1; }
 
 # cast has no --private-key-path flag; read the key file inline (contents never echoed).
-CORE="$(cast wallet address --private-key "$(cat "$KEY_PATH")")"
-echo "M2 wallet (deployer + interim core): $CORE"
+DEPLOYER="$(cast wallet address --private-key "$(cat "$KEY_PATH")")"
+# CORE_ADDR: the production vault-core contract each instance inits against. Unset falls back to
+# the deployer EOA — the Phase 9/10 interim-rig behaviour (D-04).
+CORE="${CORE_ADDR:-$DEPLOYER}"
+echo "M2 wallet (deployer): $DEPLOYER — core for init: $CORE"
 
 CHAIN_ID="$(cast chain-id --rpc-url "$ARB_ONE_RPC_URL")"
 [ "$CHAIN_ID" = "42161" ] || { echo "RPC is chain $CHAIN_ID, expected 42161 (Arbitrum One)" >&2; exit 1; }
 
-ETH_BAL="$(cast balance "$CORE" --rpc-url "$ARB_ONE_RPC_URL")"
+ETH_BAL="$(cast balance "$DEPLOYER" --rpc-url "$ARB_ONE_RPC_URL")"
 [ "$ETH_BAL" != "0" ] || { echo "M2 wallet has no ETH for gas" >&2; exit 1; }
 
-USDC_BAL="$(cast call "$USDC" "balanceOf(address)(uint256)" "$CORE" --rpc-url "$ARB_ONE_RPC_URL" | cut -d' ' -f1)"
+USDC_BAL="$(cast call "$USDC" "balanceOf(address)(uint256)" "$DEPLOYER" --rpc-url "$ARB_ONE_RPC_URL" | cut -d' ' -f1)"
 [ "$USDC_BAL" -ge "$MIN_USDC" ] || { echo "M2 wallet holds $USDC_BAL native USDC, need >= $MIN_USDC" >&2; exit 1; }
 
 # cargo stylus deploy defaults to the reproducible Docker build (no --no-verify, matching M1's
