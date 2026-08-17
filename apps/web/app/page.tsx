@@ -11,6 +11,8 @@ import { PositionSummary } from '@/components/vault-aggregator/position-summary'
 import { ProtocolBreakdown } from '@/components/vault-aggregator/protocol-breakdown'
 import { ProtocolLogo } from '@/components/vault-aggregator/protocol-logo'
 import { LemonHandshake } from '@/components/vault-aggregator/lemon-handshake'
+import { LemonAccount } from '@/components/vault-aggregator/lemon-account-card'
+import { useUsdcBalance } from '@/hooks/useUsdcBalance'
 import { getVaults } from '@/lib/vaults'
 import { MoveScreen } from '@/components/vault-aggregator/move-screen'
 import { RebalancePanel } from '@/components/vault-aggregator/rebalance-panel'
@@ -217,7 +219,8 @@ export default function Page() {
   const vaultYield = useVaultYield(vaultPosition.perAdapter)
   // D-19: the banner (plan 03/08) is only real once step 1 of a withdrawal actually measured and
   // persisted an amount, which is what useWithdrawFlow reads back from localStorage on mount.
-  const { pendingAmount } = useWithdrawFlow()
+  const { pendingAmount, clearPending } = useWithdrawFlow()
+  const { balance: walletUsdc, refetch: refetchBalance } = useUsdcBalance()
   const [step, setStep] = useState<'move' | 'rebalance'>('move')
   // The single persistent ring's draft source while the allocation step is editing. Null until
   // RebalanceView seeds it (bootstrap's even split included).
@@ -321,10 +324,30 @@ export default function Page() {
           </Card>
         </div>
       ) : (
-        // One circle, fixed; what moves is everything below it. The ring is the app's constant —
-        // gray with no strategy, the stored weights on the move step, the live draft while
-        // editing (anime morphs between states because only the prop changes).
+        // One circle, fixed; what moves is everything below it: the stored weights on the move
+        // step, the live draft while editing (anime morphs between states because only the prop
+        // changes). With no strategy yet there is no ring: an empty gray wheel over "Definí tu
+        // estrategia" was a placeholder pretending to be content.
         <>
+          {/* Money in and out of the mini-app, above everything and on both steps: it is the
+              precondition for the rest, not a step of it. Only Lemon can cross this boundary. */}
+          {mounted && isLemonWebView() && (
+            <div className="px-4 pb-4 pt-3">
+              <LemonAccount
+                // Remount on step change so an open Traer/Enviar panel folds back to the two
+                // tabs when the allocation step slides in; a transfer mid-flight is queued by
+                // the SDK, not by this component, so nothing is lost.
+                key={step}
+                walletUsdc={walletUsdc}
+                pendingAmount={pendingAmount}
+                onSent={clearPending}
+                onDone={() => {
+                  refetchBalance()
+                  vaultPosition.refetch()
+                }}
+              />
+            </div>
+          )}
           <button
             ref={backRef}
             type="button"
@@ -334,23 +357,27 @@ export default function Page() {
             className={cn(
               'flex min-h-[44px] items-center gap-2 px-4 text-sm text-[var(--text-secondary)] opacity-0',
               step === 'move' && 'pointer-events-none',
+              // The row reserves height only when there is a ring below to keep steady.
+              step === 'move' && !vaultPosition.hasWeights && 'hidden',
             )}
           >
             <ArrowLeft className="size-4" aria-hidden="true" />
             Volver
           </button>
-          <div>
-            <StrategyRing
-              allocation={
-                step === 'rebalance' && draftAllocation
-                  ? draftAllocation
-                  : toRingAllocation(toPositionState(vaultPosition, pendingAmount))
-              }
-              // Editing shows percentages (they are the validation guard); at rest the center
-              // only claims a number when there is actually money behind it.
-              funded={step === 'rebalance' || vaultPosition.totalUsdc > 0n}
-            />
-          </div>
+          {(step === 'rebalance' || vaultPosition.hasWeights) && (
+            <div data-testid="strategy-ring">
+              <StrategyRing
+                allocation={
+                  step === 'rebalance' && draftAllocation
+                    ? draftAllocation
+                    : toRingAllocation(toPositionState(vaultPosition, pendingAmount))
+                }
+                // Editing shows percentages (they are the validation guard); at rest the center
+                // only claims a number when there is actually money behind it.
+                funded={step === 'rebalance' || vaultPosition.totalUsdc > 0n}
+              />
+            </div>
+          )}
           {/* Two steps side by side on one rail. Rebalancing is a detour from the same money, not
               a different place, so it slides in under the fixed ring instead of navigating away
               and dropping the scroll position on the way back. */}

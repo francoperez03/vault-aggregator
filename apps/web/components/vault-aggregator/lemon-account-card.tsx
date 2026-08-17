@@ -2,41 +2,42 @@
 
 import { useEffect, useState } from 'react'
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AmountInput } from '@/components/vault-aggregator/amount-input'
 import { TransactionState } from '@/components/vault-aggregator/transaction-state'
 import { TxButton, toButtonStage } from '@/components/vault-aggregator/tx-button'
 import { formatUsdc } from '@/lib/format'
 import { useLemonTransfer, type LemonDirection } from '@/hooks/useLemonTransfer'
 
-interface LemonAccountCardProps {
-  /** Ceiling for the outbound direction. The inbound one has no ceiling we can know: the SDK
-   * exposes no read of the Lemon account balance. */
+interface LemonAccountProps {
+  /** Ceiling for the outbound direction, and the balance shown. The inbound one has no ceiling
+   * we can know: the SDK exposes no read of the Lemon account balance. */
   walletUsdc: bigint
   /** USDC a withdrawal left parked in the wallet. Used only to prefill the outbound amount — the
-   * tank on this screen already shows the money, so it needs no banner shouting about it. */
+   * balance right here already shows the money, so it needs no banner shouting about it. */
   pendingAmount: bigint | null
   /** Called after a successful send, to forget a parked amount that has now left. */
   onSent: () => void
   onDone: () => void
 }
 
+/** Radix Tabs needs a value; this one matches no trigger, so the block opens collapsed. */
+const NONE = 'none'
+
+const TAB_TRIGGER =
+  'h-9 flex-1 gap-1.5 rounded-[8px] px-3 text-sm font-semibold text-[var(--text-secondary)] transition-colors data-[state=active]:bg-[var(--bg-elevated)] data-[state=active]:text-[var(--text-primary)] data-[state=active]:shadow-[0_1px_2px_rgba(0,0,0,0.3)] hover:text-[var(--text-primary)]'
+
 /**
- * Step 1 of two: moving USDC between the user's Lemon account and this mini-app's wallet. A
+ * Moving USDC between the user's Lemon account and this mini-app's wallet. A
  * different boundary from the pool below — the SDK crosses this one, the chain crosses that one —
- * which is why it is its own card and not another position on the slider.
+ * which is why it is its own region above the ring, present on both steps of the home: bringing
+ * money in comes before having a strategy, and must not slide away with the allocation step.
  *
  * Deliberately not chained into the pool deposit. `deposit()` can return PENDING with the funds
  * still in flight, so auto-firing an on-chain deposit behind it would revert against a wallet that
  * is about to be funded. Two visible steps beat one that fails for reasons the user cannot see.
  */
-export function LemonAccountCard({
-  walletUsdc,
-  pendingAmount,
-  onSent,
-  onDone,
-}: LemonAccountCardProps) {
+export function LemonAccount({ walletUsdc, pendingAmount, onSent, onDone }: LemonAccountProps) {
   const [direction, setDirection] = useState<LemonDirection | null>(null)
   const [amount, setAmount] = useState(0n)
   const { phase, isBusy, bringFromLemon, sendToLemon, reset } = useLemonTransfer()
@@ -55,66 +56,66 @@ export function LemonAccountCard({
     onDone()
   }
 
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-3 p-4">
-        <span className="kicker">
-          Paso 1 · Tu cuenta Lemon
-        </span>
+  const panel = (dir: LemonDirection) => (
+    <TabsContent value={dir} className="flex flex-col gap-3 pt-1">
+      <AmountInput value={amount} onChange={setAmount} />
+      <p className="text-xs text-[var(--text-secondary)]">
+        {dir === 'in'
+          ? 'De tu cuenta de Lemon a la wallet de la mini-app. Cuánto tenés en Lemon lo ves en su pantalla de confirmación: la mini-app no puede leer ese saldo.'
+          : `De la wallet de la mini-app a tu cuenta de Lemon. Disponible: $${formatUsdc(walletUsdc)}.`}
+      </p>
+      <TxButton
+        label={dir === 'in' ? 'Traer de Lemon' : 'Enviar a Lemon'}
+        stage={toButtonStage(phase ?? null, 'idle')}
+        disabled={amount === 0n || (dir === 'out' && amount > walletUsdc)}
+        onClick={() => run(dir)}
+      />
+    </TabsContent>
+  )
 
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant={direction === 'in' ? 'default' : 'outline'}
-            className="flex-1"
-            disabled={isBusy}
-            onClick={() => setDirection(direction === 'in' ? null : 'in')}
-          >
+  return (
+    <Tabs
+      value={direction ?? NONE}
+      onValueChange={(next) => setDirection(next === NONE ? null : (next as LemonDirection))}
+      className="flex flex-col gap-3"
+    >
+      <span className="kicker">Tu cuenta Lemon</span>
+
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-col">
+          <span className="font-mono text-2xl font-semibold tabular-nums leading-none text-[var(--text-primary)]">
+            ${formatUsdc(walletUsdc)}
+          </span>
+          <span className="mt-1 text-xs text-[var(--text-secondary)]">en la mini-app</span>
+        </div>
+        {/* Segmented control, 44px tall: two directions of one boundary, not two features. */}
+        <TabsList className="h-11 shrink-0 gap-0.5 rounded-[10px] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-1">
+          <TabsTrigger value="in" className={TAB_TRIGGER} disabled={isBusy}>
             <ArrowDownLeft className="size-4" aria-hidden="true" />
             Traer
-          </Button>
-          <Button
-            type="button"
-            variant={direction === 'out' ? 'default' : 'outline'}
-            className="flex-1"
-            disabled={isBusy}
-            onClick={() => setDirection(direction === 'out' ? null : 'out')}
-          >
+          </TabsTrigger>
+          <TabsTrigger value="out" className={TAB_TRIGGER} disabled={isBusy}>
             <ArrowUpRight className="size-4" aria-hidden="true" />
             Enviar
-          </Button>
-        </div>
+          </TabsTrigger>
+        </TabsList>
+      </div>
 
-        {direction !== null && (
-          <>
-            <AmountInput value={amount} onChange={setAmount} />
-            <p className="text-xs text-[var(--text-secondary)]">
-              {direction === 'in'
-                ? 'De tu cuenta de Lemon a la wallet de la mini-app. Cuánto tenés en Lemon lo ves en su pantalla de confirmación: la mini-app no puede leer ese saldo.'
-                : `De la wallet de la mini-app a tu cuenta de Lemon. Disponible: $${formatUsdc(walletUsdc)}.`}
-            </p>
-            <TxButton
-              label={direction === 'in' ? 'Traer de Lemon' : 'Enviar a Lemon'}
-              stage={toButtonStage(phase ?? null, 'idle')}
-              disabled={amount === 0n || (direction === 'out' && amount > walletUsdc)}
-              onClick={() => run(direction)}
-            />
-          </>
-        )}
+      {panel('in')}
+      {panel('out')}
 
-        {phase && (phase.kind === 'partial' || phase.kind === 'timeout') && (
-          <TransactionState
-            phase={phase}
-            onPrimary={() => direction && run(direction)}
-            onSecondary={reset}
-            summary={
-              <>
-                {direction === 'in' ? 'Traés' : 'Enviás'} ${formatUsdc(amount)} USDC
-              </>
-            }
-          />
-        )}
-      </CardContent>
-    </Card>
+      {phase && (phase.kind === 'partial' || phase.kind === 'timeout') && (
+        <TransactionState
+          phase={phase}
+          onPrimary={() => direction && run(direction)}
+          onSecondary={reset}
+          summary={
+            <>
+              {direction === 'in' ? 'Traés' : 'Enviás'} ${formatUsdc(amount)} USDC
+            </>
+          }
+        />
+      )}
+    </Tabs>
   )
 }
