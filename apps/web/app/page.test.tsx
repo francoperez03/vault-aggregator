@@ -70,10 +70,8 @@ describe('HomePositionView', () => {
     expect(screen.queryByRole('link', { name: 'Definí tu estrategia' })).not.toBeInTheDocument()
   })
 
-  it('MOCK_FUNDED: shows the total, the protocol breakdown, and only the rebalance action', () => {
+  it('MOCK_FUNDED: shows the protocol breakdown and only the rebalance action (the total is the page card above)', () => {
     render(<HomePositionView position={MOCK_FUNDED} />)
-    // VFE-02: 6-dp precision, whole and fraction split so the moving part reads apart.
-    expect(screen.getByRole('region', { name: 'Tu posición' })).toHaveTextContent('$10,000.000000')
     expect(screen.getByText('Aave')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Rebalancear' })).toHaveAttribute('href', '/rebalance')
     // Depositar/Retirar are the MoveScreen above this view now, not two more buttons here.
@@ -132,7 +130,8 @@ describe('Page (default export)', () => {
 
     render(<Page />)
 
-    // 6-dp precision via YieldCounter (total + the single morpho row).
+    // 6-dp precision: the position card on top plus the single morpho row.
+    expect(screen.getByRole('region', { name: 'Tu posición' })).toHaveTextContent('$10.000000')
     expect(screen.getAllByText('$10.000000').length).toBeGreaterThan(0)
     // Web: no Lemon account block, and a strategy means a ring.
     expect(screen.queryByText('Tu cuenta Lemon')).not.toBeInTheDocument()

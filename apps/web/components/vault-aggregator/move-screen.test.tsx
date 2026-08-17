@@ -16,6 +16,7 @@ const depositMock = vi.fn()
 const redeemMock = vi.fn()
 
 vi.mock('@/hooks/useUsdcBalance', () => ({ useUsdcBalance: () => useUsdcBalanceMock() }))
+vi.mock('@/hooks/useWalletAddress', () => ({ useWalletAddress: () => '0xA818000000000000000000000000000000061d8' }))
 vi.mock('@/hooks/useVaultPosition', () => ({ useVaultPosition: () => useVaultPositionMock() }))
 vi.mock('@/hooks/useWithdrawFlow', () => ({ useWithdrawFlow: () => useWithdrawFlowMock() }))
 vi.mock('@/hooks/useVaultWrite', () => ({

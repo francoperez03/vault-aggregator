@@ -1,12 +1,14 @@
 'use client'
 
 import { DepositApproveStep } from '@/components/vault-aggregator/deposit-approve-step'
+import { FundHint } from '@/components/vault-aggregator/fund-hint'
 import { MoveSlider } from '@/components/vault-aggregator/move-slider'
 import { formatUsdc } from '@/lib/format'
 import type { MovePreview } from '@/lib/vault/move'
 import { useMoveQueue } from '@/lib/vault/move-queue'
 import { toButtonStage, type TxButtonStage } from '@/components/vault-aggregator/tx-button'
 import { useUsdcBalance } from '@/hooks/useUsdcBalance'
+import { useWalletAddress } from '@/hooks/useWalletAddress'
 import { useVaultPosition } from '@/hooks/useVaultPosition'
 import { useVaultWrite } from '@/hooks/useVaultWrite'
 import { useWithdrawFlow } from '@/hooks/useWithdrawFlow'
@@ -32,6 +34,7 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
   const isLemon = isLemonRuntime ?? isLemonWebView()
   const { hasWeights, totalUsdc, refetch: refetchPosition } = useVaultPosition()
   const { balance, isConnected, refetch: refetchBalance } = useUsdcBalance()
+  const address = useWalletAddress()
   const { redeem, txStage: withdrawTxStage } = useWithdrawFlow()
   const { deposit, txStage: depositTxStage } = useVaultWrite()
   const { enqueue, jobs } = useMoveQueue()
@@ -84,6 +87,9 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
             onMove={handleMove}
           />
           <DepositApproveStep isLemonRuntime={isLemon} amount={balance} />
+          {/* Web with nothing to move: say how money gets here. Inside Lemon the account block
+              above already is the way in. */}
+          {!isLemon && balance === 0n && totalUsdc === 0n && address && <FundHint address={address} />}
         </>
       )}
     </div>

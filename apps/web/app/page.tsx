@@ -97,8 +97,6 @@ interface HomePositionViewProps {
    * working: absent → the total falls back to `position.totalUsdc` flat, rows to their static
    * `valueUsdc` (see `ProtocolBreakdown`). */
   yieldByAdapter?: UseVaultYieldResult['perAdapter']
-  totalDisplayedUsdc?: bigint
-  totalState?: 'flat' | 'up' | 'down'
 }
 
 /** Composes the home route's three entry states (D-13/D-14/D-26). Plan 08 swaps the `position`
@@ -108,8 +106,6 @@ export function HomePositionView({
   position,
   onRebalance,
   yieldByAdapter,
-  totalDisplayedUsdc,
-  totalState = 'flat',
 }: HomePositionViewProps) {
   const weightedAdapterCount = ADAPTER_IDS.filter((id) => position.perAdapter[id].weightBps > 0).length
   const isFunded = position.totalUsdc > 0n
@@ -120,11 +116,6 @@ export function HomePositionView({
     <div className="px-4 pt-6">
       {isFunded ? (
         <>
-          <PositionSummary
-            displayedValueUsdc={totalDisplayedUsdc ?? position.totalUsdc}
-            state={totalState}
-            ratePerSecond={Object.values(yieldByAdapter ?? {}).reduce((sum, e) => sum + (e?.rate ?? 0), 0)}
-          />
           <Card className="mb-4 px-4 py-4">
             <CardContent className="p-0">
               <ProtocolBreakdown position={position} yieldByAdapter={yieldByAdapter} />
@@ -390,14 +381,21 @@ export default function Page() {
             <div className="w-1/2" aria-hidden={step === 'rebalance'}>
               {/* Move first, position second: the reason to open the app is to put money in or
                   take it out; the position is what you check on the way past. */}
+              {/* The money first, always — $0 included: the card is where the position lives,
+                  and a user with nothing yet still needs to see where the number will appear. */}
+              <div className="px-4">
+                <PositionSummary
+                  displayedValueUsdc={vaultYield.totalDisplayedUsdc}
+                  state={deriveTotalState(vaultYield.perAdapter)}
+                  ratePerSecond={Object.values(vaultYield.perAdapter).reduce((sum, e) => sum + (e?.rate ?? 0), 0)}
+                />
+              </div>
               <Suspense fallback={null}>
                 <MoveScreen />
               </Suspense>
               <HomePositionView
                 position={toPositionState(vaultPosition, pendingAmount)}
                 yieldByAdapter={vaultYield.perAdapter}
-                totalDisplayedUsdc={vaultYield.totalDisplayedUsdc}
-                totalState={deriveTotalState(vaultYield.perAdapter)}
                 onRebalance={() => setStep('rebalance')}
               />
             </div>
