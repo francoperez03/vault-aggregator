@@ -84,7 +84,7 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
         />
       )}
 
-      {/* Without weights this screen renders nothing extra: the "Todavía no tenés posición"
+      {/* Without weights this screen renders nothing extra: the "Definí tu estrategia"
           card below (HomePositionView) owns the empty state, so a second hint + CTA here was
           the same call to action twice on one screen. */}
       {hasWeights && (
