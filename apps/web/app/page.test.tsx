@@ -17,8 +17,22 @@ vi.mock('@/hooks/useNetworkGuard', () => ({ useNetworkGuard: () => useNetworkGua
 const useVaultPositionMock = vi.fn()
 vi.mock('@/hooks/useVaultPosition', () => ({ useVaultPosition: () => useVaultPositionMock() }))
 
-const useWithdrawFlowMock = vi.fn(() => ({ pendingAmount: null }))
+const useWithdrawFlowMock = vi.fn(() => ({ pendingAmount: null, clearPending: vi.fn() }))
 vi.mock('@/hooks/useWithdrawFlow', () => ({ useWithdrawFlow: () => useWithdrawFlowMock() }))
+
+vi.mock('@/hooks/useUsdcBalance', () => ({
+  useUsdcBalance: () => ({ balance: 4_000_000n, isLoading: false, isConnected: true, refetch: vi.fn() }),
+}))
+
+// The Lemon account block above the ring renders only inside the WebView; flip per test.
+const isLemonWebViewMock = vi.fn(() => false)
+vi.mock('@/lib/lemon/bridge', () => ({
+  isLemonWebView: () => isLemonWebViewMock(),
+  getLemonBridge: () => ({ deposit: vi.fn(), withdraw: vi.fn() }),
+}))
+vi.mock('@/hooks/useLemonTransfer', () => ({
+  useLemonTransfer: () => ({ phase: null, isBusy: false, bringFromLemon: vi.fn(), sendToLemon: vi.fn(), reset: vi.fn() }),
+}))
 
 vi.mock('@/components/wallet-bar', () => ({ WalletBar: () => null }))
 
@@ -120,6 +134,30 @@ describe('Page (default export)', () => {
 
     // 6-dp precision via YieldCounter (total + the single morpho row).
     expect(screen.getAllByText('$10.000000').length).toBeGreaterThan(0)
+    // Web: no Lemon account block, and a strategy means a ring.
+    expect(screen.queryByText('Tu cuenta Lemon')).not.toBeInTheDocument()
+    expect(screen.getByTestId('strategy-ring')).toBeInTheDocument()
+  })
+
+  it('without a strategy there is no ring: the empty wheel was a placeholder, not content', () => {
+    useAccountMock.mockReturnValue({ isConnected: true })
+    useNetworkGuardMock.mockReturnValue({ isWrongNetwork: false, expectedName: 'Sepolia', switchNetwork: vi.fn() })
+    useVaultPositionMock.mockReturnValue({ perAdapter: {}, totalUsdc: 0n, hasWeights: false, isLoading: false, refetch: vi.fn() })
+    render(<Page />)
+    expect(screen.queryByTestId('strategy-ring')).not.toBeInTheDocument()
+  })
+
+  it('inside Lemon the account block sits above the rail with the mini-app balance and the two tabs', async () => {
+    isLemonWebViewMock.mockReturnValue(true)
+    useAccountMock.mockReturnValue({ isConnected: true })
+    useNetworkGuardMock.mockReturnValue({ isWrongNetwork: false, expectedName: 'Sepolia', switchNetwork: vi.fn() })
+    useVaultPositionMock.mockReturnValue({ perAdapter: {}, totalUsdc: 0n, hasWeights: false, isLoading: false, refetch: vi.fn() })
+    render(<Page />)
+    expect(await screen.findByText('Tu cuenta Lemon')).toBeInTheDocument()
+    expect(screen.getByText('$4.00')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Traer' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Enviar' })).toBeInTheDocument()
+    isLemonWebViewMock.mockReturnValue(false)
   })
 
   it('a pending amount no longer triggers a banner: it lives in the wallet tank and in the Lemon send', () => {

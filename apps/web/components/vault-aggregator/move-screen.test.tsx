@@ -109,38 +109,12 @@ describe('MoveScreen', () => {
     expect(screen.getByRole('button', { name: 'Retirar $50.00' })).toBeEnabled()
   })
 
-  it('hides the Lemon card outside Lemon', () => {
-    setup()
-    render(<MoveScreen isLemonRuntime={false} />)
-    expect(screen.queryByText(/Tu cuenta Lemon/)).not.toBeInTheDocument()
-  })
-
-  it('shows the Lemon card inside Lemon', () => {
-    setup()
-    render(<MoveScreen isLemonRuntime />)
-    expect(screen.getByText(/Tu cuenta Lemon/)).toBeInTheDocument()
-  })
-
-  it('parked money seeds the Lemon send instead of a banner: the wallet tank already shows it', () => {
-    setup({ pendingAmount: 4n * U })
-    render(<MoveScreen isLemonRuntime />)
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar' }))
-    expect(screen.getByRole('textbox')).toHaveValue('4.00')
-  })
-
   it('renders no move UI and NO duplicate CTA without a strategy — the position card owns the empty state', () => {
     setup({ hasWeights: false })
     render(<MoveScreen />)
     expect(screen.queryByRole('link', { name: 'Definí tu estrategia' })).not.toBeInTheDocument()
     expect(screen.queryByText(/no definiste/)).not.toBeInTheDocument()
     expect(screen.queryByRole('slider')).not.toBeInTheDocument()
-  })
-
-  it('keeps the Lemon account card without a strategy: bringing money in is still step 1', () => {
-    setup({ hasWeights: false })
-    render(<MoveScreen isLemonRuntime />)
-    expect(screen.getByText(/Tu cuenta Lemon/)).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Definí tu estrategia' })).not.toBeInTheDocument()
   })
 
   it('renders nothing without a connected wallet', () => {

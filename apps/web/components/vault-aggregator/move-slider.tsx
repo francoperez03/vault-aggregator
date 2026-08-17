@@ -51,8 +51,8 @@ interface MoveSliderProps {
   busy?: boolean
   /** The CTA's transaction lifecycle stage (see TxButton). */
   stage?: TxButtonStage
-  /** Rendered above the jars. Set only where the Lemon step exists, so a browser user never reads
-   * "Paso 2" with no step 1 anywhere on screen. */
+  /** Rendered above the jars. Set only inside Lemon, where the account block above owns its own
+   * kicker and this one names the second region. */
   stepLabel?: string
   onMove: (preview: MovePreview) => void
 }

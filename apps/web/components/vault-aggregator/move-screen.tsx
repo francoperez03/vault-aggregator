@@ -1,7 +1,6 @@
 'use client'
 
 import { DepositApproveStep } from '@/components/vault-aggregator/deposit-approve-step'
-import { LemonAccountCard } from '@/components/vault-aggregator/lemon-account-card'
 import { MoveSlider } from '@/components/vault-aggregator/move-slider'
 import { formatUsdc } from '@/lib/format'
 import type { MovePreview } from '@/lib/vault/move'
@@ -19,9 +18,8 @@ interface MoveScreenProps {
 }
 
 /**
- * Everything that moves money, in the order the money moves: the Lemon account on top (only
- * reachable through the SDK, so only rendered inside Lemon), then the wallet and the pool with one
- * slider between them.
+ * The wallet and the pool with one slider between them. The Lemon account (only reachable through
+ * the SDK) lives above the ring on the page itself, so it stays put when this rail slides.
  *
  * The slider carries both directions because deposit and withdrawal are the same decision — how
  * much of my USDC should be earning — and two separate screens made the user do the subtraction.
@@ -34,7 +32,7 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
   const isLemon = isLemonRuntime ?? isLemonWebView()
   const { hasWeights, totalUsdc, refetch: refetchPosition } = useVaultPosition()
   const { balance, isConnected, refetch: refetchBalance } = useUsdcBalance()
-  const { pendingAmount, redeem, clearPending, txStage: withdrawTxStage } = useWithdrawFlow()
+  const { redeem, txStage: withdrawTxStage } = useWithdrawFlow()
   const { deposit, txStage: depositTxStage } = useVaultWrite()
   const { enqueue, jobs } = useMoveQueue()
 
@@ -73,17 +71,6 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
 
   return (
     <div className="flex flex-col gap-5 px-4 pt-[calc(1rem+env(safe-area-inset-top))]">
-      {/* Hidden outside Lemon: the SDK is the only way across this boundary, so the buttons would
-          be decoration anywhere else. Parked money still shows — it is sitting in the wallet tank. */}
-      {isLemon && (
-        <LemonAccountCard
-          walletUsdc={balance}
-          pendingAmount={pendingAmount}
-          onSent={clearPending}
-          onDone={refetchAll}
-        />
-      )}
-
       {/* Without weights this screen renders nothing extra: the "Definí tu estrategia"
           card below (HomePositionView) owns the empty state, so a second hint + CTA here was
           the same call to action twice on one screen. */}
@@ -92,7 +79,7 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
           <MoveSlider
             walletUsdc={balance}
             poolUsdc={totalUsdc}
-            stepLabel={isLemon ? 'Paso 2 · Poner a rendir' : undefined}
+            stepLabel={isLemon ? 'Poner a rendir' : undefined}
             stage={sliderStage}
             onMove={handleMove}
           />
