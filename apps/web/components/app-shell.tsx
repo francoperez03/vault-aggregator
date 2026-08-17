@@ -10,7 +10,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col">
       <ConfigErrorBanner />
-      <main className="flex-1 pb-8">{children}</main>
+      <main className="flex flex-1 flex-col pb-8">{children}</main>
       <MoveQueueStrip />
       <FaultInjectionPanel />
     </div>

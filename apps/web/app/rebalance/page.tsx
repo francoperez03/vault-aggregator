@@ -8,8 +8,8 @@ import { RebalancePanel } from '@/components/vault-aggregator/rebalance-panel'
 export default function RebalancePage() {
   const router = useRouter()
   return (
-    <main className="min-h-dvh bg-background">
+    <div className="flex flex-1 flex-col bg-background">
       <RebalancePanel onBack={() => router.push('/')} />
-    </main>
+    </div>
   )
 }

@@ -282,14 +282,14 @@ export default function Page() {
 
   if (showLanding) {
     return (
-      <main className="min-h-dvh bg-background">
+      <div className="flex flex-1 flex-col bg-background">
         <Landing />
-      </main>
+      </div>
     )
   }
 
   return (
-    <main className="min-h-dvh bg-background">
+    <div className="flex flex-1 flex-col bg-background">
       <header className="flex items-center justify-between pl-4 pt-[calc(0.5rem+env(safe-area-inset-top))]">
         <VaultyWordmark compact />
         <WalletBar />
@@ -297,11 +297,19 @@ export default function Page() {
       {!isConnected ? (
         // Inside Lemon this is the SIWE handshake in progress (a failed one puts a retry in the
         // header); a blank column read as "nothing loads" in QA.
-        <div className="px-4 pt-8">
+        // Locked to the viewport: a short handshake state that scrolls reads as a broken page.
+        <div className="flex flex-1 flex-col items-center justify-center gap-5 px-4">
           {mounted && isLemonWebView() && (
-            <p className="text-center text-sm text-[var(--text-secondary)]" aria-live="polite">
-              Conectando tu cuenta Lemon…
-            </p>
+            <>
+              <span className="lemon-handshake" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              <p className="text-center text-[15px] text-[var(--text-secondary)]" aria-live="polite">
+                Conectando con tu cuenta de Lemon
+              </p>
+            </>
           )}
         </div>
       ) : isWrongNetwork ? (
@@ -375,6 +383,6 @@ export default function Page() {
           </div>
         </>
       )}
-    </main>
+    </div>
   )
 }
