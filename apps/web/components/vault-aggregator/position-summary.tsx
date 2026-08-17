@@ -31,7 +31,7 @@ export function PositionSummary({ displayedValueUsdc, state, ratePerSecond = 0, 
       aria-label="Tu posición"
       className={cn(
         'relative overflow-hidden rounded-[16px] border border-[var(--border-default)] px-5 py-5',
-        'bg-gradient-to-br from-[#111C2A] to-[#0D1420]',
+        '[background:var(--surface-card)]',
         // Two soft radials, brand top-left and yield bottom-right: the card's own ambient, the
         // same language as the page background but concentrated where the money is.
         'before:pointer-events-none before:absolute before:-left-20 before:-top-20 before:size-60 before:rounded-full before:bg-[radial-gradient(circle,var(--brand-glow)_0%,transparent_70%)]',

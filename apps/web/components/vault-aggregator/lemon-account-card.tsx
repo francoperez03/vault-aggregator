@@ -87,7 +87,7 @@ export function LemonAccount({ walletUsdc, pendingAmount, onSent, onDone }: Lemo
           </span>
         </div>
         {/* Segmented control, 44px tall: two directions of one boundary, not two features. */}
-        <TabsList className="h-11 shrink-0 gap-0.5 rounded-[10px] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-1">
+        <TabsList className="h-11 shrink-0 gap-0.5 rounded-[10px] border border-[var(--border-default)] bg-[var(--bg-base)]/60 p-1">
           <TabsTrigger value="in" className={TAB_TRIGGER} disabled={isBusy}>
             <ArrowDownLeft className="size-4" aria-hidden="true" />
             Traer

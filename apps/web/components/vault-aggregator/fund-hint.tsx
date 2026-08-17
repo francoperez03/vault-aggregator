@@ -30,7 +30,7 @@ export function FundHint({ address }: { address: `0x${string}` }) {
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-[12px] border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3 text-sm">
+    <div className="flex flex-col gap-2 rounded-[12px] border border-[var(--border-default)] [background:var(--surface-card)] px-4 py-3 text-sm">
       <p className="text-[var(--text-secondary)]">
         Para empezar, mandá USDC en {getChainLabel(chainId)} a esta wallet:
       </p>

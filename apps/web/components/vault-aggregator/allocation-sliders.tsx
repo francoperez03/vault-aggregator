@@ -37,7 +37,7 @@ export function AllocationSliders({ value, onChange }: AllocationSlidersProps) {
           the same number twice on one screen. */}
       <span className="kicker">Tu estrategia</span>
 
-      <div className="grid grid-cols-4 gap-2 rounded-[12px] border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 pb-3 pt-4">
+      <div className="grid grid-cols-4 gap-2 rounded-[12px] border border-[var(--border-default)] [background:var(--surface-card)] px-2 pb-3 pt-4">
         {vaults.map((vault) => {
           const pct = value[vault.id] ?? 0
           const color = PROTOCOL_COLOR[vault.id]

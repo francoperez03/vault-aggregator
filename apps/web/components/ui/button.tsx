@@ -26,9 +26,9 @@ const buttonVariants = cva(
         destructive:
           'border border-[var(--danger)]/50 bg-gradient-to-br from-[var(--danger)]/25 to-[var(--danger)]/10 text-[var(--danger)] backdrop-blur-sm shadow-[0_0_16px_rgba(255,77,94,0.3)]',
         outline:
-          'border border-[var(--border-default)] bg-[var(--bg-overlay)]/80 text-[var(--text-primary)] backdrop-blur-md shadow-[0_1px_2px_rgba(0,0,0,0.2)] hover:border-[var(--brand)]/25 hover:shadow-[0_0_10px_var(--brand-ghost)]',
+          'border border-[var(--border-default)] [background:var(--surface-card)] text-[var(--text-primary)] shadow-[0_1px_2px_rgba(0,0,0,0.2)] hover:border-[var(--brand)]/25 hover:shadow-[0_0_10px_var(--brand-ghost)]',
         secondary:
-          'border border-[var(--brand)]/40 bg-gradient-to-b from-[var(--bg-overlay)] to-[var(--bg-elevated)] text-[var(--text-primary)] shadow-[0_0_16px_var(--brand-ghost),0_1px_2px_rgba(0,0,0,0.2)]',
+          'border border-[var(--brand)]/40 [background:var(--surface-card)] text-[var(--text-primary)] shadow-[0_0_16px_var(--brand-ghost),0_1px_2px_rgba(0,0,0,0.2)]',
         ghost: 'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)] hover:text-[var(--text-primary)]',
         link: 'tracking-normal text-[var(--brand)] underline-offset-4 hover:underline',
       },
