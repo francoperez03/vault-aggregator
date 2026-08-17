@@ -8,10 +8,9 @@ Euler) through a single Stylus vault-core contract on Arbitrum.
 
 | Route | Purpose |
 |-------|---------|
-| `/` | Position summary: total balance, per-protocol breakdown, entry points into the other three flows |
-| `/depositar` | Deposit USDC (approve + deposit, two signatures in browser; one Lemon-batched signature in-app) |
-| `/rebalancear` | Set or change the allocation across protocols; bootstraps a zero position or triggers a real rebalance with a cost disclosure |
-| `/retirar` | Two-step withdraw: redeem on-chain to the mini-app's balance, then settle to Lemon |
+| `/` | Money moves (one slider for deposit and withdraw, Lemon account card in-app) above the position summary: total balance, per-protocol breakdown, entry into the allocation step |
+| `/rebalance` | Set or change the allocation across protocols; bootstraps a zero position or triggers a real rebalance with a cost disclosure. On `/` the same panel slides in as a second step |
+| `/mover`, `/depositar`, `/retirar`, `/rebalancear` | Legacy Spanish aliases; they redirect to `/` and `/rebalance` so old links and Lemon deep links keep working |
 
 Every write flow (deposit, rebalance, withdraw step 1, withdraw step 2) renders through the same
 five-state transaction machine: confirm, signing, pending, and a terminal result (success,

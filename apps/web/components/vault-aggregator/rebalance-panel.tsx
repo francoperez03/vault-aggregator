@@ -12,7 +12,7 @@ function bpsToPercent(bps: number): number {
 }
 
 /** The allocation step, wired to the live position. Rendered both as the second panel of the home
- * stepper and as the standalone `/rebalancear` route, which is why the back affordance is a
+ * stepper and as the standalone `/rebalance` route, which is why the back affordance is a
  * callback: sliding back is not the same gesture as navigating back. */
 export function RebalancePanel({
   onBack,

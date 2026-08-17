@@ -7,7 +7,7 @@ import { ADAPTER_IDS } from '@/lib/contracts/config'
  * `useVaultPosition()`'s `sharesOf`/`adapterTotalShares`/`totalAssets` reads per D-21) — this file
  * stays only as a test fixture.
  *
- * `valueUsdc`/`totalUsdc` son unidades atómicas de USDC (6 decimales), nunca `number`.
+ * `valueUsdc`/`totalUsdc` are atomic USDC units (6 decimals), never `number`.
  */
 export interface PositionState {
   perAdapter: Record<

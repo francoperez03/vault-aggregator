@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 describe('useUsdcAllowance', () => {
-  it('lee allowance(user, core) con el core como spender', () => {
+  it('reads allowance(user, core) with the core as spender', () => {
     stubEnv();
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
     useReadContractMock.mockReturnValue({ data: 0n, isLoading: false, refetch: vi.fn() });
@@ -38,7 +38,7 @@ describe('useUsdcAllowance', () => {
     expect(callArgs.args).toEqual([USER_ADDRESS, CORE_ADDRESS]);
   });
 
-  it('needsApproval es true cuando la allowance es menor al monto pedido', () => {
+  it('needsApproval is true when the allowance is below the requested amount', () => {
     stubEnv();
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
     useReadContractMock.mockReturnValue({ data: 50n, isLoading: false, refetch: vi.fn() });
@@ -48,7 +48,7 @@ describe('useUsdcAllowance', () => {
     expect(result.current.needsApproval).toBe(true);
   });
 
-  it('needsApproval es false cuando la allowance ya cubre el monto exacto', () => {
+  it('needsApproval is false when the allowance already covers the exact amount', () => {
     stubEnv();
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
     useReadContractMock.mockReturnValue({ data: 100n, isLoading: false, refetch: vi.fn() });
@@ -58,7 +58,7 @@ describe('useUsdcAllowance', () => {
     expect(result.current.needsApproval).toBe(false);
   });
 
-  it('sin wallet conectada queda enabled: false', () => {
+  it('without a connected wallet stays enabled: false', () => {
     stubEnv();
     useAccountMock.mockReturnValue({ address: undefined });
     useReadContractMock.mockReturnValue({ data: undefined, isLoading: false, refetch: vi.fn() });
@@ -69,7 +69,7 @@ describe('useUsdcAllowance', () => {
     expect(callArgs.query.enabled).toBe(false);
   });
 
-  it('expone refetch para invalidar la lectura después de un depósito', () => {
+  it('exposes refetch to invalidate the read after a deposit', () => {
     stubEnv();
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
     const refetchSpy = vi.fn();

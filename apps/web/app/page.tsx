@@ -70,7 +70,7 @@ function RebalanceCta({
   }
   return (
     <Button asChild size="lg" variant={variant} className={cn('w-full', className)}>
-      <Link href="/rebalancear">{label}</Link>
+      <Link href="/rebalance">{label}</Link>
     </Button>
   )
 }
