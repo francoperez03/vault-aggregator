@@ -1,14 +1,8 @@
 import { getVaults } from '@/lib/vaults'
+import { ProtocolLogo } from '@/components/vault-aggregator/protocol-logo'
 import { YieldCounter } from '@/components/vault-aggregator/yield-counter'
 import type { PositionState } from '@/lib/mock/position'
 import type { AdapterId } from '@/lib/contracts/config'
-
-const PROTOCOL_COLORS: Record<string, string> = {
-  aave: 'var(--aave)',
-  morpho: 'var(--morpho)',
-  fluid: 'var(--fluid)',
-  euler: 'var(--euler)',
-}
 
 type YieldEntry = { displayedValueUsdc: bigint; state: 'flat' | 'up' | 'down' }
 
@@ -46,11 +40,7 @@ export function ProtocolBreakdown({ position, yieldByAdapter }: ProtocolBreakdow
               className="flex items-center justify-between gap-3 rounded-[12px] border border-[var(--border-subtle)] px-3 py-2.5"
             >
               <div className="flex min-w-0 items-center gap-2">
-                <span
-                  className="size-2.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: PROTOCOL_COLORS[vault.id] ?? 'var(--text-secondary)' }}
-                  aria-hidden="true"
-                />
+                <ProtocolLogo id={vault.id} />
                 <span className="truncate text-sm font-semibold text-[var(--text-primary)]">{vault.protocol}</span>
               </div>
               {adapter.unavailable ? (

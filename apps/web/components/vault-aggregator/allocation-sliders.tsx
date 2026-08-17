@@ -3,6 +3,7 @@
 import { Slider } from '@/components/ui/slider'
 import type { AdapterId } from '@/lib/contracts/config'
 import { getVaults } from '@/lib/vaults'
+import { ProtocolLogo } from '@/components/vault-aggregator/protocol-logo'
 import { redistribute, sumBps } from '@/lib/vault/weights'
 
 const PROTOCOL_COLOR: Record<AdapterId, string> = {
@@ -44,8 +45,11 @@ export function AllocationSliders({ value, onChange }: AllocationSlidersProps) {
               className="flex flex-col gap-2 rounded-[12px] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4"
             >
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold" style={{ color: PROTOCOL_COLOR[vault.id] }}>
-                  {vault.protocol}
+                <span className="flex items-center gap-2">
+                  <ProtocolLogo id={vault.id} size={24} />
+                  <span className="text-sm font-semibold" style={{ color: PROTOCOL_COLOR[vault.id] }}>
+                    {vault.protocol}
+                  </span>
                 </span>
                 <span className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">
                   {pct}%
