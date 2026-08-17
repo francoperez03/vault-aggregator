@@ -37,7 +37,7 @@ export function AllocationSliders({ value, onChange }: AllocationSlidersProps) {
           the same number twice on one screen. */}
       <span className="kicker">Tu estrategia</span>
 
-      <div className="grid grid-cols-4 gap-2 rounded-[12px] border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 pb-4 pt-5">
+      <div className="grid grid-cols-4 gap-2 rounded-[12px] border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 pb-3 pt-4">
         {vaults.map((vault) => {
           const pct = value[vault.id] ?? 0
           const color = PROTOCOL_COLOR[vault.id]
@@ -61,7 +61,7 @@ export function AllocationSliders({ value, onChange }: AllocationSlidersProps) {
                 aria-label={`Peso en ${vault.protocol}`}
                 rangeClassName="bg-none"
                 style={{ ['--fader' as string]: color }}
-                className="h-44 [&_[data-slot=slider-range]]:bg-[var(--fader)] [&_[data-slot=slider-range]]:shadow-[0_0_10px_var(--fader)] [&_[data-slot=slider-thumb]]:relative [&_[data-slot=slider-thumb]]:border-[var(--fader)] [&_[data-slot=slider-thumb]]:after:absolute [&_[data-slot=slider-thumb]]:after:-inset-[13px] [&_[data-slot=slider-thumb]]:after:content-['']"
+                className="h-28 [&_[data-slot=slider-range]]:bg-[var(--fader)] [&_[data-slot=slider-range]]:shadow-[0_0_10px_var(--fader)] [&_[data-slot=slider-thumb]]:relative [&_[data-slot=slider-thumb]]:border-[var(--fader)] [&_[data-slot=slider-thumb]]:after:absolute [&_[data-slot=slider-thumb]]:after:-inset-[13px] [&_[data-slot=slider-thumb]]:after:content-['']"
               />
               <div className="flex flex-col items-center gap-1.5">
                 <ProtocolLogo id={vault.id} size={24} />
