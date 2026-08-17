@@ -1,6 +1,7 @@
 'use client';
 
-import { useAccount, useReadContract } from 'wagmi';
+import { useReadContract } from 'wagmi';
+import { useWalletAddress } from '@/hooks/useWalletAddress';
 import { usdcAbi } from '@/lib/contracts/usdcAbi';
 import { getCoreAddress, getUsdcAddress } from '@/lib/contracts/config';
 
@@ -18,7 +19,7 @@ export interface UseUsdcAllowanceResult {
  * approval target exists here, no infinite/lifetime allowance is ever compared (D-08/D-09).
  */
 export function useUsdcAllowance(amount: bigint): UseUsdcAllowanceResult {
-  const { address: user } = useAccount();
+  const user = useWalletAddress();
   const coreAddress = getCoreAddress();
   const usdcAddress = getUsdcAddress();
 

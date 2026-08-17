@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useAccount, usePublicClient } from 'wagmi';
+import { usePublicClient } from 'wagmi';
+import { useWalletAddress } from '@/hooks/useWalletAddress';
 import { usdcAbi } from '@/lib/contracts/usdcAbi';
 import { getUsdcAddress } from '@/lib/contracts/config';
 import { useVaultWrite } from '@/hooks/useVaultWrite';
@@ -63,7 +64,7 @@ interface UseWithdrawFlowResult {
  * (Pitfall 4) — only step 2's SDK call can settle for less than it was asked to move.
  */
 export function useWithdrawFlow(): UseWithdrawFlowResult {
-  const { address } = useAccount();
+  const address = useWalletAddress();
   const publicClient = usePublicClient();
   const usdcAddress = getUsdcAddress();
   const { redeem: redeemOnChain, txStage } = useVaultWrite();

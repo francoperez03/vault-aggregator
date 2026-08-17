@@ -1,6 +1,7 @@
 'use client';
 
-import { useAccount, useReadContracts } from 'wagmi';
+import { useReadContracts } from 'wagmi';
+import { useWalletAddress } from '@/hooks/useWalletAddress';
 import { coreAbi } from '@/lib/contracts/coreAbi';
 import { adapterAbi } from '@/lib/contracts/adapterAbi';
 import { ADAPTER_IDS, getAdapterAddresses, getCoreAddress, type AdapterId } from '@/lib/contracts/config';
@@ -41,7 +42,7 @@ const STALE_TIME_MS = 3_000;
  * vector 12.1 D-10 closed).
  */
 export function useVaultPosition(): VaultPosition {
-  const { address: user } = useAccount();
+  const user = useWalletAddress();
   const coreAddress = getCoreAddress();
   const adapterAddresses = getAdapterAddresses();
   const configuredIds = ADAPTER_IDS.filter((id) => adapterAddresses[id]);

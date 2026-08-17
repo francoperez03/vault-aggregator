@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { animate } from 'animejs'
 import { ArrowLeft, SlidersHorizontal } from 'lucide-react'
-import { useAccount } from 'wagmi'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -20,6 +19,7 @@ import { Landing, VaultyWordmark } from '@/components/landing'
 import { isLemonWebView } from '@/lib/lemon/bridge'
 import { ADAPTER_IDS, type AdapterId } from '@/lib/contracts/config'
 import { useVaultPosition } from '@/hooks/useVaultPosition'
+import { useWalletAddress } from '@/hooks/useWalletAddress'
 import { useVaultYield, type UseVaultYieldResult } from '@/hooks/useVaultYield'
 import { useNetworkGuard } from '@/hooks/useNetworkGuard'
 import { useWithdrawFlow } from '@/hooks/useWithdrawFlow'
@@ -201,7 +201,8 @@ function toPositionState(
 }
 
 export default function Page() {
-  const { isConnected } = useAccount()
+  // SIWE wallet inside Lemon, wagmi account otherwise: wagmi alone never connects in the WebView.
+  const isConnected = Boolean(useWalletAddress())
   const { isWrongNetwork, expectedName, switchNetwork } = useNetworkGuard()
   const vaultPosition = useVaultPosition()
   // VFE-02: turn the already-fetched positions into the live per-second counter. No txNonce is
@@ -294,7 +295,15 @@ export default function Page() {
         <WalletBar />
       </header>
       {!isConnected ? (
-        <div className="px-4 pt-8" />
+        // Inside Lemon this is the SIWE handshake in progress (a failed one puts a retry in the
+        // header); a blank column read as "nothing loads" in QA.
+        <div className="px-4 pt-8">
+          {mounted && isLemonWebView() && (
+            <p className="text-center text-sm text-[var(--text-secondary)]" aria-live="polite">
+              Conectando tu cuenta Lemon…
+            </p>
+          )}
+        </div>
       ) : isWrongNetwork ? (
         <div className="px-4 pt-8">
           <Card className="border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-8 text-center">
