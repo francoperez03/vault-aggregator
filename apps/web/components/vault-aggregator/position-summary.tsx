@@ -1,20 +1,72 @@
-import { YieldCounter } from '@/components/vault-aggregator/yield-counter'
+import { formatUsdcPrecise } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 interface PositionSummaryProps {
   displayedValueUsdc: bigint
   state: 'flat' | 'up' | 'down'
+  /** Summed per-adapter yield rate, atomic USDC units per second (from `useVaultYield`). Zero or
+   * absent hides the earnings row and the APY pill: nothing derived, nothing claimed. */
+  ratePerSecond?: number
 }
 
-/** The route's focal point (14-UI-SPEC §Visual Hierarchy): Display role (28px/600, JetBrains Mono,
- * tabular-nums), state-driven color via `YieldCounter`. 15-UI-SPEC.md §Visual Hierarchy reverses
- * D-26 for this value only: it now ticks per second (VFE-02) instead of being a static read. */
-export function PositionSummary({ displayedValueUsdc, state }: PositionSummaryProps) {
+const SECONDS_PER_YEAR = 365 * 24 * 60 * 60
+
+/** The route's focal point (14-UI-SPEC §Visual Hierarchy), as a card: the total in the Display
+ * role split into whole and fraction (the fraction is what actually moves per second, VFE-02),
+ * a live APY pill and an earnings-per-second row — both derived from the observed on-chain rate,
+ * never from the catalog's placeholder APYs, so they only appear once there is a real rate. */
+export function PositionSummary({ displayedValueUsdc, state, ratePerSecond = 0 }: PositionSummaryProps) {
+  const [whole, fraction] = formatUsdcPrecise(displayedValueUsdc).split('.')
+  const earning = ratePerSecond > 0
+  const usdPerSecond = ratePerSecond / 1_000_000
+  const principal = Number(displayedValueUsdc) / 1_000_000
+  const apy = principal > 0 ? (usdPerSecond * SECONDS_PER_YEAR * 100) / principal : 0
+
   return (
-    <div className="flex flex-col items-center gap-1 py-6 text-center">
-      <span className="kicker">
-        Tu posición
-      </span>
-      <YieldCounter displayedValueUsdc={displayedValueUsdc} state={state} size="total" />
-    </div>
+    <section
+      aria-label="Tu posición"
+      className={cn(
+        'relative mb-4 overflow-hidden rounded-[16px] border border-[var(--border-default)] px-5 py-5',
+        'bg-gradient-to-br from-[#111C2A] to-[#0D1420]',
+        // Two soft radials, brand top-left and yield bottom-right: the card's own ambient, the
+        // same language as the page background but concentrated where the money is.
+        'before:pointer-events-none before:absolute before:-left-20 before:-top-20 before:size-60 before:rounded-full before:bg-[radial-gradient(circle,var(--brand-glow)_0%,transparent_70%)]',
+        'after:pointer-events-none after:absolute after:-bottom-14 after:-right-14 after:size-44 after:rounded-full after:bg-[radial-gradient(circle,var(--yield-glow)_0%,transparent_70%)]',
+      )}
+    >
+      <span className="kicker">Tu posición</span>
+
+      <p
+        className={cn(
+          'yield-counter mt-3 font-mono text-[40px] font-semibold leading-none tabular-nums tracking-[-0.02em]',
+          state === 'down' ? 'text-[var(--warning)]' : 'text-[var(--text-primary)]',
+        )}
+      >
+        ${whole}
+        <span
+          className={cn(
+            'text-[22px]',
+            state === 'up' ? 'text-[var(--yield)]' : state === 'down' ? 'text-[var(--warning)]' : 'text-[var(--text-secondary)]',
+          )}
+        >
+          .{fraction}
+        </span>
+      </p>
+
+      {earning && (
+        <>
+          <span className="apy-pill mt-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--yield)]/25 bg-[var(--yield)]/10 px-3 py-1 font-mono text-[13px] font-semibold text-[var(--yield)]">
+            <span className="apy-dot size-1.5 rounded-full bg-[var(--yield)]" aria-hidden="true" />
+            {apy.toFixed(2)}% APY
+          </span>
+          <div className="mt-4 flex items-center justify-between border-t border-[var(--border-subtle)] pt-3 text-xs">
+            <span className="text-[var(--text-secondary)]">Rendimiento por segundo</span>
+            <span className="font-mono font-semibold tabular-nums text-[var(--yield)]">
+              +${usdPerSecond.toFixed(6)}/s
+            </span>
+          </div>
+        </>
+      )}
+    </section>
   )
 }

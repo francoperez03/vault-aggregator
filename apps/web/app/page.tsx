@@ -120,7 +120,11 @@ export function HomePositionView({
     <div className="px-4 pt-6">
       {isFunded ? (
         <>
-          <PositionSummary displayedValueUsdc={totalDisplayedUsdc ?? position.totalUsdc} state={totalState} />
+          <PositionSummary
+            displayedValueUsdc={totalDisplayedUsdc ?? position.totalUsdc}
+            state={totalState}
+            ratePerSecond={Object.values(yieldByAdapter ?? {}).reduce((sum, e) => sum + (e?.rate ?? 0), 0)}
+          />
           <Card className="mb-4 px-4 py-4">
             <CardContent className="p-0">
               <ProtocolBreakdown position={position} yieldByAdapter={yieldByAdapter} />

@@ -72,8 +72,8 @@ describe('HomePositionView', () => {
 
   it('MOCK_FUNDED: shows the total, the protocol breakdown, and only the rebalance action', () => {
     render(<HomePositionView position={MOCK_FUNDED} />)
-    // VFE-02: the total now renders through YieldCounter at 6-dp precision (formatUsdcPrecise).
-    expect(screen.getByText('$10,000.000000')).toBeInTheDocument()
+    // VFE-02: 6-dp precision, whole and fraction split so the moving part reads apart.
+    expect(screen.getByRole('region', { name: 'Tu posición' })).toHaveTextContent('$10,000.000000')
     expect(screen.getByText('Aave')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Rebalancear' })).toHaveAttribute('href', '/rebalance')
     // Depositar/Retirar are the MoveScreen above this view now, not two more buttons here.
