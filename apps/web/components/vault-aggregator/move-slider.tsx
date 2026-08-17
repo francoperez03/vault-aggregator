@@ -25,7 +25,7 @@ function Jar({ label, amount, pct, color, emphasis }: JarProps) {
       {/* Sentence case, not a kicker: two tanks side by side with their own uppercase labels was
           the eyebrow reflex — one kicker per region is the rule (DESIGN.md). */}
       <span className="text-sm font-medium text-[var(--text-secondary)]">{label}</span>
-      <div className="chamfer relative h-32 w-full overflow-hidden border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-void)]">
+      <div className="rounded-[12px] relative h-32 w-full overflow-hidden border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-void)]">
         <div
           className="absolute inset-x-0 bottom-0 transition-[height] duration-[var(--dur-base)] ease-[var(--ease-snap)]"
           style={{
@@ -72,9 +72,12 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stage = 'idle', stepLab
 
   const effectiveBps = targetPct === null ? restBps : BigInt(targetPct) * 100n
   const preview = previewMove(walletUsdc, poolUsdc, effectiveBps)
-  const poolPct = total === 0n ? 0 : Number((preview.poolUsdc * 100n) / total)
+  const empty = total === 0n
+  const poolPct = empty ? 0 : Number((preview.poolUsdc * 100n) / total)
+  // Both tanks empty when there is nothing anywhere: a "full" wallet tank over $0.00 lies.
+  const walletPct = empty ? 0 : 100 - poolPct
   const inFlight = stage === 'confirming' || stage === 'pending'
-  const disabled = total === 0n || busy || inFlight
+  const disabled = empty || busy || inFlight
 
   return (
     <div className="flex flex-col gap-4">
@@ -84,7 +87,7 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stage = 'idle', stepLab
         <Jar
           label="En tu wallet"
           amount={preview.walletUsdc}
-          pct={100 - poolPct}
+          pct={walletPct}
           color="var(--text-secondary)"
         />
         <Jar label="En el pool" amount={preview.poolUsdc} pct={poolPct} color="var(--brand)" emphasis />
@@ -102,7 +105,7 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stage = 'idle', stepLab
           type="button"
           variant="outline"
           size="sm"
-          className="chamfer-sm px-3"
+          className="px-3"
           disabled={disabled}
           onClick={() => setTargetPct(0)}
         >
@@ -126,7 +129,7 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stage = 'idle', stepLab
           type="button"
           variant="outline"
           size="sm"
-          className="chamfer-sm px-3"
+          className="px-3"
           disabled={disabled}
           onClick={() => setTargetPct(100)}
         >
@@ -143,7 +146,9 @@ export function MoveSlider({ walletUsdc, poolUsdc, busy, stage = 'idle', stepLab
             ? `Depositar $${formatUsdc(preview.amount)}`
             : preview.kind === 'withdraw'
               ? `Retirar $${formatUsdc(preview.amount)}`
-              : 'Mové la barra'
+              : empty
+                ? 'Sin USDC para mover'
+                : 'Mové la barra'
         }
         stage={stage}
         // At rest the CTA is a hint, not an offer — a full-brand button for a disabled control

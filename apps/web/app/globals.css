@@ -6,7 +6,7 @@
 /* ── Vault Aggregator Design System ──
  *
  * Shares CoinFlip's visual language (same program, same client): near-black canvas with an ambient
- * cyan drift, cyan for identity, electric blue for actions, chamfered surfaces, glow instead of
+ * cyan drift, cyan for identity, electric blue for actions, rounded surfaces, glow instead of
  * shadow. Ported from `coinflip/apps/web/app/globals.css`, which is the real system — that repo's
  * DESIGN_SYSTEM.md is stale and must not be used as a source.
  *
@@ -60,25 +60,6 @@
   --tracking-eyebrow: 0.12em;
   --tracking-label: 0.08em;
 
-  /* Chamfer: two opposite corners cut. The signature shape — no soft radius anywhere it applies. */
-  --chamfer: 10px;
-  --chamfer-clip: polygon(
-    var(--chamfer) 0,
-    100% 0,
-    100% calc(100% - var(--chamfer)),
-    calc(100% - var(--chamfer)) 100%,
-    0 100%,
-    0 var(--chamfer)
-  );
-  --chamfer-sm: 4px;
-  --chamfer-clip-sm: polygon(
-    var(--chamfer-sm) 0,
-    100% 0,
-    100% calc(100% - var(--chamfer-sm)),
-    calc(100% - var(--chamfer-sm)) 100%,
-    0 100%,
-    0 var(--chamfer-sm)
-  );
 
   /* Motion */
   --ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
@@ -112,9 +93,9 @@
   --chart-3: var(--fluid);
   --chart-4: var(--euler);
   --chart-5: var(--yield);
-  /* Radius is 0 by design: surfaces are chamfered (`.chamfer`), not rounded. The scale stays for
-     the few round things left (status dots, the wallet avatar). */
-  --radius: 0;
+  /* Rounded surfaces: 12px on panels, inputs and buttons, 8px on compact controls. Vaulty moves
+     other people's money and reads calmer than CoinFlip's chamfers. */
+  --radius: 12px;
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 14px;
@@ -263,18 +244,6 @@
 }
 
 /* ── Utilities ── */
-
-/* The signature shape. Applied to buttons, panels and inputs; `-sm` for compact controls where a
-   10px cut would eat the whole corner. */
-.chamfer {
-  border-radius: 0;
-  clip-path: var(--chamfer-clip);
-}
-
-.chamfer-sm {
-  border-radius: 0;
-  clip-path: var(--chamfer-clip-sm);
-}
 
 /* The brand kicker. One per screen region — never one per element (see DESIGN.md). */
 .kicker {

@@ -57,9 +57,10 @@ uppercase micro-label on every element is AI grammar, not voice.
 
 ## Shape and depth
 
-- **Chamfer, not radius.** `.chamfer` (10px, two opposite corners) on buttons, panels and inputs;
-  `.chamfer-sm` (4px) on compact controls where a 10px cut would eat the corner. `--radius: 0`
-  globally so shadcn primitives stop fighting it.
+- **Rounded, 12px.** Panels, inputs and buttons share `rounded-[12px]`; compact controls (queue
+  chips, step numbers) use 8px; the split bar and dots are pills. `--radius: 12px` so shadcn
+  primitives follow. This is the one deliberate departure from CoinFlip's chamfer: Vaulty moves
+  other people's money and reads calmer with soft corners.
 - **Borders are 1.5px.** `--border-subtle` for panels, `--border-default` for inputs,
   `--action` for buttons.
 - **Glow, never a diffuse shadow.** `0 0 16px var(--action-glow)` on button hover, `0 0 12px` on

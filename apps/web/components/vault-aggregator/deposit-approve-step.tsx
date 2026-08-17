@@ -15,6 +15,9 @@ interface DepositApproveStepProps {
 export function DepositApproveStep({ isLemonRuntime, amount }: DepositApproveStepProps) {
   const { needsApproval } = useUsdcAllowance(amount)
 
+  // Nothing to approve, nothing to say: an "approved · $0.00" line under a disabled slider is noise.
+  if (amount === 0n) return null
+
   if (isLemonRuntime) {
     return (
       <p className="text-sm text-[var(--text-secondary)]">
