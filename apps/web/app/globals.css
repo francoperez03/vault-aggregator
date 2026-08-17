@@ -288,7 +288,9 @@ body::after {
 body::before {
   content: '';
   position: fixed;
-  inset: 0;
+  /* Bleeds past the viewport: grainDrift translates this layer up to 1.5%, and a layer that is
+     exactly viewport-sized shows a bare strip at the edge it moves away from. */
+  inset: -4%;
   z-index: 0;
   pointer-events: none;
   opacity: 0.035;

@@ -70,28 +70,23 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
     })
   }
 
-  if (!isConnected) return null
+  // Without weights there is nothing to move into: the position block below owns that state, and
+  // an empty padded container here only pushed it down.
+  if (!isConnected || !hasWeights) return null
 
   return (
-    <div className="flex flex-col gap-5 px-4 pt-[calc(1rem+env(safe-area-inset-top))]">
-      {/* Without weights this screen renders nothing extra: the "Definí tu estrategia"
-          card below (HomePositionView) owns the empty state, so a second hint + CTA here was
-          the same call to action twice on one screen. */}
-      {hasWeights && (
-        <>
-          <MoveSlider
-            walletUsdc={balance}
-            poolUsdc={totalUsdc}
-            stepLabel={isLemon ? 'Poner a rendir' : undefined}
-            stage={sliderStage}
-            onMove={handleMove}
-          />
-          <DepositApproveStep isLemonRuntime={isLemon} amount={balance} />
-          {/* Web with nothing to move: say how money gets here. Inside Lemon the account block
-              above already is the way in. */}
-          {!isLemon && balance === 0n && totalUsdc === 0n && address && <FundHint address={address} />}
-        </>
-      )}
+    <div className="flex flex-col gap-5 px-4 pt-2">
+      <MoveSlider
+        walletUsdc={balance}
+        poolUsdc={totalUsdc}
+        stepLabel={isLemon ? 'Poner a rendir' : undefined}
+        stage={sliderStage}
+        onMove={handleMove}
+      />
+      <DepositApproveStep isLemonRuntime={isLemon} amount={balance} />
+      {/* Web with nothing to move: say how money gets here. Inside Lemon the account block
+          above already is the way in. */}
+      {!isLemon && balance === 0n && totalUsdc === 0n && address && <FundHint address={address} />}
     </div>
   )
 }
