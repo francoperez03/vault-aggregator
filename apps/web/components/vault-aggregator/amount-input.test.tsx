@@ -32,6 +32,16 @@ describe('AmountInput', () => {
   })
 
   it('treats an emptied field as zero instead of throwing', () => {
-    expect(typeAmount('')).toHaveBeenCalledWith(0n)
+    const onChange = vi.fn()
+    render(<AmountInput value={0n} onChange={onChange} />)
+    const field = screen.getByRole('textbox')
+    fireEvent.change(field, { target: { value: '12' } })
+    fireEvent.change(field, { target: { value: '' } })
+    expect(onChange).toHaveBeenLastCalledWith(0n)
+  })
+
+  it('opens empty at zero, showing only the placeholder', () => {
+    render(<AmountInput value={0n} onChange={vi.fn()} />)
+    expect(screen.getByRole('textbox')).toHaveValue('')
   })
 })

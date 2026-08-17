@@ -61,8 +61,8 @@ export function LemonAccount({ walletUsdc, pendingAmount, onSent, onDone }: Lemo
       <AmountInput value={amount} onChange={setAmount} />
       <p className="text-xs text-[var(--text-secondary)]">
         {dir === 'in'
-          ? 'De tu cuenta de Lemon a la wallet de la mini-app. Cuánto tenés en Lemon lo ves en su pantalla de confirmación: la mini-app no puede leer ese saldo.'
-          : `De la wallet de la mini-app a tu cuenta de Lemon. Disponible: $${formatUsdc(walletUsdc)}.`}
+          ? 'Lemon te muestra tu saldo y te pide confirmar.'
+          : `Máximo $${formatUsdc(walletUsdc)}. Llega a tu cuenta de Lemon al instante.`}
       </p>
       <TxButton
         label={dir === 'in' ? 'Traer de Lemon' : 'Enviar a Lemon'}

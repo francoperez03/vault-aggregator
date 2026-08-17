@@ -25,6 +25,10 @@
   /* The money card's surface, and since it is the reference surface now, every raised panel's:
      cards, outline buttons, the fader deck, hints. One gradient, one border. */
   --surface-card: linear-gradient(135deg, #111C2A 0%, #0D1420 100%);
+  /* The primary action's fill: brand-dim into action, the same cyan-to-blue the card's radial
+     carries, so the one thing you can press belongs to the same light as the money. */
+  --surface-action: linear-gradient(135deg, #0B7FC4 0%, #0160E4 100%);
+  --surface-action-glow: rgba(11, 127, 196, 0.35);
   /* Borders */
   --border-subtle: #1F2733;
   --border-default: #2A3444;

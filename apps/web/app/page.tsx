@@ -249,19 +249,46 @@ export default function Page() {
   // The rail slides under the fixed ring; anime drives it so the motion shares the ring's easing
   // language instead of a parallel CSS timing.
   const railRef = useRef<HTMLDivElement>(null)
+  const moveColRef = useRef<HTMLDivElement>(null)
+  const rebalanceColRef = useRef<HTMLDivElement>(null)
+  const prevStepRef = useRef<'move' | 'rebalance' | null>(null)
   useEffect(() => {
     const rail = railRef.current
-    if (!rail) return
+    const outgoing = step === 'rebalance' ? moveColRef.current : rebalanceColRef.current
+    const incoming = step === 'rebalance' ? rebalanceColRef.current : moveColRef.current
+    if (!rail || !outgoing || !incoming) return
     const to = step === 'rebalance' ? -50 : 0
+    // The rail's first paint (which may come after the SIWE handshake, not at mount) is a load,
+    // not a step change: no choreography, the app just is. Only a real change animates.
+    const prev = prevStepRef.current
+    prevStepRef.current = step
+    if (prev === null || prev === step) return
     if (prefersReducedMotion()) {
       rail.style.transform = `translateX(${to}%)`
+      outgoing.style.opacity = '0'
+      incoming.style.opacity = '1'
+      incoming.style.transform = ''
       return
     }
-    const animation = animate(rail, { translateX: `${to}%`, duration: 550, ease: 'outQuint' })
+    // Slide, and let the two columns trade presence: the one leaving dims and drops back a
+    // touch, the one arriving lifts into place a beat after the rail starts moving.
+    const slide = animate(rail, { translateX: `${to}%`, duration: 600, ease: 'outExpo' })
+    const leave = animate(outgoing, { opacity: 0, scale: 0.98, duration: 260, ease: 'outQuad' })
+    const arrive = animate(incoming, {
+      opacity: [0, 1],
+      translateY: [14, 0],
+      scale: [0.985, 1],
+      delay: 120,
+      duration: 480,
+      ease: 'outQuint',
+    })
     return () => {
-      animation.pause()
+      slide.pause()
+      leave.pause()
+      arrive.pause()
     }
-  }, [step])
+    // isConnected / isWrongNetwork: the rail mounts when they settle, and prevStepRef has to see it.
+  }, [step, isConnected, isWrongNetwork])
 
   // "Volver" fades in above the ring when the allocation step is active; the row keeps its
   // height in both steps so the ring never jumps.
@@ -360,7 +387,7 @@ export default function Page() {
               and dropping the scroll position on the way back. */}
           <div className="overflow-x-hidden">
           <div ref={railRef} className="flex w-[200%]">
-            <div className="w-1/2" aria-hidden={step === 'rebalance'}>
+            <div ref={moveColRef} className="w-1/2" aria-hidden={step === 'rebalance'}>
               {/* Move first, position second: the reason to open the app is to put money in or
                   take it out; the position is what you check on the way past. */}
                   {/* One card, all the money: the position (what is working) on top, and under the
@@ -403,7 +430,7 @@ export default function Page() {
                 onRebalance={() => setStep('rebalance')}
               />
             </div>
-            <div className="w-1/2" aria-hidden={step === 'move'}>
+            <div ref={rebalanceColRef} className="w-1/2 opacity-0" aria-hidden={step === 'move'}>
               {/* No onBack: the shared "Volver" above the ring owns the way back now. */}
               <RebalancePanel onAllocationChange={setDraftAllocation} hideRing />
             </div>

@@ -23,7 +23,9 @@ function sanitize(raw: string): string {
  * ±10 stepper were both removed on request — deposit amounts here are whatever the user has, and
  * a stepper turns "quiero poner 37,5" into four taps and a rounding error. */
 export function AmountInput({ value, onChange, className }: AmountInputProps) {
-  const [text, setText] = useState(() => formatUsdc(value))
+  // Empty at zero: a field that opens on "0.00" makes the user delete before typing, and the
+  // placeholder already shows the shape. A prefilled amount (parked money) still shows.
+  const [text, setText] = useState(() => (value === 0n ? '' : formatUsdc(value)))
 
   function handleChange(raw: string) {
     const next = sanitize(raw)

@@ -17,12 +17,12 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'border border-[var(--action-light)]/25 bg-[var(--action)] text-white shadow-[0_0_12px_var(--action-glow),inset_0_1px_0_rgba(255,255,255,0.08)] hover:border-[var(--action-light)]/45 hover:shadow-[0_0_16px_var(--action-glow),inset_0_1px_0_rgba(255,255,255,0.08)] ' +
+          'border border-[var(--brand)]/30 [background:var(--surface-action)] text-white shadow-[0_0_14px_var(--surface-action-glow),inset_0_1px_0_rgba(255,255,255,0.10)] hover:border-[var(--brand)]/50 hover:shadow-[0_0_20px_var(--surface-action-glow),inset_0_1px_0_rgba(255,255,255,0.10)] ' +
           // One-shot sweep on hover: the system answering a pointer, not decoration on a loop.
           'before:pointer-events-none before:absolute before:inset-0 before:z-[1] before:opacity-0 before:content-[""] before:bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.05)_42%,rgba(255,255,255,0.35)_50%,rgba(255,255,255,0.05)_58%,transparent_100%)] hover:before:animate-[ctaSweep_200ms_linear]',
         /** The committed state: same fill, pressed-in shadow, for a button that is already the chosen path. */
         solid:
-          'border border-[var(--action-light)]/25 bg-[var(--action)] text-white shadow-[inset_0_2px_4px_rgba(0,0,0,0.25),0_0_12px_var(--action-glow)]',
+          'border border-[var(--brand)]/30 [background:var(--surface-action)] text-white shadow-[inset_0_2px_4px_rgba(0,0,0,0.25),0_0_12px_var(--surface-action-glow)]',
         destructive:
           'border border-[var(--danger)]/50 bg-gradient-to-br from-[var(--danger)]/25 to-[var(--danger)]/10 text-[var(--danger)] backdrop-blur-sm shadow-[0_0_16px_rgba(255,77,94,0.3)]',
         outline:
