@@ -59,11 +59,10 @@ export function LemonAccount({ walletUsdc, pendingAmount, onSent, onDone }: Lemo
   const panel = (dir: LemonDirection) => (
     <TabsContent value={dir} className="flex flex-col gap-3 pt-1">
       <AmountInput value={amount} onChange={setAmount} />
-      <p className="text-xs text-[var(--text-secondary)]">
-        {dir === 'in'
-          ? 'Lemon te muestra tu saldo y te pide confirmar.'
-          : `Máximo $${formatUsdc(walletUsdc)}. Llega a tu cuenta de Lemon al instante.`}
-      </p>
+      {/* Outbound needs no caption: the ceiling is the "Disponible" figure right above. */}
+      {dir === 'in' && (
+        <p className="text-xs text-[var(--text-secondary)]">Lemon te muestra tu saldo y te pide confirmar.</p>
+      )}
       <TxButton
         label={dir === 'in' ? 'Traer de Lemon' : 'Enviar a Lemon'}
         stage={toButtonStage(phase ?? null, 'idle')}
