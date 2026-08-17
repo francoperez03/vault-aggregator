@@ -23,8 +23,9 @@ Four pieces:
   protocol behavior is validated separately, directly against Aave/Morpho/Fluid/Euler on Arbitrum
   One (see `docs/RUNBOOK-M2.md`).
 
-There is no `vault-core` deployed on Arbitrum One today: the mainnet adapters were validated
-standalone, driven by an EOA standing in for the core. The Arbitrum Sepolia rig is the first
+Production `vault-core` and `vault-periphery` are live on Arbitrum One since 2026-08-10 (addresses
+and the real-USDC smoke run in `docs/RUNBOOK-M2.md`). Before that, the mainnet adapters were validated
+standalone, driven by an EOA standing in for the core, and the Arbitrum Sepolia rig was the first
 deployment of the core anywhere.
 
 ## Deposit / Rebalance / Two-step Withdraw
