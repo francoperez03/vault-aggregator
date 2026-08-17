@@ -112,7 +112,9 @@ export function HomePositionView({
   const isFunded = position.totalUsdc > 0n
 
   return (
-    <div className="px-4">
+    // Top gap: this sits under MoveScreen (its own gap-5 stack) and needs a section break, not a
+    // component gap, before its kicker.
+    <div className="px-4 pt-6">
       {isFunded ? (
         <>
           <PositionSummary displayedValueUsdc={totalDisplayedUsdc ?? position.totalUsdc} state={totalState} />
@@ -152,7 +154,7 @@ export function HomePositionView({
             variant="outline"
           />
           <p className="text-sm text-[var(--text-secondary)]">
-            Todavía no depositaste. Cuando quieras, usá el control de arriba.
+            Todavía no depositaste. Con USDC en tu wallet, el control de arriba lo reparte así.
           </p>
         </div>
       ) : (
