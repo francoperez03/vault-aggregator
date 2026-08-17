@@ -159,15 +159,20 @@ export function HomePositionView({
           </p>
         </div>
       ) : (
-        <Card className="border-dashed px-4 py-8 text-center">
-          <CardContent className="flex flex-col items-center gap-3 p-0">
-            <h1 className="text-xl font-semibold text-[var(--text-primary)]">Todavía no tenés posición</h1>
-            <p className="text-sm text-[var(--text-secondary)]">
-              Definí tu estrategia y hacé tu primer depósito: se reparte solo entre los protocolos que elijas.
-            </p>
-            <RebalanceCta onRebalance={onRebalance} label="Definí tu estrategia" className="mt-2" />
-          </CardContent>
-        </Card>
+        // Same shape as the saved-strategy block above, minus the chips: kicker, one primary
+        // action, one line of hint. No card, no headline — the gray ring above already says
+        // "nothing here yet".
+        <div className="flex flex-col gap-4">
+          <h2 className="kicker block">Tu estrategia</h2>
+          <RebalanceCta
+            onRebalance={onRebalance}
+            label="Definí tu estrategia"
+            icon={<SlidersHorizontal aria-hidden="true" />}
+          />
+          <p className="text-sm text-[var(--text-secondary)]">
+            Elegís protocolos y porcentajes; el primer depósito se reparte solo.
+          </p>
+        </div>
       )}
     </div>
   )

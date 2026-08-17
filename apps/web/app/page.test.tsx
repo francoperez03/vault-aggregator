@@ -44,7 +44,7 @@ afterEach(cleanup)
 describe('HomePositionView', () => {
   it('MOCK_EMPTY: shows the empty state and the define-strategy CTA', () => {
     render(<HomePositionView position={MOCK_EMPTY} />)
-    expect(screen.getByText('Todavía no tenés posición')).toBeInTheDocument()
+    expect(screen.getByText('Tu estrategia')).toBeInTheDocument()
     // The deposit panel above starts collapsed, so this is the only CTA on screen.
     expect(screen.getByRole('link', { name: 'Definí tu estrategia' })).toHaveAttribute('href', '/rebalance')
   })
