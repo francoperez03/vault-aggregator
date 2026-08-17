@@ -19,6 +19,12 @@ vi.mock('@/hooks/useWithdrawFlow', () => ({ useWithdrawFlow: () => useWithdrawFl
 
 vi.mock('@/components/wallet-bar', () => ({ WalletBar: () => null }))
 
+// The landing pulls the whole wagmi config (RainbowKit + connectors); it has its own concerns.
+vi.mock('@/components/landing', () => ({
+  Landing: () => <div data-testid="landing" />,
+  VaultyWordmark: () => <span>Vaulty</span>,
+}))
+
 // The move actions now sit on top of `/`; they have their own suite (move-screen.test.tsx) and
 // pull the whole wagmi config, which this file deliberately mocks down to two hooks.
 vi.mock('@/components/vault-aggregator/move-screen', () => ({
@@ -74,7 +80,8 @@ describe('Page (default export)', () => {
 
     render(<Page />)
 
-    expect(screen.getByText('Conectá tu wallet')).toBeInTheDocument()
+    // Unconnected web visitors get the landing, never the app's zeros.
+    expect(screen.getByTestId('landing')).toBeInTheDocument()
     expect(screen.queryByText('Todavía no tenés posición')).not.toBeInTheDocument()
   })
 
@@ -86,9 +93,13 @@ describe('Page (default export)', () => {
 
     render(<Page />)
 
-    expect(screen.getByText('Cambiá a Arbitrum Sepolia para continuar.')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Cambiar de red' }))
+    expect(
+      screen.getByText('Tu wallet está en otra red. Cambiá a Arbitrum Sepolia para continuar.'),
+    ).toBeInTheDocument()
+    // The switch prompt fires on its own on arrival (once), and the button retries it.
     expect(switchNetwork).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar de red' }))
+    expect(switchNetwork).toHaveBeenCalledTimes(2)
   })
 
   it('conectada y en la red correcta, arma la posición desde useVaultPosition', () => {

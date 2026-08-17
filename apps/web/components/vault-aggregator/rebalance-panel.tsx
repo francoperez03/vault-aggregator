@@ -14,7 +14,15 @@ function bpsToPercent(bps: number): number {
 /** The allocation step, wired to the live position. Rendered both as the second panel of the home
  * stepper and as the standalone `/rebalancear` route, which is why the back affordance is a
  * callback: sliding back is not the same gesture as navigating back. */
-export function RebalancePanel({ onBack }: { onBack?: () => void }) {
+export function RebalancePanel({
+  onBack,
+  onAllocationChange,
+  hideRing,
+}: {
+  onBack?: () => void
+  onAllocationChange?: (next: Partial<Record<AdapterId, number>>) => void
+  hideRing?: boolean
+}) {
   const vaultPosition = useVaultPosition()
   // D-13: position cero degenerates this step into "definí tu estrategia" over a zero balance.
   const isBootstrap = vaultPosition.totalUsdc === 0n
@@ -46,7 +54,12 @@ export function RebalancePanel({ onBack }: { onBack?: () => void }) {
           Volver
         </button>
       )}
-      <RebalanceView isBootstrap={isBootstrap} initialAllocation={initialAllocation} />
+      <RebalanceView
+        isBootstrap={isBootstrap}
+        initialAllocation={initialAllocation}
+        onAllocationChange={onAllocationChange}
+        hideRing={hideRing}
+      />
     </div>
   )
 }

@@ -1,13 +1,12 @@
 'use client'
 
-import Link from 'next/link'
-import { Button } from '@/components/ui/button'
 import { DepositApproveStep } from '@/components/vault-aggregator/deposit-approve-step'
 import { LemonAccountCard } from '@/components/vault-aggregator/lemon-account-card'
 import { MoveSlider } from '@/components/vault-aggregator/move-slider'
 import { formatUsdc } from '@/lib/format'
 import type { MovePreview } from '@/lib/vault/move'
 import { useMoveQueue } from '@/lib/vault/move-queue'
+import { toButtonStage, type TxButtonStage } from '@/components/vault-aggregator/tx-button'
 import { useUsdcBalance } from '@/hooks/useUsdcBalance'
 import { useVaultPosition } from '@/hooks/useVaultPosition'
 import { useVaultWrite } from '@/hooks/useVaultWrite'
@@ -35,9 +34,21 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
   const isLemon = isLemonRuntime ?? isLemonWebView()
   const { hasWeights, totalUsdc, refetch: refetchPosition } = useVaultPosition()
   const { balance, isConnected, refetch: refetchBalance } = useUsdcBalance()
-  const { pendingAmount, redeem, clearPending } = useWithdrawFlow()
-  const { deposit } = useVaultWrite()
-  const { enqueue } = useMoveQueue()
+  const { pendingAmount, redeem, clearPending, txStage: withdrawTxStage } = useWithdrawFlow()
+  const { deposit, txStage: depositTxStage } = useVaultWrite()
+  const { enqueue, jobs } = useMoveQueue()
+
+  // The slider CTA's lifecycle: while any queued job is unresolved the button is in flight
+  // (confirming vs pending refined by whichever write hook is actually working); once the
+  // latest job settles, its outcome plays the success/error beat and TxButton walks back.
+  const txStage = depositTxStage !== 'idle' ? depositTxStage : withdrawTxStage
+  const activeJob = jobs.find((j) => j.phase.kind === 'signing' || j.phase.kind === 'confirm')
+  const lastJob = jobs.length > 0 ? jobs[jobs.length - 1] : undefined
+  const sliderStage: TxButtonStage = activeJob
+    ? txStage === 'pending'
+      ? 'pending'
+      : 'confirming'
+    : toButtonStage(lastJob?.phase ?? null, txStage)
 
   function refetchAll() {
     refetchPosition()
@@ -73,25 +84,20 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
         />
       )}
 
-      {hasWeights ? (
+      {/* Without weights this screen renders nothing extra: the "Todavía no tenés posición"
+          card below (HomePositionView) owns the empty state, so a second hint + CTA here was
+          the same call to action twice on one screen. */}
+      {hasWeights && (
         <>
           <MoveSlider
             walletUsdc={balance}
             poolUsdc={totalUsdc}
             stepLabel={isLemon ? 'Paso 2 · Poner a rendir' : undefined}
+            stage={sliderStage}
             onMove={handleMove}
           />
           <DepositApproveStep isLemonRuntime={isLemon} amount={balance} />
         </>
-      ) : (
-        <div className="flex flex-col items-center gap-3 py-6 text-center">
-          <p className="text-sm text-[var(--text-secondary)]">
-            Todavía no definiste en qué protocolos invertir.
-          </p>
-          <Button asChild >
-            <Link href="/rebalancear">Definí tu estrategia</Link>
-          </Button>
-        </div>
       )}
     </div>
   )

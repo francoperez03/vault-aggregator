@@ -39,7 +39,9 @@ function writePendingAmount(address: `0x${string}`, amount: bigint | null): void
 }
 
 interface UseWithdrawFlowResult {
-  step: 1 | 2;
+  step: 1 | 2
+  /** The write hook's lifecycle stage while step 1's redeem is in flight (TxButton fuel). */
+  txStage: import('@/hooks/useVaultWrite').TxStage;
   /** Measured in step 1, survives a refresh via localStorage (T-14-10-02). */
   pendingAmount: bigint | null;
   phase: TxPhase;
@@ -64,7 +66,7 @@ export function useWithdrawFlow(): UseWithdrawFlowResult {
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const usdcAddress = getUsdcAddress();
-  const { redeem: redeemOnChain } = useVaultWrite();
+  const { redeem: redeemOnChain, txStage } = useVaultWrite();
 
   const [phase, setPhase] = useState<TxPhase>({ kind: 'confirm' });
   const [pendingAmount, setPendingAmount] = useState<bigint | null>(null);
@@ -180,5 +182,5 @@ export function useWithdrawFlow(): UseWithdrawFlowResult {
     setStep(1);
   }, [address]);
 
-  return { step, pendingAmount, phase, redeem, settleToLemon, acknowledge, clearPending };
+  return { step, pendingAmount, phase, txStage, redeem, settleToLemon, acknowledge, clearPending };
 }

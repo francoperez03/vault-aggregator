@@ -206,3 +206,35 @@ Recovery txs for the two stranded positions (withdrawn with an explicit generous
   which spends the gas and loses the address to the scrollback.
 - The script is resumable: export a `*_ADAPTER_ADDR` to skip that protocol's deploy, and `init`
   is idempotent (an instance that already answers `maxWithdraw()` is skipped).
+
+## Production deployment (2026-08-10)
+
+The real rig: `vault-core` owns the ledger, four fresh adapter instances init'd against it
+(the Phase 9/10 interim instances above stay retired), `vault-periphery` fronts the Lemon
+Permit2 deposits. Owner of the core: the M2 wallet (redeploy is the ownership-change path —
+the core has no transferOwnership by design).
+
+| Contract | Address |
+|---|---|
+| vault-core (owner = M2 wallet) | `0x8a1758d3dd3d1049c43bfb1d1fec11fd403d3553` |
+| vault-periphery (core, Permit2, USDC) | `0x4e69892949f07623f3f59b24ebbb6e7ca2327bbc` |
+| Adapter — Morpho `gtUSDCc` | `0x9aa8886c64d7b3799f676a41ad8bada77f128603` |
+| Adapter — Fluid `fUSDC` | `0xe6f1d13787cb3cc8d0483fdd8a748f9d60ba5110` |
+| Adapter — Euler `eUSDC-2` | `0x5ab92d390895ce6662568585413b42524eeabcfd` |
+| Adapter — Aave `stataArbUSDCn` | `0x156dc816990079917594cf1394389ed918e4ff3c` |
+
+Core deploy tx `0xaebee79de711a0494320a61a4d7872c1b39773accd404e64c96c047cdc146767`;
+periphery via StylusDeployer `0x1f1e2ed568aae2ab98962cf9bd2175fc7035fe29cc8ee9ec1a40559076bbd00d`.
+All four adapters passed the AlreadyInitialized re-init guard; addAdapter × 4 all status 1.
+
+### Mainnet smoke test (real USDC, full cycle, 2026-08-10)
+
+approve → rebalance(40/30/20/10, sets weights) → deposit(1 USDC) → shares landed exactly
+40/30/20/10 across the four real protocols → rebalance(10/20/30/40) → redeem(10000).
+Net cost of the whole cycle: **7 units** (7 millionths of a dollar) of ERC-4626 round-down.
+All adapterTotalShares back to 0 after exit.
+
+**Measured gas (calibrates every client):** deposit 1,604,156 · redeem 1,741,442 ·
+weight-setting rebalance 318,244 · full rebalance 2,607,088. A 2,000,000 limit OOG'd the
+first real rebalance attempt (tx `0xbc118ed6…`, gasUsed == limit) — the frontend and every
+script now pin **6,000,000**; unused gas refunds, the headroom is free.

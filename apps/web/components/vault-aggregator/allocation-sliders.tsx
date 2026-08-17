@@ -1,7 +1,6 @@
 'use client'
 
 import { Slider } from '@/components/ui/slider'
-import { cn } from '@/lib/utils'
 import type { AdapterId } from '@/lib/contracts/config'
 import { getVaults } from '@/lib/vaults'
 import { redistribute, sumBps } from '@/lib/vault/weights'
@@ -27,24 +26,14 @@ interface AllocationSlidersProps {
  * a guard, not as a task: if it ever reads anything but 100, something upstream is wrong. */
 export function AllocationSliders({ value, onChange }: AllocationSlidersProps) {
   const vaults = getVaults()
-  const total = sumBps(value)
-  const isValid = total === 100
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <span className="kicker">
-          Tu estrategia
-        </span>
-        <span
-          className={cn(
-            'font-mono text-sm font-semibold tabular-nums',
-            isValid ? 'text-[var(--yield)]' : 'text-[var(--warning)]',
-          )}
-        >
-          Total: {total}%
-        </span>
-      </div>
+      {/* The total guard lives in the StrategyRing above (100% asignado) — repeating it here was
+          the same number twice on one screen. */}
+      <span className="kicker">
+        Tu estrategia
+      </span>
 
       <div className="flex flex-col gap-3">
         {vaults.map((vault) => {

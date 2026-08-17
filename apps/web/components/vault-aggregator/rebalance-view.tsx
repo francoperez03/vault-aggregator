@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { Check } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { AllocationSliders } from '@/components/vault-aggregator/allocation-sliders'
+import { StrategyRing } from '@/components/vault-aggregator/strategy-ring'
 import { RebalanceCostDisclosure } from '@/components/vault-aggregator/rebalance-cost-disclosure'
+import { TxButton, toButtonStage } from '@/components/vault-aggregator/tx-button'
 import { TransactionState, type TxPhase } from '@/components/vault-aggregator/transaction-state'
 import { normalizeToBps, sumBps } from '@/lib/vault/weights'
 import { type AdapterId } from '@/lib/contracts/config'
@@ -18,6 +19,11 @@ interface RebalanceViewProps {
   /** D-13: with position cero the same route degenerates to writing weights, no cost to disclose. */
   isBootstrap: boolean
   initialAllocation: Partial<Record<AdapterId, number>>
+  /** Mirrors every allocation change (user drags AND chain re-seeds) to a parent that renders
+   * the ring itself — the home stepper's single persistent circle. */
+  onAllocationChange?: (next: Partial<Record<AdapterId, number>>) => void
+  /** True when a parent already owns the StrategyRing (home); the standalone route keeps its own. */
+  hideRing?: boolean
 }
 
 /**
@@ -31,12 +37,21 @@ interface RebalanceViewProps {
  * themselves from the chain as soon as the refetch lands — so a second adjustment starts from what
  * the vault actually holds, not from what was on screen before the transaction.
  */
-export function RebalanceView({ isBootstrap, initialAllocation }: RebalanceViewProps) {
-  const [allocation, setAllocation] = useState(initialAllocation)
+export function RebalanceView({
+  isBootstrap,
+  initialAllocation,
+  onAllocationChange,
+  hideRing = false,
+}: RebalanceViewProps) {
+  const [allocation, setAllocationState] = useState(initialAllocation)
+  const setAllocation = (next: Partial<Record<AdapterId, number>>) => {
+    setAllocationState(next)
+    onAllocationChange?.(next)
+  }
   const [showDisclosure, setShowDisclosure] = useState(false)
   const [phase, setPhase] = useState<TxPhase | null>(null)
   const [confirmed, setConfirmed] = useState(false)
-  const { rebalance } = useVaultWrite()
+  const { rebalance, txStage } = useVaultWrite()
   const { refetch } = useVaultPosition()
 
   const isValid = sumBps(allocation) === 100
@@ -61,10 +76,16 @@ export function RebalanceView({ isBootstrap, initialAllocation }: RebalanceViewP
     setPhase({ kind: 'signing' })
     const result = await rebalance(normalizeToBps(allocation))
     if (result.kind === 'success') {
-      // Back to the sliders immediately; the note carries the outcome while the refetch lands.
-      setPhase(null)
+      // The button holds its success beat while the green note carries the outcome and the
+      // refetch lands; TxButton's onSettled walks the phase back to null.
+      setPhase(result)
       setConfirmed(true)
       refetch()
+      return
+    }
+    if (result.kind === 'rejected') {
+      // Cancelling the wallet sheet is the user's own act — straight back to rest.
+      setPhase(null)
       return
     }
     setPhase(result)
@@ -80,6 +101,7 @@ export function RebalanceView({ isBootstrap, initialAllocation }: RebalanceViewP
 
   return (
     <div className="flex flex-col gap-6 p-4">
+      {!hideRing && <StrategyRing allocation={allocation} />}
       <AllocationSliders value={allocation} onChange={setAllocation} />
 
       {confirmed && (
@@ -89,20 +111,32 @@ export function RebalanceView({ isBootstrap, initialAllocation }: RebalanceViewP
         </p>
       )}
 
-      {phase === null ? (
-        showDisclosure ? (
-          <RebalanceCostDisclosure onConfirm={armAndSign} />
-        ) : (
-          <Button type="button" size="lg" disabled={!isValid} onClick={handlePrimary}>
-            {isBootstrap ? 'Definí tu estrategia' : 'Confirmar rebalanceo'}
-          </Button>
-        )
-      ) : (
+      {/* The whole lifecycle lives in the button: rest → wallet confirm → tx in flight →
+          success/failure → back to normal. The panel survives only for `timeout`, which
+          carries the Arbiscan link the button can't. */}
+      {phase?.kind === 'timeout' ? (
         <TransactionState
           phase={phase}
           onPrimary={() => void armAndSign()}
           onSecondary={() => setPhase(null)}
           summary={<>Estrategia con {sumBps(allocation)}% asignado</>}
+        />
+      ) : showDisclosure && phase === null ? (
+        <RebalanceCostDisclosure onConfirm={armAndSign} />
+      ) : (
+        <TxButton
+          label={isBootstrap ? 'Definí tu estrategia' : 'Confirmar rebalanceo'}
+          successLabel="Estrategia aplicada"
+          stage={toButtonStage(phase, txStage)}
+          disabled={!isValid}
+          onClick={() => {
+            if (phase?.kind === 'reverted') {
+              void armAndSign()
+              return
+            }
+            handlePrimary()
+          }}
+          onSettled={() => setPhase(null)}
         />
       )}
     </div>
