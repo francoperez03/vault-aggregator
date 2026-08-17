@@ -10,8 +10,9 @@ const PROTOCOL_LOGO: Record<AdapterId, string> = {
 
 interface ProtocolLogoProps {
   id: AdapterId
-  /** Rendered box in px; the mark fills it. 20 in rows and legends, 24 on the sliders. */
-  size?: 20 | 24
+  /** Rendered box in px; the mark fills it. 20 in rows and legends, 24 on the sliders, 32 on the
+   * strategy tiles. */
+  size?: 20 | 24 | 32
   className?: string
 }
 
@@ -24,7 +25,7 @@ export function ProtocolLogo({ id, size = 20, className }: ProtocolLogoProps) {
       aria-hidden="true"
       className={cn(
         'inline-flex shrink-0 overflow-hidden rounded-full bg-[var(--bg-elevated)] ring-1 ring-[var(--border-subtle)]',
-        size === 24 ? 'size-6' : 'size-5',
+        size === 32 ? 'size-8' : size === 24 ? 'size-6' : 'size-5',
         className,
       )}
     >

@@ -134,18 +134,36 @@ export function HomePositionView({
         <div className="flex flex-col gap-4">
           <div>
             <h2 className="kicker mb-3 block">Tu estrategia</h2>
-            <ul className="flex flex-wrap gap-x-5 gap-y-2">
+            {/* One tile per protocol: mark, name, and the share as the loudest number, with a bar
+                underneath so the split reads by length before it reads by digits. Two columns
+                keep every tile a comfortable tap-sized block on a 375px phone. */}
+            <ul className="grid grid-cols-2 gap-2">
               {getVaults()
                 .filter((vault) => position.perAdapter[vault.id].weightBps > 0)
-                .map((vault) => (
-                  <li key={vault.id} className="flex items-center gap-2 text-sm">
-                    <ProtocolLogo id={vault.id} />
-                    <span className="font-semibold text-[var(--text-primary)]">{vault.protocol}</span>
-                    <span className="font-mono tabular-nums text-[var(--text-secondary)]">
-                      {position.perAdapter[vault.id].weightBps / 100}%
-                    </span>
-                  </li>
-                ))}
+                .map((vault) => {
+                  const pct = position.perAdapter[vault.id].weightBps / 100
+                  return (
+                    <li
+                      key={vault.id}
+                      className="rounded-[12px] flex flex-col gap-3 border-[1.5px] border-[var(--border-subtle)] [background:var(--surface-card)] px-3.5 py-3"
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <ProtocolLogo id={vault.id} size={32} />
+                        <span className="truncate text-base font-semibold text-[var(--text-primary)]">
+                          {vault.protocol}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <span className="font-mono text-2xl font-semibold tabular-nums leading-none text-[var(--text-primary)]">
+                          {pct}%
+                        </span>
+                        <div className="h-1 w-full overflow-hidden rounded-full bg-[var(--bg-void)]" role="presentation">
+                          <div className="h-full rounded-full bg-[var(--brand)]" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    </li>
+                  )
+                })}
             </ul>
           </div>
           <RebalanceCta
