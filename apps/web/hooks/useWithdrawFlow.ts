@@ -130,12 +130,6 @@ export function useWithdrawFlow(): UseWithdrawFlowResult {
       outcome = await outcome.settle();
     }
 
-    if (outcome.result === 'PENDING') {
-      // Never resolves to `success` on an unresolved PENDING (Pitfall 2/6).
-      setPhase({ kind: 'timeout', txHash: outcome.txHash });
-      return;
-    }
-
     if (outcome.result === 'CANCELLED') {
       setPhase({ kind: 'rejected' });
       return;
@@ -146,9 +140,11 @@ export function useWithdrawFlow(): UseWithdrawFlowResult {
       return;
     }
 
-    // SUCCESS: reconcile what Lemon actually moved against what step 1 measured, never the
-    // requested-at-step-1 amount pre-computed ahead of time.
-    const moved = outcome.amount ?? pendingAmount;
+    // SUCCESS or PENDING: Lemon accepted the transfer and moves the funds itself (PENDING is
+    // "accepted, in flight" on this off-chain boundary, the same reading BananitaSwap ships with;
+    // showing it as a timeout sent users to retry a transfer already under way). Reconcile what
+    // Lemon reports it moved against what step 1 measured, never the requested-at-step-1 amount.
+    const moved = (outcome.result === 'SUCCESS' ? outcome.amount : undefined) ?? pendingAmount;
     const reconciliation = reconcileWithdrawal({
       requested: pendingAmount,
       balanceBefore: pendingAmount,

@@ -144,7 +144,7 @@ describe('useWithdrawFlow.settleToLemon (step 2)', () => {
     });
   });
 
-  it('PENDING that never resolves -> timeout, never success', async () => {
+  it('PENDING (Lemon accepted, funds in flight) -> success and the pending amount is cleared', async () => {
     seedPending(600_000n);
     const pending: LemonTxOutcome = {
       result: 'PENDING',
@@ -158,7 +158,8 @@ describe('useWithdrawFlow.settleToLemon (step 2)', () => {
     await waitFor(() => expect(result.current.pendingAmount).toBe(600_000n));
     await result.current.settleToLemon();
 
-    await waitFor(() => expect(result.current.phase.kind).toBe('timeout'));
+    await waitFor(() => expect(result.current.phase.kind).toBe('success'));
+    expect(result.current.pendingAmount).toBeNull();
   });
 
   it('acknowledge() clears the phase after a partial, without retrying on its own', async () => {
