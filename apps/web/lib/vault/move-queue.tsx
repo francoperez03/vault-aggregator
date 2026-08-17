@@ -55,8 +55,9 @@ export function MoveQueueProvider({ children }: { children: ReactNode }) {
         let phase: TxPhase
         try {
           phase = await next.run()
-        } catch {
-          phase = FAILED
+        } catch (error) {
+          // Keep the thrown message: it is the only trace the user (or we) get of what failed.
+          phase = error instanceof Error && error.message ? { kind: 'reverted', reason: error.message } : FAILED
         }
         setPhase(next.id, phase)
       }

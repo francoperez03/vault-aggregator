@@ -1,6 +1,7 @@
 'use client'
 
-import { Check, Loader2, X } from 'lucide-react'
+import { useState } from 'react'
+import { Check, Copy, Loader2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useMoveQueue } from '@/lib/vault/move-queue'
 
@@ -44,12 +45,18 @@ export function MoveQueueStrip() {
               <Loader2 className="size-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden="true" />
             )}
 
-            <span className="min-w-0 flex-1 truncate">
+            {/* A revert reason is the one thing here the user may need to send someone: it wraps
+                in full and can be copied. Everything else is a single truncated line. */}
+            <span className={cn('min-w-0 flex-1', phase.kind === 'reverted' ? 'break-words' : 'truncate')}>
               {label}
               {failed && phase.kind === 'reverted' ? ` · ${phase.reason}` : ''}
               {failed && phase.kind === 'rejected' ? ' · cancelado' : ''}
               {failed && phase.kind === 'timeout' ? ' · sin confirmar' : ''}
             </span>
+
+            {phase.kind === 'reverted' && phase.reason && (
+              <CopyButton text={`${label} · ${phase.reason}`} label={`Copiar el error de ${label}`} />
+            )}
 
             <button
               type="button"
@@ -63,5 +70,29 @@ export function MoveQueueStrip() {
         )
       })}
     </div>
+  )
+}
+
+/** Copies the error to the clipboard and says so for a moment; no clipboard API (old WebViews)
+ * degrades to a no-op instead of a crash. */
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={async () => {
+        try {
+          await navigator.clipboard?.writeText(text)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        } catch {
+          // ponytail: no fallback path; the text stays visible in the strip to copy by hand.
+        }
+      }}
+      className="shrink-0 rounded p-1 text-[var(--text-secondary)]"
+    >
+      {copied ? <Check className="size-3.5 text-[var(--yield)]" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}
+    </button>
   )
 }
