@@ -46,9 +46,9 @@ describe('HomePositionView', () => {
     expect(screen.getByRole('link', { name: 'Definí tu estrategia' })).toHaveAttribute('href', '/rebalance')
   })
 
-  it('MOCK_WEIGHTS_ONLY: shows "Estrategia guardada" with a way to edit it, no define-strategy CTA', () => {
+  it('MOCK_WEIGHTS_ONLY: spells the strategy out inline with a way to edit it, no define-strategy CTA', () => {
     render(<HomePositionView position={MOCK_WEIGHTS_ONLY} />)
-    expect(screen.getByText('Estrategia guardada')).toBeInTheDocument()
+    expect(screen.getByText('Tu estrategia')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Editar estrategia' })).toHaveAttribute('href', '/rebalance')
     expect(screen.queryByRole('link', { name: 'Definí tu estrategia' })).not.toBeInTheDocument()
   })

@@ -1,8 +1,8 @@
 'use client'
 
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { animate } from 'animejs'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, SlidersHorizontal } from 'lucide-react'
 import { useAccount } from 'wagmi'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { PositionSummary } from '@/components/vault-aggregator/position-summary'
 import { ProtocolBreakdown } from '@/components/vault-aggregator/protocol-breakdown'
+import { ProtocolLogo } from '@/components/vault-aggregator/protocol-logo'
+import { getVaults } from '@/lib/vaults'
 import { MoveScreen } from '@/components/vault-aggregator/move-screen'
 import { RebalancePanel } from '@/components/vault-aggregator/rebalance-panel'
 import { WalletBar } from '@/components/wallet-bar'
@@ -47,14 +49,23 @@ interface PositionState {
 function RebalanceCta({
   onRebalance,
   label,
+  icon,
   variant,
   className,
 }: {
   onRebalance?: () => void
   label: string
+  /** Optional leading glyph; the accessible name stays the label alone. */
+  icon?: ReactNode
   variant?: 'outline'
   className?: string
 }) {
+  const content = (
+    <>
+      {icon}
+      {label}
+    </>
+  )
   if (onRebalance) {
     return (
       <Button
@@ -64,13 +75,13 @@ function RebalanceCta({
         className={cn('w-full', className)}
         onClick={onRebalance}
       >
-        {label}
+        {content}
       </Button>
     )
   }
   return (
     <Button asChild size="lg" variant={variant} className={cn('w-full', className)}>
-      <Link href="/rebalance">{label}</Link>
+      <Link href="/rebalance">{content}</Link>
     </Button>
   )
 }
@@ -115,16 +126,35 @@ export function HomePositionView({
           <RebalanceCta onRebalance={onRebalance} label="Rebalancear" variant="outline" />
         </>
       ) : position.hasWeights ? (
-        <Card className="px-4 py-8 text-center">
-          <CardContent className="flex flex-col items-center gap-3 p-0">
-            <h1 className="text-xl font-semibold text-[var(--text-primary)]">Estrategia guardada</h1>
-            <p className="text-sm text-[var(--text-secondary)]">
-              Tu asignación está definida en {weightedAdapterCount} protocolos. Depositá cuando quieras
-              con el control de arriba.
-            </p>
-            <RebalanceCta onRebalance={onRebalance} label="Editar estrategia" variant="outline" className="mt-2" />
-          </CardContent>
-        </Card>
+        // No wrapper here: the ring above already frames the strategy, so this is just the
+        // strategy spelled out (who, how much) and the one thing you can do with it.
+        <div className="flex flex-col gap-4">
+          <div>
+            <h2 className="kicker mb-3 block">Tu estrategia</h2>
+            <ul className="flex flex-wrap gap-x-5 gap-y-2">
+              {getVaults()
+                .filter((vault) => position.perAdapter[vault.id].weightBps > 0)
+                .map((vault) => (
+                  <li key={vault.id} className="flex items-center gap-2 text-sm">
+                    <ProtocolLogo id={vault.id} />
+                    <span className="font-semibold text-[var(--text-primary)]">{vault.protocol}</span>
+                    <span className="font-mono tabular-nums text-[var(--text-secondary)]">
+                      {position.perAdapter[vault.id].weightBps / 100}%
+                    </span>
+                  </li>
+                ))}
+            </ul>
+          </div>
+          <RebalanceCta
+            onRebalance={onRebalance}
+            label="Editar estrategia"
+            icon={<SlidersHorizontal aria-hidden="true" />}
+            variant="outline"
+          />
+          <p className="text-sm text-[var(--text-secondary)]">
+            Todavía no depositaste. Cuando quieras, usá el control de arriba.
+          </p>
+        </div>
       ) : (
         <Card className="border-dashed px-4 py-8 text-center">
           <CardContent className="flex flex-col items-center gap-3 p-0">
