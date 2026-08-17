@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { formatUsdcPrecise } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -7,6 +8,9 @@ interface PositionSummaryProps {
   /** Summed per-adapter yield rate, atomic USDC units per second (from `useVaultYield`). Zero or
    * absent hides the earnings row and the APY pill: nothing derived, nothing claimed. */
   ratePerSecond?: number
+  /** The money that is not in the pool yet, under a divider: inside Lemon the account block
+   * (mini-app balance + Traer/Enviar), on the web the wallet balance. One card, all the money. */
+  footer?: ReactNode
 }
 
 const SECONDS_PER_YEAR = 365 * 24 * 60 * 60
@@ -15,7 +19,7 @@ const SECONDS_PER_YEAR = 365 * 24 * 60 * 60
  * role split into whole and fraction (the fraction is what actually moves per second, VFE-02),
  * a live APY pill and an earnings-per-second row — both derived from the observed on-chain rate,
  * never from the catalog's placeholder APYs, so they only appear once there is a real rate. */
-export function PositionSummary({ displayedValueUsdc, state, ratePerSecond = 0 }: PositionSummaryProps) {
+export function PositionSummary({ displayedValueUsdc, state, ratePerSecond = 0, footer }: PositionSummaryProps) {
   const [whole, fraction] = formatUsdcPrecise(displayedValueUsdc).split('.')
   const earning = ratePerSecond > 0
   const usdPerSecond = ratePerSecond / 1_000_000
@@ -26,7 +30,7 @@ export function PositionSummary({ displayedValueUsdc, state, ratePerSecond = 0 }
     <section
       aria-label="Tu posición"
       className={cn(
-        'relative mb-4 overflow-hidden rounded-[16px] border border-[var(--border-default)] px-5 py-5',
+        'relative overflow-hidden rounded-[16px] border border-[var(--border-default)] px-5 py-5',
         'bg-gradient-to-br from-[#111C2A] to-[#0D1420]',
         // Two soft radials, brand top-left and yield bottom-right: the card's own ambient, the
         // same language as the page background but concentrated where the money is.
@@ -67,6 +71,8 @@ export function PositionSummary({ displayedValueUsdc, state, ratePerSecond = 0 }
           </div>
         </>
       )}
+
+      {footer && <div className="mt-4 border-t border-[var(--border-subtle)] pt-4">{footer}</div>}
     </section>
   )
 }

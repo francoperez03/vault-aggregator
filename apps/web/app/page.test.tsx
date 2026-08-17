@@ -133,8 +133,9 @@ describe('Page (default export)', () => {
     // 6-dp precision: the position card on top plus the single morpho row.
     expect(screen.getByRole('region', { name: 'Tu posición' })).toHaveTextContent('$10.000000')
     expect(screen.getAllByText('$10.000000').length).toBeGreaterThan(0)
-    // Web: no Lemon account block, and a strategy means a ring.
-    expect(screen.queryByText('Tu cuenta Lemon')).not.toBeInTheDocument()
+    // Web: the card footer is the wallet balance, not the Lemon tabs; a strategy means a ring.
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(screen.getByText('En tu wallet')).toBeInTheDocument()
     expect(screen.getByTestId('strategy-ring')).toBeInTheDocument()
   })
 
@@ -152,8 +153,7 @@ describe('Page (default export)', () => {
     useNetworkGuardMock.mockReturnValue({ isWrongNetwork: false, expectedName: 'Sepolia', switchNetwork: vi.fn() })
     useVaultPositionMock.mockReturnValue({ perAdapter: {}, totalUsdc: 0n, hasWeights: false, isLoading: false, refetch: vi.fn() })
     render(<Page />)
-    expect(await screen.findByText('Tu cuenta Lemon')).toBeInTheDocument()
-    expect(screen.getByText('$4.00')).toBeInTheDocument()
+    expect(await screen.findByText('$4.00')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Traer' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Enviar' })).toBeInTheDocument()
     isLemonWebViewMock.mockReturnValue(false)

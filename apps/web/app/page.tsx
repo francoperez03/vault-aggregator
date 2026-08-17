@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { formatUsdc } from '@/lib/format'
 import { PositionSummary } from '@/components/vault-aggregator/position-summary'
 import { ProtocolBreakdown } from '@/components/vault-aggregator/protocol-breakdown'
 import { ProtocolLogo } from '@/components/vault-aggregator/protocol-logo'
@@ -324,25 +325,40 @@ export default function Page() {
         // changes). With no strategy yet there is no ring: an empty gray wheel over "Definí tu
         // estrategia" was a placeholder pretending to be content.
         <>
-          {/* Money in and out of the mini-app, above everything and on both steps: it is the
-              precondition for the rest, not a step of it. Only Lemon can cross this boundary. */}
-          {mounted && isLemonWebView() && (
-            <div className="px-4 pb-4 pt-3">
-              <LemonAccount
-                // Remount on step change so an open Traer/Enviar panel folds back to the two
-                // tabs when the allocation step slides in; a transfer mid-flight is queued by
-                // the SDK, not by this component, so nothing is lost.
-                key={step}
-                walletUsdc={walletUsdc}
-                pendingAmount={pendingAmount}
-                onSent={clearPending}
-                onDone={() => {
-                  refetchBalance()
-                  vaultPosition.refetch()
-                }}
-              />
-            </div>
-          )}
+          {/* One card, all the money, on both steps: the position (what is working) on top, and
+              under the divider what is not in the pool yet — the Lemon account with Traer/Enviar
+              inside Lemon, the wallet balance on the web. Above the rail so it never slides away. */}
+          <div className="px-4 pb-4 pt-3">
+            <PositionSummary
+              displayedValueUsdc={vaultYield.totalDisplayedUsdc}
+              state={deriveTotalState(vaultYield.perAdapter)}
+              ratePerSecond={Object.values(vaultYield.perAdapter).reduce((sum, e) => sum + (e?.rate ?? 0), 0)}
+              footer={
+                mounted && isLemonWebView() ? (
+                  <LemonAccount
+                    // Remount on step change so an open Traer/Enviar panel folds back to the two
+                    // tabs when the allocation step slides in; a transfer mid-flight is queued by
+                    // the SDK, not by this component, so nothing is lost.
+                    key={step}
+                    walletUsdc={walletUsdc}
+                    pendingAmount={pendingAmount}
+                    onSent={clearPending}
+                    onDone={() => {
+                      refetchBalance()
+                      vaultPosition.refetch()
+                    }}
+                  />
+                ) : (
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-[var(--text-secondary)]">En tu wallet</span>
+                    <span className="font-mono font-semibold tabular-nums text-[var(--text-primary)]">
+                      ${formatUsdc(walletUsdc)}
+                    </span>
+                  </div>
+                )
+              }
+            />
+          </div>
           <button
             ref={backRef}
             type="button"
@@ -381,15 +397,6 @@ export default function Page() {
             <div className="w-1/2" aria-hidden={step === 'rebalance'}>
               {/* Move first, position second: the reason to open the app is to put money in or
                   take it out; the position is what you check on the way past. */}
-              {/* The money first, always — $0 included: the card is where the position lives,
-                  and a user with nothing yet still needs to see where the number will appear. */}
-              <div className="px-4">
-                <PositionSummary
-                  displayedValueUsdc={vaultYield.totalDisplayedUsdc}
-                  state={deriveTotalState(vaultYield.perAdapter)}
-                  ratePerSecond={Object.values(vaultYield.perAdapter).reduce((sum, e) => sum + (e?.rate ?? 0), 0)}
-                />
-              </div>
               <Suspense fallback={null}>
                 <MoveScreen />
               </Suspense>

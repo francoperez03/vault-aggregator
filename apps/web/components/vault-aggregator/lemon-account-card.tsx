@@ -30,7 +30,7 @@ const TAB_TRIGGER =
 /**
  * Moving USDC between the user's Lemon account and this mini-app's wallet. A
  * different boundary from the pool below — the SDK crosses this one, the chain crosses that one —
- * which is why it is its own region above the ring, present on both steps of the home: bringing
+ * which is why it sits in the position card's footer, present on both steps of the home: bringing
  * money in comes before having a strategy, and must not slide away with the allocation step.
  *
  * Deliberately not chained into the pool deposit. `deposit()` can return PENDING with the funds
@@ -79,14 +79,12 @@ export function LemonAccount({ walletUsdc, pendingAmount, onSent, onDone }: Lemo
       onValueChange={(next) => setDirection(next === NONE ? null : (next as LemonDirection))}
       className="flex flex-col gap-3"
     >
-      <span className="kicker">Tu cuenta Lemon</span>
-
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col">
-          <span className="font-mono text-2xl font-semibold tabular-nums leading-none text-[var(--text-primary)]">
+          <span className="whitespace-nowrap text-xs text-[var(--text-secondary)]">Disponible</span>
+          <span className="mt-0.5 font-mono text-xl font-semibold tabular-nums leading-none text-[var(--text-primary)]">
             ${formatUsdc(walletUsdc)}
           </span>
-          <span className="mt-1 text-xs text-[var(--text-secondary)]">en la mini-app</span>
         </div>
         {/* Segmented control, 44px tall: two directions of one boundary, not two features. */}
         <TabsList className="h-11 shrink-0 gap-0.5 rounded-[10px] border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-1">
