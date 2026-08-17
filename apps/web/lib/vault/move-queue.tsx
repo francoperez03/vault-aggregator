@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react'
 import type { TxPhase } from '@/components/vault-aggregator/transaction-state'
+import { describeFailure } from '@/lib/diagnostics'
 
 export interface MoveJob {
   id: number
@@ -19,7 +20,8 @@ interface MoveQueueValue {
 
 const MoveQueueContext = createContext<MoveQueueValue | null>(null)
 
-const FAILED: TxPhase = { kind: 'reverted', reason: 'El movimiento no se pudo completar.' }
+const FAILED_REASON = 'El movimiento no se pudo completar.'
+const FAILED: TxPhase = { kind: 'reverted', reason: FAILED_REASON }
 
 /**
  * A single-consumer async queue for money movements, so a deposit or a withdrawal stops holding
@@ -57,7 +59,11 @@ export function MoveQueueProvider({ children }: { children: ReactNode }) {
           phase = await next.run()
         } catch (error) {
           // Keep the thrown message: it is the only trace the user (or we) get of what failed.
-          phase = error instanceof Error && error.message ? { kind: 'reverted', reason: error.message } : FAILED
+          phase = {
+            kind: 'reverted',
+            reason: error instanceof Error && error.message ? error.message : FAILED_REASON,
+            detail: describeFailure({ error, context: { where: 'move-queue' } }),
+          }
         }
         setPhase(next.id, phase)
       }

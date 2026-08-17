@@ -46,7 +46,7 @@ export function useUsdcTransfer(): UseUsdcTransferResult {
         setPhase(done);
         return done;
       } catch (error) {
-        const failed = browserErrorToPhase(error);
+        const failed = browserErrorToPhase(error, { op: 'usdc-transfer', to, amount: amount.toString() });
         setPhase(failed);
         return failed;
       }

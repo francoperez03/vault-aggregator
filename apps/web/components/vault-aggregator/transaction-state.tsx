@@ -13,7 +13,7 @@ export type TxPhase =
   | { kind: 'pending'; txHash?: `0x${string}` }
   | { kind: 'success'; amount?: bigint }
   | { kind: 'rejected' }
-  | { kind: 'reverted'; reason?: string }
+  | { kind: 'reverted'; reason?: string; /** Full diagnostic (request, raw response, stack) for the copy button. */ detail?: string }
   | { kind: 'timeout'; txHash?: `0x${string}` }
   | { kind: 'partial'; requested: bigint; actual: bigint; remaining: bigint }
 

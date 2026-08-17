@@ -7,6 +7,7 @@ import { useWalletAddress } from '@/hooks/useWalletAddress';
 import { waitForTransactionReceipt } from 'wagmi/actions';
 import { coreAbi } from '@/lib/contracts/coreAbi';
 import { usdcAbi } from '@/lib/contracts/usdcAbi';
+import { describeFailure } from '@/lib/diagnostics';
 import { getAdapterAddresses, getCoreAddress, getPeripheryAddress, getUsdcAddress } from '@/lib/contracts/config';
 import { toContractWeights, type AllocationBps } from '@/lib/vault/weights';
 import { wagmiConfig } from '@/lib/wagmi/config';
@@ -26,7 +27,7 @@ export function toTxPhase(outcome: LemonTxOutcome): TxPhase {
     case 'CANCELLED':
       return { kind: 'rejected' };
     case 'FAILED':
-      return { kind: 'reverted', reason: outcome.error };
+      return { kind: 'reverted', reason: outcome.error, detail: outcome.detail };
     case 'PENDING':
       return { kind: 'timeout', txHash: outcome.txHash };
   }
@@ -35,10 +36,14 @@ export function toTxPhase(outcome: LemonTxOutcome): TxPhase {
 /** A browser-runtime write failure: a user cancel is `rejected`, a stuck receipt wait is
  * `timeout`, anything else is `reverted` carrying the error's own message as the reason —
  * never silently swallowed. */
-export function browserErrorToPhase(error: unknown): TxPhase {
+export function browserErrorToPhase(error: unknown, context?: Record<string, unknown>): TxPhase {
   if (error instanceof UserRejectedRequestError) return { kind: 'rejected' };
   if (error instanceof WaitForTransactionReceiptTimeoutError) return { kind: 'timeout' };
-  return { kind: 'reverted', reason: error instanceof Error ? error.message : undefined };
+  return {
+    kind: 'reverted',
+    reason: error instanceof Error ? error.message : undefined,
+    detail: describeFailure({ error, context }),
+  };
 }
 
 type DepositStep = 'idle' | 'approving' | 'depositing';
@@ -158,7 +163,7 @@ export function useVaultWrite(): UseVaultWriteResult {
 
         return { kind: 'success', amount };
       } catch (error) {
-        return browserErrorToPhase(error);
+        return browserErrorToPhase(error, { op: 'deposit', lemon: isLemonWebView(), core: coreAddress, wallet: address });
       } finally {
         setDepositStep('idle');
         setTxStage('idle');
@@ -203,7 +208,7 @@ export function useVaultWrite(): UseVaultWriteResult {
         await waitForTransactionReceipt(wagmiConfig, { hash });
         return { kind: 'success' };
       } catch (error) {
-        return browserErrorToPhase(error);
+        return browserErrorToPhase(error, { op: 'rebalance', lemon: isLemonWebView(), core: coreAddress, wallet: address });
       } finally {
         setTxStage('idle');
         setIsSubmitting(false);
@@ -239,7 +244,7 @@ export function useVaultWrite(): UseVaultWriteResult {
         await waitForTransactionReceipt(wagmiConfig, { hash });
         return { kind: 'success' };
       } catch (error) {
-        return browserErrorToPhase(error);
+        return browserErrorToPhase(error, { op: 'redeem', lemon: isLemonWebView(), core: coreAddress, wallet: address });
       } finally {
         setTxStage('idle');
         setIsSubmitting(false);

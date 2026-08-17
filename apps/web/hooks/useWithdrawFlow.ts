@@ -136,7 +136,7 @@ export function useWithdrawFlow(): UseWithdrawFlowResult {
     }
 
     if (outcome.result === 'FAILED') {
-      setPhase({ kind: 'reverted', reason: LEMON_FAILED_COPY });
+      setPhase({ kind: 'reverted', reason: LEMON_FAILED_COPY, detail: outcome.detail });
       return;
     }
 

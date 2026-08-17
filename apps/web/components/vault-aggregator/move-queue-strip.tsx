@@ -55,7 +55,10 @@ export function MoveQueueStrip() {
             </span>
 
             {phase.kind === 'reverted' && phase.reason && (
-              <CopyButton text={`${label} · ${phase.reason}`} label={`Copiar el error de ${label}`} />
+              <CopyButton
+                text={[`${label} · ${phase.reason}`, phase.detail].filter(Boolean).join('\n\n')}
+                label={`Copiar el error de ${label}`}
+              />
             )}
 
             <button

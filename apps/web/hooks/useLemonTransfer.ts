@@ -32,7 +32,7 @@ function outcomeToPhase(outcome: LemonTxOutcome, direction: LemonDirection): TxP
           : 'No te alcanza el saldo de tu wallet para ese monto.',
     };
   }
-  return { kind: 'reverted', reason: outcome.error };
+  return { kind: 'reverted', reason: outcome.error, detail: outcome.detail };
 }
 
 export interface UseLemonTransferResult {

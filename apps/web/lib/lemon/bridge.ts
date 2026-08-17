@@ -8,6 +8,7 @@ import {
   type ChainId,
 } from '@lemoncash/mini-app-sdk';
 import { formatUnits } from 'viem';
+import { describeFailure } from '@/lib/diagnostics';
 import { getChainId } from '@/lib/env';
 import { lemonBridgeMock } from './bridgeMock';
 
@@ -53,7 +54,7 @@ export interface LemonContractCall {
 export type LemonTxOutcome =
   | { result: 'SUCCESS'; txHash: `0x${string}`; amount?: bigint }
   | { result: 'PENDING'; txHash: `0x${string}`; settle: () => Promise<LemonTxOutcome> }
-  | { result: 'FAILED'; error: string }
+  | { result: 'FAILED'; error: string; /** Full diagnostic for the copy button (request + raw SDK response). */ detail?: string }
   | { result: 'CANCELLED' };
 
 export interface LemonBridge {
@@ -105,7 +106,7 @@ const realLemonBridge: LemonBridge = {
     };
   },
   async callSmartContract({ contracts }) {
-    const response = await sdkCallSmartContract({
+    const request = {
       contracts: contracts.map((call) => ({
         contractAddress: call.address,
         functionName: call.functionName,
@@ -113,9 +114,14 @@ const realLemonBridge: LemonBridge = {
         chainId: getChainId() as ChainId,
         ...(call.permits ? { permits: call.permits } : {}),
       })),
-    });
+    };
+    const response = await sdkCallSmartContract(request);
     if (response.result === TransactionResult.FAILED) {
-      return { result: 'FAILED', error: response.error?.message ?? 'Lemon callSmartContract failed.' };
+      return {
+        result: 'FAILED',
+        error: response.error?.message ?? 'Lemon callSmartContract failed.',
+        detail: describeFailure({ request, response, context: { sdk: 'callSmartContract' } }),
+      };
     }
     if (response.result === TransactionResult.CANCELLED) {
       return { result: 'CANCELLED' };
@@ -126,13 +132,14 @@ const realLemonBridge: LemonBridge = {
     return { result: 'SUCCESS', txHash: response.data.txHash };
   },
   async deposit({ amount, tokenName }) {
-    const response = await sdkDeposit({
-      amount: toLemonAmount(amount),
-      tokenName: TokenName[tokenName],
-      chainId: getChainId() as ChainId,
-    });
+    const request = { amount: toLemonAmount(amount), tokenName: TokenName[tokenName], chainId: getChainId() as ChainId };
+    const response = await sdkDeposit(request);
     if (response.result === TransactionResult.FAILED) {
-      return { result: 'FAILED', error: response.error?.message ?? 'Lemon deposit failed.' };
+      return {
+        result: 'FAILED',
+        error: response.error?.message ?? 'Lemon deposit failed.',
+        detail: describeFailure({ request, response, context: { sdk: 'deposit' } }),
+      };
     }
     if (response.result === TransactionResult.CANCELLED) {
       return { result: 'CANCELLED' };
@@ -143,13 +150,14 @@ const realLemonBridge: LemonBridge = {
     return { result: 'SUCCESS', txHash: response.data.txHash };
   },
   async withdraw({ amount, tokenName }) {
-    const response = await sdkWithdraw({
-      amount: toLemonAmount(amount),
-      tokenName: TokenName[tokenName],
-      chainId: getChainId() as ChainId,
-    });
+    const request = { amount: toLemonAmount(amount), tokenName: TokenName[tokenName], chainId: getChainId() as ChainId };
+    const response = await sdkWithdraw(request);
     if (response.result === TransactionResult.FAILED) {
-      return { result: 'FAILED', error: response.error?.message ?? 'Lemon withdraw failed.' };
+      return {
+        result: 'FAILED',
+        error: response.error?.message ?? 'Lemon withdraw failed.',
+        detail: describeFailure({ request, response, context: { sdk: 'withdraw' } }),
+      };
     }
     if (response.result === TransactionResult.CANCELLED) {
       return { result: 'CANCELLED' };
