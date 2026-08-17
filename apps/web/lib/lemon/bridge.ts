@@ -7,8 +7,22 @@ import {
   TokenName,
   type ChainId,
 } from '@lemoncash/mini-app-sdk';
+import { formatUnits } from 'viem';
 import { getChainId } from '@/lib/env';
 import { lemonBridgeMock } from './bridgeMock';
+
+const USDC_DECIMALS = 6;
+
+/**
+ * Lemon's `deposit`/`withdraw` take the amount as a HUMAN decimal string ("10.5"), the same string a
+ * user types in the Lemon app, never base units. The rest of this app keeps USDC as a bigint in
+ * 6-decimal base units, so the conversion happens here and nowhere else. (Verified against
+ * WakeUp's BananitaSwap mini-app, which passes the raw keypad string and works in production;
+ * sending base units asked Lemon for 1e6 times the intended amount.)
+ */
+function toLemonAmount(amount: bigint): string {
+  return formatUnits(amount, USDC_DECIMALS);
+}
 
 /** `TokenName` is a closed SDK enum (Pitfall 3) — the vault only ever moves USDC. */
 export type LemonTokenName = 'USDC';
@@ -113,7 +127,7 @@ const realLemonBridge: LemonBridge = {
   },
   async deposit({ amount, tokenName }) {
     const response = await sdkDeposit({
-      amount: amount.toString(),
+      amount: toLemonAmount(amount),
       tokenName: TokenName[tokenName],
       chainId: getChainId() as ChainId,
     });
@@ -130,7 +144,7 @@ const realLemonBridge: LemonBridge = {
   },
   async withdraw({ amount, tokenName }) {
     const response = await sdkWithdraw({
-      amount: amount.toString(),
+      amount: toLemonAmount(amount),
       tokenName: TokenName[tokenName],
       chainId: getChainId() as ChainId,
     });

@@ -9,8 +9,8 @@ export type LemonDirection = 'in' | 'out';
 const INSUFFICIENT = 'INSUFFICIENT_BALANCE';
 
 /**
- * Lemon's outcomes mapped to the shared five-state machine, with the same discipline the rest of
- * the app follows: PENDING never collapses into success (Pitfall 2), CANCELLED is the user saying
+ * Lemon's outcomes mapped to the shared five-state machine: PENDING counts as accepted for this
+ * off-chain boundary (unlike on-chain writes, where it stays distinct), CANCELLED is the user saying
  * no and not an error, and a FAILED keeps Lemon's own code visible in the copy when we know it.
  *
  * `INSUFFICIENT_BALANCE` on the way in is the one failure we cannot pre-empt: the SDK exposes no
@@ -18,7 +18,10 @@ const INSUFFICIENT = 'INSUFFICIENT_BALANCE';
  */
 function outcomeToPhase(outcome: LemonTxOutcome, direction: LemonDirection): TxPhase {
   if (outcome.result === 'SUCCESS') return { kind: 'success', amount: outcome.amount };
-  if (outcome.result === 'PENDING') return { kind: 'timeout', txHash: outcome.txHash };
+  // For the Lemon-boundary transfer, PENDING means Lemon accepted the request and is moving the
+  // funds itself; showing it as a failure would send the user to retry a transfer already in
+  // flight (BananitaSwap, WakeUp's production mini-app, treats PENDING as accepted here too).
+  if (outcome.result === 'PENDING') return { kind: 'success' };
   if (outcome.result === 'CANCELLED') return { kind: 'rejected' };
   if (outcome.error.includes(INSUFFICIENT)) {
     return {
