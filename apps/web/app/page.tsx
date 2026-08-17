@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { PositionSummary } from '@/components/vault-aggregator/position-summary'
 import { ProtocolBreakdown } from '@/components/vault-aggregator/protocol-breakdown'
 import { ProtocolLogo } from '@/components/vault-aggregator/protocol-logo'
+import { LemonHandshake } from '@/components/vault-aggregator/lemon-handshake'
 import { getVaults } from '@/lib/vaults'
 import { MoveScreen } from '@/components/vault-aggregator/move-screen'
 import { RebalancePanel } from '@/components/vault-aggregator/rebalance-panel'
@@ -299,18 +300,7 @@ export default function Page() {
         // header); a blank column read as "nothing loads" in QA.
         // Locked to the viewport: a short handshake state that scrolls reads as a broken page.
         <div className="flex flex-1 flex-col items-center justify-center gap-5 px-4">
-          {mounted && isLemonWebView() && (
-            <>
-              <span className="lemon-handshake" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-              <p className="text-center text-[15px] text-[var(--text-secondary)]" aria-live="polite">
-                Conectando con tu cuenta de Lemon
-              </p>
-            </>
-          )}
+          {mounted && isLemonWebView() && <LemonHandshake />}
         </div>
       ) : isWrongNetwork ? (
         <div className="px-4 pt-8">

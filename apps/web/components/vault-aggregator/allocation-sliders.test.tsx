@@ -15,10 +15,10 @@ describe('AllocationSliders', () => {
     expect(screen.queryByText(/Total:/)).not.toBeInTheDocument()
   })
 
-  it('shows the zero-out helper text only for a slider at 0%', () => {
+  it('shows the zero-out helper once when any fader sits at 0%', () => {
     render(<AllocationSliders value={{ morpho: 100, fluid: 0, euler: 0, aave: 0 }} onChange={vi.fn()} />)
     const helpers = screen.getAllByText('Poner un protocolo en 0% lo saca de tu estrategia.')
-    expect(helpers).toHaveLength(3)
+    expect(helpers).toHaveLength(1)
   })
 
   it('moving one slider reports a full allocation, still summing 100', () => {
@@ -26,7 +26,7 @@ describe('AllocationSliders', () => {
     render(<AllocationSliders value={{ morpho: 25, fluid: 25, euler: 25, aave: 25 }} onChange={onChange} />)
     const [morphoSlider] = screen.getAllByRole('slider')
     morphoSlider.focus()
-    fireEvent.keyDown(morphoSlider, { key: 'ArrowRight' })
+    fireEvent.keyDown(morphoSlider, { key: 'ArrowUp' })
 
     // The catalog decides the on-screen order, so assert on the shape rather than on which
     // protocol happens to be first: one slider went up by the 5% step, the rest paid for it.
