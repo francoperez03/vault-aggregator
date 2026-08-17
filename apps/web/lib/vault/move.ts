@@ -22,32 +22,29 @@ export function currentPoolBps(walletUsdc: bigint, poolUsdc: bigint): bigint {
 }
 
 /**
- * Turns a slider position (the target share of wallet+pool that should sit in the pool) into a
- * concrete move. Right of rest is a deposit, left is a withdrawal — one control, both directions.
+ * Turns a target pool amount ("I want this much sitting in the pool") into a concrete move. Above
+ * the current position is a deposit, below is a withdrawal — one number, both directions.
  *
- * Two exactness rules matter more than the interpolation:
- * - Dragging to either end means *all of it*: bps 0 redeems a literal 10000 (never a floor'd 9999
- *   that would strand dust), bps 10000 deposits the entire wallet balance.
- * - Resting on the current split is a no-op even though `currentPoolBps` floors, so the screen
- *   never opens already offering to move a rounding error.
+ * Exactness rules matter more than the arithmetic:
+ * - A target at or above wallet+pool means *all of it*: the whole wallet balance is deposited.
+ * - A target of 0 redeems a literal 10000 bps (never a floor'd 9999 that would strand dust).
+ * - A target equal to the current pool is a no-op, so the screen never opens already offering to
+ *   move a rounding error.
  */
-export function previewMove(walletUsdc: bigint, poolUsdc: bigint, targetPoolBps: bigint): MovePreview {
+export function previewMoveTo(walletUsdc: bigint, poolUsdc: bigint, targetPoolUsdc: bigint): MovePreview {
   const total = walletUsdc + poolUsdc
   const atRest: MovePreview = { poolUsdc, walletUsdc, amount: 0n, kind: 'none', withdrawBps: 0n }
-  if (total === 0n || targetPoolBps === currentPoolBps(walletUsdc, poolUsdc)) return atRest
+  if (total === 0n) return atRest
 
-  const targetPool =
-    targetPoolBps === 0n ? 0n : targetPoolBps === BPS ? total : (total * targetPoolBps) / BPS
+  const targetPool = targetPoolUsdc < 0n ? 0n : targetPoolUsdc > total ? total : targetPoolUsdc
   const delta = targetPool - poolUsdc
   if (delta === 0n) return atRest
 
   if (delta > 0n) {
-    const amount = delta > walletUsdc ? walletUsdc : delta
-    if (amount === 0n) return atRest
     return {
-      poolUsdc: poolUsdc + amount,
-      walletUsdc: walletUsdc - amount,
-      amount,
+      poolUsdc: poolUsdc + delta,
+      walletUsdc: walletUsdc - delta,
+      amount: delta,
       kind: 'deposit',
       withdrawBps: 0n,
     }
@@ -63,4 +60,19 @@ export function previewMove(walletUsdc: bigint, poolUsdc: bigint, targetPoolBps:
     kind: 'withdraw',
     withdrawBps,
   }
+}
+
+/** Target pool amount for a share of wallet+pool: the ends are exact (0 and the full total). */
+export function poolTargetForBps(walletUsdc: bigint, poolUsdc: bigint, targetPoolBps: bigint): bigint {
+  const total = walletUsdc + poolUsdc
+  return targetPoolBps <= 0n ? 0n : targetPoolBps >= BPS ? total : (total * targetPoolBps) / BPS
+}
+
+/** Share-based entry point kept for callers that think in bps; resting on the current split is a
+ * no-op even though `currentPoolBps` floors. */
+export function previewMove(walletUsdc: bigint, poolUsdc: bigint, targetPoolBps: bigint): MovePreview {
+  if (targetPoolBps === currentPoolBps(walletUsdc, poolUsdc)) {
+    return { poolUsdc, walletUsdc, amount: 0n, kind: 'none', withdrawBps: 0n }
+  }
+  return previewMoveTo(walletUsdc, poolUsdc, poolTargetForBps(walletUsdc, poolUsdc, targetPoolBps))
 }

@@ -46,12 +46,9 @@ function setup({
   })
 }
 
-/** Radix's slider reads its geometry from the DOM, which jsdom does not lay out; the keyboard is
- * the reliable way to move the thumb in tests (and the accessible one in the app). */
-function nudgeSlider(times: number, key: 'ArrowRight' | 'ArrowLeft') {
-  const slider = screen.getByRole('slider')
-  slider.focus()
-  for (let i = 0; i < times; i++) fireEvent.keyDown(slider, { key })
+/** The pool tank's number is the input: typing a target amount is how the user moves money. */
+function typePoolTarget(value: string) {
+  fireEvent.change(screen.getByRole('textbox', { name: 'Cuánto querés tener en el pool' }), { target: { value } })
 }
 
 describe('MoveScreen', () => {
@@ -61,33 +58,34 @@ describe('MoveScreen', () => {
     expect(screen.getByText('En tu wallet')).toBeInTheDocument()
     expect(screen.getByText('$13.59')).toBeInTheDocument()
     expect(screen.getByText('En el pool')).toBeInTheDocument()
-    expect(screen.getByText('$20.00')).toBeInTheDocument()
+    // The pool amount is the input; at rest it shows the current position as its placeholder.
+    expect(screen.getByRole('textbox', { name: 'Cuánto querés tener en el pool' })).toHaveAttribute('placeholder', '20.00')
   })
 
-  it('does nothing until the slider moves', () => {
+  it('does nothing until a target is chosen', () => {
     setup()
     render(<MoveScreen />)
-    expect(screen.getByRole('button', { name: /Mové la barra/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Elegí cuánto va al pool/ })).toBeDisabled()
   })
 
-  it('right of rest offers a deposit', () => {
+  it('a target above the current position offers a deposit', () => {
     setup()
     render(<MoveScreen />)
-    nudgeSlider(10, 'ArrowRight')
+    typePoolTarget('60')
     expect(screen.getByRole('button', { name: 'Depositar $10.00' })).toBeEnabled()
   })
 
-  it('left of rest offers a withdrawal', () => {
+  it('a target below the current position offers a withdrawal', () => {
     setup()
     render(<MoveScreen />)
-    nudgeSlider(10, 'ArrowLeft')
+    typePoolTarget('40')
     expect(screen.getByRole('button', { name: 'Retirar $10.00' })).toBeEnabled()
   })
 
   it('a withdrawal redeems a fraction of the position, not an absolute amount', async () => {
     setup()
     render(<MoveScreen />)
-    nudgeSlider(25, 'ArrowLeft')
+    typePoolTarget('25')
     fireEvent.click(screen.getByRole('button', { name: 'Retirar $25.00' }))
     expect(redeemMock).toHaveBeenCalledWith(5000n)
   })
@@ -96,18 +94,45 @@ describe('MoveScreen', () => {
     setup()
     depositMock.mockResolvedValue({ kind: 'success', amount: 25n * U })
     render(<MoveScreen />)
-    nudgeSlider(25, 'ArrowRight')
+    typePoolTarget('75')
     fireEvent.click(screen.getByRole('button', { name: 'Depositar $25.00' }))
     expect(depositMock).toHaveBeenCalledWith(25n * U)
   })
 
-  it('MAX puts everything in the pool, MIN takes everything out', () => {
+  it('the 100% pill puts everything in the pool, the 0% pill takes everything out', () => {
     setup()
     render(<MoveScreen />)
-    fireEvent.click(screen.getByRole('button', { name: 'MAX' }))
+    fireEvent.click(screen.getByRole('radio', { name: '100%' }))
     expect(screen.getByRole('button', { name: 'Depositar $50.00' })).toBeEnabled()
-    fireEvent.click(screen.getByRole('button', { name: 'MIN' }))
+    fireEvent.click(screen.getByRole('radio', { name: '0%' }))
     expect(screen.getByRole('button', { name: 'Retirar $50.00' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Retirar $50.00' }))
+    expect(redeemMock).toHaveBeenCalledWith(10000n)
+  })
+
+  it('a share pill fills the input with the matching amount and stays selected', () => {
+    setup()
+    render(<MoveScreen />)
+    fireEvent.click(screen.getByRole('radio', { name: '25%' }))
+    expect(screen.getByRole('textbox', { name: 'Cuánto querés tener en el pool' })).toHaveValue('25.00')
+    expect(screen.getByRole('radio', { name: '25%' })).toHaveAttribute('data-state', 'on')
+    expect(screen.getByRole('button', { name: 'Retirar $25.00' })).toBeEnabled()
+  })
+
+  it('a typed target above wallet+pool clamps to depositing the whole wallet', () => {
+    setup()
+    render(<MoveScreen />)
+    typePoolTarget('999')
+    expect(screen.getByRole('button', { name: 'Depositar $50.00' })).toBeEnabled()
+    expect(screen.getByRole('radio', { name: '100%' })).toHaveAttribute('data-state', 'on')
+  })
+
+  it('clearing the input goes back to rest', () => {
+    setup()
+    render(<MoveScreen />)
+    typePoolTarget('60')
+    typePoolTarget('')
+    expect(screen.getByRole('button', { name: /Elegí cuánto va al pool/ })).toBeDisabled()
   })
 
   it('renders no move UI and NO duplicate CTA without a strategy — the position card owns the empty state', () => {

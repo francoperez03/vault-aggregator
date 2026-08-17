@@ -2,7 +2,7 @@
 
 import { DepositApproveStep } from '@/components/vault-aggregator/deposit-approve-step'
 import { FundHint } from '@/components/vault-aggregator/fund-hint'
-import { MoveSlider } from '@/components/vault-aggregator/move-slider'
+import { MoveControl } from '@/components/vault-aggregator/move-control'
 import { formatUsdc } from '@/lib/format'
 import type { MovePreview } from '@/lib/vault/move'
 import { useMoveQueue } from '@/lib/vault/move-queue'
@@ -76,7 +76,7 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
 
   return (
     <div className="flex flex-col gap-5 px-4 pt-2">
-      <MoveSlider
+      <MoveControl
         walletUsdc={balance}
         poolUsdc={totalUsdc}
         stage={sliderStage}

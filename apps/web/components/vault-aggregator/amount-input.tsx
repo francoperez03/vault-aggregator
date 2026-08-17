@@ -1,22 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { formatUsdc, parseUsdcInput } from '@/lib/format'
+import { formatUsdc, parseUsdcInput, sanitizeUsdcInput } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface AmountInputProps {
   value: bigint
   onChange: (next: bigint) => void
   className?: string
-}
-
-/** Keeps only digits and a single dot, capped at USDC's 6 decimals. Runs on the raw keystroke
- * string, never on a `number` — the parsed value stays a bigint end to end (T-14-03-01). */
-function sanitize(raw: string): string {
-  const cleaned = raw.replace(/[^\d.]/g, '')
-  const [whole = '', ...rest] = cleaned.split('.')
-  if (rest.length === 0) return whole
-  return `${whole}.${rest.join('').slice(0, 6)}`
 }
 
 /** The deposit route's focal point (14-UI-SPEC §Visual Hierarchy). Free text entry: presets and a
@@ -28,7 +19,7 @@ export function AmountInput({ value, onChange, className }: AmountInputProps) {
   const [text, setText] = useState(() => (value === 0n ? '' : formatUsdc(value)))
 
   function handleChange(raw: string) {
-    const next = sanitize(raw)
+    const next = sanitizeUsdcInput(raw)
     setText(next)
     onChange(parseUsdcInput(next))
   }

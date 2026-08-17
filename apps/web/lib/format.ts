@@ -25,3 +25,12 @@ export function parseUsdcInput(input: string): bigint {
   const fraction = fractionRaw.slice(0, 6).padEnd(6, '0')
   return whole * USDC_UNIT + BigInt(fraction === '' ? 0 : fraction)
 }
+
+/** Keeps only digits and a single dot, capped at USDC's 6 decimals. Runs on the raw keystroke
+ * string, never on a `number`, so the parsed value stays a bigint end to end (T-14-03-01). */
+export function sanitizeUsdcInput(raw: string): string {
+  const cleaned = raw.replace(/[^\d.]/g, '')
+  const [whole = '', ...rest] = cleaned.split('.')
+  if (rest.length === 0) return whole
+  return `${whole}.${rest.join('').slice(0, 6)}`
+}
