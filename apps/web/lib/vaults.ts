@@ -40,7 +40,7 @@ const VAULT_CATALOG: Omit<Vault, 'adapterAddress'>[] = [
     underlyingAsset: 'USDC',
     apy: 5.3,
     strategyType: 'Lending',
-    logoUrl: '/vault-logos/euler.svg',
+    logoUrl: '/vault-logos/euler.png',
   },
 ]
 
