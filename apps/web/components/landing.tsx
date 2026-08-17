@@ -167,7 +167,7 @@ const STEPS = [
  * and the app opens straight into the money flows. */
 export function Landing() {
   return (
-    <div className="landing flex min-h-dvh flex-col px-5 pb-10 pt-[calc(1.25rem+env(safe-area-inset-top))]">
+    <div className="landing flex flex-1 flex-col px-5 pb-10 pt-[calc(1.25rem+env(safe-area-inset-top))]">
       <header className="landing-rise">
         <VaultyWordmark />
       </header>
