@@ -376,8 +376,10 @@ export default function Page() {
           {/* Two steps side by side on one rail. Rebalancing is a detour from the same money, not
               a different place, so it slides in under the fixed ring instead of navigating away
               and dropping the scroll position on the way back. */}
-          <div className="overflow-x-hidden">
-          <div ref={railRef} className="flex w-[300%]">
+          {/* The rail fills the rest of the viewport and its three columns stretch to the same
+              height, so switching screens never changes the page height under the finger. */}
+          <div className="flex flex-1 flex-col overflow-x-hidden">
+          <div ref={railRef} className="flex w-[300%] flex-1">
             {/* Overview: the money, the strategy, and the one action. */}
             <div ref={(el) => { colRefs.current.home = el }} className="w-1/3" aria-hidden={step !== 'home'}>
               {/* One card, all the money: the position (what is working) on top, and under the
