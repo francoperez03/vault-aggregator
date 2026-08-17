@@ -79,7 +79,6 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
       <MoveSlider
         walletUsdc={balance}
         poolUsdc={totalUsdc}
-        stepLabel={isLemon ? 'Poner a rendir' : undefined}
         stage={sliderStage}
         onMove={handleMove}
       />

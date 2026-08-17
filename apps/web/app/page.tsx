@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { animate } from 'animejs'
-import { ArrowLeft, SlidersHorizontal } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, SlidersHorizontal } from 'lucide-react'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,9 @@ function deriveTotalState(perAdapter: UseVaultYieldResult['perAdapter']): 'flat'
   if (states.some((s) => s === 'up')) return 'up'
   return 'flat'
 }
+
+type Step = 'home' | 'move' | 'rebalance'
+const STEP_INDEX: Record<Step, number> = { home: 0, move: 1, rebalance: 2 }
 
 /** Same shape as the mock fixture module's PositionState (declared locally so this route no
  * longer imports that test-only fixture module). Plan 08 wires `/` to `useVaultPosition()`
@@ -112,9 +115,7 @@ export function HomePositionView({
   const isFunded = position.totalUsdc > 0n
 
   return (
-    // Top gap: this sits under MoveScreen (its own gap-5 stack) and needs a section break, not a
-    // component gap, before its kicker.
-    <div className="px-4 pt-6">
+    <div className="px-4 pt-2">
       {isFunded ? (
         <>
           <Card className="mb-4 px-4 py-4">
@@ -127,8 +128,8 @@ export function HomePositionView({
           <RebalanceCta onRebalance={onRebalance} label="Rebalancear" variant="outline" />
         </>
       ) : position.hasWeights ? (
-        // No wrapper here: the ring above already frames the strategy, so this is just the
-        // strategy spelled out (who, how much) and the one thing you can do with it.
+        // No wrapper here: this is just the strategy spelled out (who, how much) and the one
+        // thing you can do with it; the primary action below it is the move screen.
         <div className="flex flex-col gap-4">
           <div>
             <h2 className="kicker mb-3 block">Tu estrategia</h2>
@@ -152,14 +153,10 @@ export function HomePositionView({
             icon={<SlidersHorizontal aria-hidden="true" />}
             variant="outline"
           />
-          <p className="text-sm text-[var(--text-secondary)]">
-            Todavía no depositaste. Con USDC en tu wallet, el control de arriba lo reparte así.
-          </p>
         </div>
       ) : (
         // Same shape as the saved-strategy block above, minus the chips: kicker, one primary
-        // action, one line of hint. No card, no headline — the gray ring above already says
-        // "nothing here yet".
+        // action, one line of hint. No card, no headline.
         <div className="flex flex-col gap-4">
           <h2 className="kicker block">Tu estrategia</h2>
           <RebalanceCta
@@ -217,7 +214,8 @@ export default function Page() {
   // persisted an amount, which is what useWithdrawFlow reads back from localStorage on mount.
   const { pendingAmount, clearPending } = useWithdrawFlow()
   const { balance: walletUsdc, refetch: refetchBalance } = useUsdcBalance()
-  const [step, setStep] = useState<'move' | 'rebalance'>('move')
+  // Three screens on one rail: the overview, the tanks ("Poner a rendir"), the weights.
+  const [step, setStep] = useState<Step>('home')
   // The single persistent ring's draft source while the allocation step is editing. Null until
   // RebalanceView seeds it (bootstrap's even split included).
   const [draftAllocation, setDraftAllocation] = useState<Partial<Record<AdapterId, number>> | null>(null)
@@ -249,20 +247,19 @@ export default function Page() {
   // The rail slides under the fixed ring; anime drives it so the motion shares the ring's easing
   // language instead of a parallel CSS timing.
   const railRef = useRef<HTMLDivElement>(null)
-  const moveColRef = useRef<HTMLDivElement>(null)
-  const rebalanceColRef = useRef<HTMLDivElement>(null)
-  const prevStepRef = useRef<'move' | 'rebalance' | null>(null)
+  const colRefs = useRef<Record<Step, HTMLDivElement | null>>({ home: null, move: null, rebalance: null })
+  const prevStepRef = useRef<Step | null>(null)
   useEffect(() => {
     const rail = railRef.current
-    const outgoing = step === 'rebalance' ? moveColRef.current : rebalanceColRef.current
-    const incoming = step === 'rebalance' ? rebalanceColRef.current : moveColRef.current
-    if (!rail || !outgoing || !incoming) return
-    const to = step === 'rebalance' ? -50 : 0
     // The rail's first paint (which may come after the SIWE handshake, not at mount) is a load,
     // not a step change: no choreography, the app just is. Only a real change animates.
     const prev = prevStepRef.current
-    prevStepRef.current = step
-    if (prev === null || prev === step) return
+    if (rail) prevStepRef.current = step
+    if (!rail || prev === null || prev === step) return
+    const outgoing = colRefs.current[prev]
+    const incoming = colRefs.current[step]
+    if (!outgoing || !incoming) return
+    const to = -(STEP_INDEX[step] * 100) / 3
     if (prefersReducedMotion()) {
       rail.style.transform = `translateX(${to}%)`
       outgoing.style.opacity = '0'
@@ -296,7 +293,7 @@ export default function Page() {
   useEffect(() => {
     const el = backRef.current
     if (!el) return
-    const show = step === 'rebalance'
+    const show = step !== 'home'
     if (prefersReducedMotion()) {
       el.style.opacity = show ? '1' : '0'
       return
@@ -355,30 +352,24 @@ export default function Page() {
           <button
             ref={backRef}
             type="button"
-            onClick={() => setStep('move')}
-            tabIndex={step === 'rebalance' ? 0 : -1}
-            aria-hidden={step === 'move'}
+            onClick={() => setStep('home')}
+            tabIndex={step === 'home' ? -1 : 0}
+            aria-hidden={step === 'home'}
             className={cn(
               'flex min-h-[44px] items-center gap-2 px-4 text-sm text-[var(--text-secondary)] opacity-0',
-              step === 'move' && 'pointer-events-none',
-              // The row reserves height only when there is a ring below to keep steady.
-              step === 'move' && !vaultPosition.hasWeights && 'hidden',
+              step === 'home' && 'pointer-events-none hidden',
             )}
           >
             <ArrowLeft className="size-4" aria-hidden="true" />
             Volver
           </button>
-          {(step === 'rebalance' || vaultPosition.hasWeights) && (
+          {/* The ring belongs to the weights screen only: on the overview the chips and the
+              breakdown already say the same thing. */}
+          {step === 'rebalance' && (
             <div data-testid="strategy-ring">
               <StrategyRing
-                allocation={
-                  step === 'rebalance' && draftAllocation
-                    ? draftAllocation
-                    : toRingAllocation(toPositionState(vaultPosition, pendingAmount))
-                }
-                // Editing shows percentages (they are the validation guard); at rest the center
-                // only claims a number when there is actually money behind it.
-                funded={step === 'rebalance' || vaultPosition.totalUsdc > 0n}
+                allocation={draftAllocation ?? toRingAllocation(toPositionState(vaultPosition, pendingAmount))}
+                funded
               />
             </div>
           )}
@@ -386,15 +377,13 @@ export default function Page() {
               a different place, so it slides in under the fixed ring instead of navigating away
               and dropping the scroll position on the way back. */}
           <div className="overflow-x-hidden">
-          <div ref={railRef} className="flex w-[200%]">
-            <div ref={moveColRef} className="w-1/2" aria-hidden={step === 'rebalance'}>
-              {/* Move first, position second: the reason to open the app is to put money in or
-                  take it out; the position is what you check on the way past. */}
-                  {/* One card, all the money: the position (what is working) on top, and under the
-                      divider what is not in the pool yet — the Lemon account with Traer/Enviar inside
-                      Lemon, the wallet balance on the web. It belongs to the money step and slides out
-                      with it: the allocation step is about weights, not balances. */}
-                  <div className="px-4 pb-4 pt-1">
+          <div ref={railRef} className="flex w-[300%]">
+            {/* Overview: the money, the strategy, and the one action. */}
+            <div ref={(el) => { colRefs.current.home = el }} className="w-1/3" aria-hidden={step !== 'home'}>
+              {/* One card, all the money: the position (what is working) on top, and under the
+                  divider what is not in the pool yet — the Lemon account with Traer/Enviar inside
+                  Lemon, the wallet balance on the web. */}
+              <div className="px-4 pb-4 pt-1">
                 <PositionSummary
                   displayedValueUsdc={vaultYield.totalDisplayedUsdc}
                   state={deriveTotalState(vaultYield.perAdapter)}
@@ -421,16 +410,30 @@ export default function Page() {
                   }
                 />
               </div>
-              <Suspense fallback={null}>
-                <MoveScreen />
-              </Suspense>
               <HomePositionView
                 position={toPositionState(vaultPosition, pendingAmount)}
                 yieldByAdapter={vaultYield.perAdapter}
                 onRebalance={() => setStep('rebalance')}
               />
+              {/* With a strategy, the primary action is moving money; the tanks live on their own
+                  screen so this one stays an overview. */}
+              {vaultPosition.hasWeights && (
+                <div className="px-4 pt-4">
+                  <Button type="button" size="lg" className="w-full" onClick={() => setStep('move')}>
+                    <ArrowLeftRight aria-hidden="true" />
+                    {vaultPosition.totalUsdc > 0n ? 'Mover plata' : 'Poner a rendir'}
+                  </Button>
+                </div>
+              )}
             </div>
-            <div ref={rebalanceColRef} className="w-1/2 opacity-0" aria-hidden={step === 'move'}>
+            {/* The tanks: wallet against pool, one slider between them. */}
+            <div ref={(el) => { colRefs.current.move = el }} className="w-1/3 opacity-0" aria-hidden={step !== 'move'}>
+              <span className="kicker block px-4 pb-3">Poner a rendir</span>
+              <Suspense fallback={null}>
+                <MoveScreen />
+              </Suspense>
+            </div>
+            <div ref={(el) => { colRefs.current.rebalance = el }} className="w-1/3 opacity-0" aria-hidden={step !== 'rebalance'}>
               {/* No onBack: the shared "Volver" above the ring owns the way back now. */}
               <RebalancePanel onAllocationChange={setDraftAllocation} hideRing />
             </div>

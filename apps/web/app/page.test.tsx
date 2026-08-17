@@ -133,10 +133,32 @@ describe('Page (default export)', () => {
     // 6-dp precision: the position card on top plus the single morpho row.
     expect(screen.getByRole('region', { name: 'Tu posición' })).toHaveTextContent('$10.000000')
     expect(screen.getAllByText('$10.000000').length).toBeGreaterThan(0)
-    // Web: the card footer is the wallet balance, not the Lemon tabs; a strategy means a ring.
+    // Web: the card footer is the wallet balance, not the Lemon tabs.
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(screen.getByText('En tu wallet')).toBeInTheDocument()
+    // The overview has no ring and one primary action; the ring belongs to the weights screen.
+    expect(screen.queryByTestId('strategy-ring')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mover plata' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Rebalancear' }))
     expect(screen.getByTestId('strategy-ring')).toBeInTheDocument()
+  })
+
+  it('with weights and no funds the overview offers "Poner a rendir", which opens the tanks', () => {
+    useAccountMock.mockReturnValue({ isConnected: true })
+    useNetworkGuardMock.mockReturnValue({ isWrongNetwork: false, expectedName: 'Sepolia', switchNetwork: vi.fn() })
+    useVaultPositionMock.mockReturnValue({
+      perAdapter: { morpho: { shares: 0n, adapterTotalShares: 1n, totalAssets: 0n, valueUsdc: 0n, weightBps: 10000 } },
+      totalUsdc: 0n,
+      hasWeights: true,
+      isLoading: false,
+      refetch: vi.fn(),
+    })
+    render(<Page />)
+    const move = screen.getByTestId('move-screen').closest('[aria-hidden]')!
+    expect(move).toHaveAttribute('aria-hidden', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Poner a rendir' }))
+    expect(move).toHaveAttribute('aria-hidden', 'false')
+    expect(screen.queryByTestId('strategy-ring')).not.toBeInTheDocument()
   })
 
   it('without a strategy there is no ring: the empty wheel was a placeholder, not content', () => {
