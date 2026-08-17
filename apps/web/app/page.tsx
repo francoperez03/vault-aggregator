@@ -70,7 +70,7 @@ function RebalanceCta({
   }
   return (
     <Button asChild size="lg" variant={variant} className={cn('w-full', className)}>
-      <Link href="/rebalancear">{label}</Link>
+      <Link href="/rebalance">{label}</Link>
     </Button>
   )
 }
@@ -119,11 +119,10 @@ export function HomePositionView({
           <CardContent className="flex flex-col items-center gap-3 p-0">
             <h1 className="text-xl font-semibold text-[var(--text-primary)]">Estrategia guardada</h1>
             <p className="text-sm text-[var(--text-secondary)]">
-              Tu asignación está definida en {weightedAdapterCount} protocolos. Depositá cuando quieras.
+              Tu asignación está definida en {weightedAdapterCount} protocolos. Depositá cuando quieras
+              con el control de arriba.
             </p>
-            <Button asChild size="lg" className="mt-2 ">
-              <Link href="/mover">Depositar ahora</Link>
-            </Button>
+            <RebalanceCta onRebalance={onRebalance} label="Editar estrategia" variant="outline" className="mt-2" />
           </CardContent>
         </Card>
       ) : (

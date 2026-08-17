@@ -42,7 +42,7 @@ afterEach(() => {
 });
 
 describe('useWithdrawFlow.redeem (step 1)', () => {
-  it('mide el delta de balance real, nunca deriva el monto de los bps pedidos', async () => {
+  it('measures the real balance delta, never derives the amount from the requested bps', async () => {
     readContractMock.mockResolvedValueOnce(1_000_000n).mockResolvedValueOnce(1_600_000n);
     redeemOnChainMock.mockResolvedValue({ kind: 'success' });
 
@@ -54,7 +54,7 @@ describe('useWithdrawFlow.redeem (step 1)', () => {
     expect(result.current.pendingAmount).toBe(600_000n);
   });
 
-  it('persiste el monto pendiente en localStorage por dirección', async () => {
+  it('persists the pending amount in localStorage per address', async () => {
     readContractMock.mockResolvedValueOnce(0n).mockResolvedValueOnce(600_000n);
     redeemOnChainMock.mockResolvedValue({ kind: 'success' });
 
@@ -66,7 +66,7 @@ describe('useWithdrawFlow.redeem (step 1)', () => {
     expect(window.localStorage.getItem(`vault-pending-settlement:${USER_ADDRESS}`)).toBe('600000');
   });
 
-  it('un revert del paso 1 nunca produce partial (Pitfall 4): reverted con "No se movió plata"', async () => {
+  it('a step 1 revert never produces partial (Pitfall 4): reverted with "No se movió plata"', async () => {
     readContractMock.mockResolvedValueOnce(1_000_000n);
     redeemOnChainMock.mockResolvedValue({ kind: 'reverted', reason: 'RedeemShortfall' });
 
@@ -85,7 +85,7 @@ describe('useWithdrawFlow.settleToLemon (step 2)', () => {
     window.localStorage.setItem(`vault-pending-settlement:${USER_ADDRESS}`, amount.toString());
   }
 
-  it('llama getLemonBridge().withdraw con tokenName USDC y el monto medido en el paso 1', async () => {
+  it('calls getLemonBridge().withdraw with tokenName USDC and the amount measured in step 1', async () => {
     seedPending(600_000n);
     withdrawMock.mockResolvedValue({ result: 'SUCCESS', txHash: '0xabc', amount: 600_000n });
 
@@ -99,7 +99,7 @@ describe('useWithdrawFlow.settleToLemon (step 2)', () => {
     expect(result.current.pendingAmount).toBeNull();
   });
 
-  it('SUCCESS parcial pasa por reconcileWithdrawal y produce partial con los tres montos', async () => {
+  it('partial SUCCESS goes through reconcileWithdrawal and produces partial with all three amounts', async () => {
     seedPending(600_000n);
     withdrawMock.mockResolvedValue({ result: 'SUCCESS', txHash: '0xabc', amount: 300_000n });
 
@@ -125,7 +125,7 @@ describe('useWithdrawFlow.settleToLemon (step 2)', () => {
     await waitFor(() => expect(result.current.phase.kind).toBe('rejected'));
   });
 
-  it('FAILED -> reverted con el copy de Lemon, no el genérico', async () => {
+  it("FAILED -> reverted with Lemon's copy, not the generic one", async () => {
     seedPending(600_000n);
     withdrawMock.mockResolvedValue({ result: 'FAILED', error: 'Withdraw failed.' });
 
@@ -140,7 +140,7 @@ describe('useWithdrawFlow.settleToLemon (step 2)', () => {
     });
   });
 
-  it('PENDING que nunca resuelve -> timeout, nunca success', async () => {
+  it('PENDING that never resolves -> timeout, never success', async () => {
     seedPending(600_000n);
     const pending: LemonTxOutcome = {
       result: 'PENDING',
@@ -157,7 +157,7 @@ describe('useWithdrawFlow.settleToLemon (step 2)', () => {
     await waitFor(() => expect(result.current.phase.kind).toBe('timeout'));
   });
 
-  it('acknowledge() limpia la fase tras un parcial, sin reintentar solo', async () => {
+  it('acknowledge() clears the phase after a partial, without retrying on its own', async () => {
     seedPending(600_000n);
     withdrawMock.mockResolvedValue({ result: 'SUCCESS', txHash: '0xabc', amount: 300_000n });
 

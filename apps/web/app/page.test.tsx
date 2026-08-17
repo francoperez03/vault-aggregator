@@ -43,13 +43,13 @@ describe('HomePositionView', () => {
     render(<HomePositionView position={MOCK_EMPTY} />)
     expect(screen.getByText('Todavía no tenés posición')).toBeInTheDocument()
     // The deposit panel above starts collapsed, so this is the only CTA on screen.
-    expect(screen.getByRole('link', { name: 'Definí tu estrategia' })).toHaveAttribute('href', '/rebalancear')
+    expect(screen.getByRole('link', { name: 'Definí tu estrategia' })).toHaveAttribute('href', '/rebalance')
   })
 
-  it('MOCK_WEIGHTS_ONLY: shows "Estrategia guardada" and no define-strategy CTA', () => {
+  it('MOCK_WEIGHTS_ONLY: shows "Estrategia guardada" with a way to edit it, no define-strategy CTA', () => {
     render(<HomePositionView position={MOCK_WEIGHTS_ONLY} />)
     expect(screen.getByText('Estrategia guardada')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Depositar ahora' })).toHaveAttribute('href', '/mover')
+    expect(screen.getByRole('link', { name: 'Editar estrategia' })).toHaveAttribute('href', '/rebalance')
     expect(screen.queryByRole('link', { name: 'Definí tu estrategia' })).not.toBeInTheDocument()
   })
 
@@ -58,7 +58,7 @@ describe('HomePositionView', () => {
     // VFE-02: the total now renders through YieldCounter at 6-dp precision (formatUsdcPrecise).
     expect(screen.getByText('$10,000.000000')).toBeInTheDocument()
     expect(screen.getByText('Aave')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Rebalancear' })).toHaveAttribute('href', '/rebalancear')
+    expect(screen.getByRole('link', { name: 'Rebalancear' })).toHaveAttribute('href', '/rebalance')
     // Depositar/Retirar are the MoveScreen above this view now, not two more buttons here.
     expect(screen.queryByRole('link', { name: 'Depositar' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Retirar' })).not.toBeInTheDocument()
@@ -73,7 +73,7 @@ describe('HomePositionView', () => {
 describe('Page (default export)', () => {
   afterEach(() => vi.clearAllMocks())
 
-  it('sin wallet conectada muestra la CTA de conectar, no ceros', () => {
+  it('without a connected wallet shows the connect CTA, not zeros', () => {
     useAccountMock.mockReturnValue({ isConnected: false })
     useNetworkGuardMock.mockReturnValue({ isWrongNetwork: false, expectedName: 'Sepolia', switchNetwork: vi.fn() })
     useVaultPositionMock.mockReturnValue({ perAdapter: {}, totalUsdc: 0n, hasWeights: false, isLoading: false, refetch: vi.fn() })
@@ -85,7 +85,7 @@ describe('Page (default export)', () => {
     expect(screen.queryByText('Todavía no tenés posición')).not.toBeInTheDocument()
   })
 
-  it('en la red equivocada muestra el copy exacto y no arma HomePositionView', () => {
+  it('on the wrong network shows the exact copy and does not build HomePositionView', () => {
     const switchNetwork = vi.fn()
     useAccountMock.mockReturnValue({ isConnected: true })
     useNetworkGuardMock.mockReturnValue({ isWrongNetwork: true, expectedName: 'Sepolia', switchNetwork })
@@ -102,7 +102,7 @@ describe('Page (default export)', () => {
     expect(switchNetwork).toHaveBeenCalledTimes(2)
   })
 
-  it('conectada y en la red correcta, arma la posición desde useVaultPosition', () => {
+  it('connected and on the right network, builds the position from useVaultPosition', () => {
     useAccountMock.mockReturnValue({ isConnected: true })
     useNetworkGuardMock.mockReturnValue({ isWrongNetwork: false, expectedName: 'Sepolia', switchNetwork: vi.fn() })
     useVaultPositionMock.mockReturnValue({
@@ -119,7 +119,7 @@ describe('Page (default export)', () => {
     expect(screen.getAllByText('$10.000000').length).toBeGreaterThan(0)
   })
 
-  it('un monto pendiente ya no dispara banner: vive en el tanque de la wallet y en el envío a Lemon', () => {
+  it('a pending amount no longer triggers a banner: it lives in the wallet tank and in the Lemon send', () => {
     useAccountMock.mockReturnValue({ isConnected: true })
     useNetworkGuardMock.mockReturnValue({ isWrongNetwork: false, expectedName: 'Sepolia', switchNetwork: vi.fn() })
     useVaultPositionMock.mockReturnValue({

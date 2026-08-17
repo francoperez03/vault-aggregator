@@ -128,7 +128,7 @@ describe('MoveScreen', () => {
     expect(screen.getByRole('textbox')).toHaveValue('4.00')
   })
 
-  it('renders no mover UI and NO duplicate CTA without a strategy — the position card owns the empty state', () => {
+  it('renders no move UI and NO duplicate CTA without a strategy — the position card owns the empty state', () => {
     setup({ hasWeights: false })
     render(<MoveScreen />)
     expect(screen.queryByRole('link', { name: 'Definí tu estrategia' })).not.toBeInTheDocument()

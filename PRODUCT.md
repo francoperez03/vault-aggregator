@@ -2,7 +2,7 @@
 
 ## Register
 
-Dual. The connected app (`/`, `/mover`, `/rebalancear`) is **product** (design serves the money
+Dual. The connected app (`/`, `/rebalance`) is **product** (design serves the money
 flows). The unconnected `/` and any marketing surface is **brand** (the landing is the pitch).
 
 ## What it is

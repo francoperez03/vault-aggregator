@@ -61,7 +61,7 @@ afterEach(() => {
 });
 
 describe('toTxPhase', () => {
-  it('SUCCESS -> success, con el amount si vino', () => {
+  it('SUCCESS -> success, with the amount when present', () => {
     const outcome: LemonTxOutcome = { result: 'SUCCESS', txHash: '0xabc', amount: 100n };
     expect(toTxPhase(outcome)).toEqual({ kind: 'success', amount: 100n });
   });
@@ -71,19 +71,19 @@ describe('toTxPhase', () => {
     expect(toTxPhase(outcome)).toEqual({ kind: 'rejected' });
   });
 
-  it('FAILED -> reverted, nunca partial (Pitfall 4)', () => {
+  it('FAILED -> reverted, never partial (Pitfall 4)', () => {
     const outcome: LemonTxOutcome = { result: 'FAILED', error: 'execution reverted' };
     expect(toTxPhase(outcome)).toEqual({ kind: 'reverted', reason: 'execution reverted' });
   });
 
-  it('PENDING sin resolver -> timeout, nunca success (Pitfall 2)', () => {
+  it('unresolved PENDING -> timeout, never success (Pitfall 2)', () => {
     const outcome: LemonTxOutcome = { result: 'PENDING', txHash: '0xabc', settle: async () => outcome };
     expect(toTxPhase(outcome)).toEqual({ kind: 'timeout', txHash: '0xabc' });
   });
 });
 
 describe('useVaultWrite.deposit', () => {
-  it('browser: aprueba el monto exacto y después deposita, dos txs en orden', async () => {
+  it('browser: approves the exact amount then deposits, two txs in order', async () => {
     stubEnv();
     isLemonWebViewMock.mockReturnValue(false);
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
@@ -107,7 +107,7 @@ describe('useVaultWrite.deposit', () => {
     expect(refetchAllowanceMock).toHaveBeenCalled();
   });
 
-  it('browser: el usuario rechaza la firma de approve -> rejected, nunca llega a depositar', async () => {
+  it('browser: user rejects the approve signature -> rejected, never reaches deposit', async () => {
     stubEnv();
     isLemonWebViewMock.mockReturnValue(false);
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
@@ -120,7 +120,7 @@ describe('useVaultWrite.deposit', () => {
     expect(writeContractAsyncMock).toHaveBeenCalledTimes(1);
   });
 
-  it('lemon: manda un solo callSmartContract a periphery.depositWithPermit con permits[], monto exacto', async () => {
+  it('lemon: sends a single callSmartContract to periphery.depositWithPermit with permits[], exact amount', async () => {
     stubEnv();
     isLemonWebViewMock.mockReturnValue(true);
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
@@ -154,7 +154,7 @@ describe('useVaultWrite.deposit', () => {
     expect(writeContractAsyncMock).not.toHaveBeenCalled();
   });
 
-  it('lemon: sin periphery configurada -> NOT_CONFIGURED, no dispara callSmartContract', async () => {
+  it('lemon: without a configured periphery -> NOT_CONFIGURED, callSmartContract is not fired', async () => {
     stubEnv();
     vi.stubEnv('NEXT_PUBLIC_PERIPHERY_ADDRESS', '');
     isLemonWebViewMock.mockReturnValue(true);
@@ -169,7 +169,7 @@ describe('useVaultWrite.deposit', () => {
 });
 
 describe('useVaultWrite.rebalance', () => {
-  it('browser: omite los pesos en cero y arma adapters[]/bps[] (D-16)', async () => {
+  it('browser: skips zero weights and builds adapters[]/bps[] (D-16)', async () => {
     stubEnv();
     isLemonWebViewMock.mockReturnValue(false);
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
@@ -193,7 +193,7 @@ describe('useVaultWrite.rebalance', () => {
     );
   });
 
-  it('lemon: manda un solo callSmartContract con rebalance, sin approve', async () => {
+  it('lemon: sends a single callSmartContract with rebalance, no approve', async () => {
     stubEnv();
     isLemonWebViewMock.mockReturnValue(true);
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
@@ -209,7 +209,7 @@ describe('useVaultWrite.rebalance', () => {
 });
 
 describe('useVaultWrite.redeem', () => {
-  it('browser: manda el bps pedido, nunca shares ni USDC', async () => {
+  it('browser: sends the requested bps, never shares nor USDC', async () => {
     stubEnv();
     isLemonWebViewMock.mockReturnValue(false);
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });

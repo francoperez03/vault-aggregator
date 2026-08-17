@@ -1,11 +1,8 @@
-import { MoveScreen } from '@/components/vault-aggregator/move-screen'
+import { redirect } from 'next/navigation'
 
-/** Money movements on their own route, without the position below. `/` shows the same screen with
- * the position; `/depositar` and `/retirar` are kept as aliases so old links still land here. */
-export default function MoverPage() {
-  return (
-    <main className="min-h-dvh bg-background">
-      <MoveScreen />
-    </main>
-  )
+/** Legacy Spanish alias. Money moves live on `/` now (the slider sits above the position), and a
+ * standalone screen had no header and no way back. Kept only so old links and Lemon deep links
+ * still land somewhere sensible. */
+export default function Page() {
+  redirect('/')
 }

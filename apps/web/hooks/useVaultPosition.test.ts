@@ -40,7 +40,7 @@ afterEach(() => {
 });
 
 describe('useVaultPosition', () => {
-  it('sin wallet conectada queda enabled: false y no arma el multicall', () => {
+  it('without a connected wallet stays enabled: false and builds no multicall', () => {
     stubEnv();
     useAccountMock.mockReturnValue({ address: undefined });
     useReadContractsMock.mockReturnValue({ data: undefined, isLoading: false, refetch: vi.fn() });
@@ -51,7 +51,7 @@ describe('useVaultPosition', () => {
     expect(callArgs.query.enabled).toBe(false);
   });
 
-  it('arma un solo multicall batcheado por adapter (4 lecturas x 4 adapters)', () => {
+  it('builds a single batched multicall per adapter (4 reads x 4 adapters)', () => {
     stubEnv();
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
     useReadContractsMock.mockReturnValue({ data: undefined, isLoading: true, refetch: vi.fn() });
@@ -64,7 +64,7 @@ describe('useVaultPosition', () => {
     expect(useReadContractsMock).toHaveBeenCalledTimes(1);
   });
 
-  it('valúa cada adapter con positionValue (offset virtual), no una división simplificada', () => {
+  it('values each adapter with positionValue (virtual offset), not a simplified division', () => {
     stubEnv();
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
     // morpho: shares=1_000_000, totalShares=1_000_000, totalAssets=2_000_000 -> ~2x
@@ -85,7 +85,7 @@ describe('useVaultPosition', () => {
     expect(result.current.totalUsdc).toBe(expected);
   });
 
-  it('si falla una lectura de un adapter, ese adapter queda unavailable y no se estima su valor', () => {
+  it('if one adapter read fails, that adapter is unavailable and its value is not estimated', () => {
     stubEnv();
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
     const morpho = [ok(1_000_000n), fail(), ok(2_000_000n), ok(3000n)];
@@ -105,7 +105,7 @@ describe('useVaultPosition', () => {
     expect(result.current.totalUsdc).toBe(0n);
   });
 
-  it('hasWeights es true cuando al menos un weightBpsOf devuelve no cero', () => {
+  it('hasWeights is true when at least one weightBpsOf returns non-zero', () => {
     stubEnv();
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
     const morpho = [ok(0n), ok(0n), ok(0n), ok(3000n)];
@@ -123,7 +123,7 @@ describe('useVaultPosition', () => {
     expect(result.current.hasWeights).toBe(true);
   });
 
-  it('hasWeights es false cuando los cuatro pesos son cero', () => {
+  it('hasWeights is false when all four weights are zero', () => {
     stubEnv();
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
     const zero = [ok(0n), ok(0n), ok(0n), ok(0n)];
@@ -138,7 +138,7 @@ describe('useVaultPosition', () => {
     expect(result.current.hasWeights).toBe(false);
   });
 
-  it('expone refetch para invalidar después de una escritura (T-14-08-02)', () => {
+  it('exposes refetch to invalidate after a write (T-14-08-02)', () => {
     stubEnv();
     useAccountMock.mockReturnValue({ address: USER_ADDRESS });
     const refetchSpy = vi.fn();
