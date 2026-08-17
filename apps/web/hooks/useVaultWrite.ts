@@ -2,7 +2,8 @@
 
 import { useCallback, useState } from 'react';
 import { UserRejectedRequestError, WaitForTransactionReceiptTimeoutError } from 'viem';
-import { useAccount, useWriteContract } from 'wagmi';
+import { useWriteContract } from 'wagmi';
+import { useWalletAddress } from '@/hooks/useWalletAddress';
 import { waitForTransactionReceipt } from 'wagmi/actions';
 import { coreAbi } from '@/lib/contracts/coreAbi';
 import { usdcAbi } from '@/lib/contracts/usdcAbi';
@@ -76,7 +77,7 @@ const STYLUS_WRITE_GAS = 6_000_000n;
  * USDC.
  */
 export function useVaultWrite(): UseVaultWriteResult {
-  const { address } = useAccount();
+  const address = useWalletAddress();
   const coreAddress = getCoreAddress();
   const usdcAddress = getUsdcAddress();
   const peripheryAddress = getPeripheryAddress();

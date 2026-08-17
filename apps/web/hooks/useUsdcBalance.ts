@@ -1,6 +1,7 @@
 'use client';
 
-import { useAccount, useReadContract } from 'wagmi';
+import { useReadContract } from 'wagmi';
+import { useWalletAddress } from '@/hooks/useWalletAddress';
 import { usdcAbi } from '@/lib/contracts/usdcAbi';
 import { getUsdcAddress } from '@/lib/contracts/config';
 
@@ -21,7 +22,7 @@ export interface UseUsdcBalanceResult {
  * `useUsdcAllowance` on purpose: one read, no polling, refetched by the caller after a write.
  */
 export function useUsdcBalance(): UseUsdcBalanceResult {
-  const { address: user } = useAccount();
+  const user = useWalletAddress();
   const usdcAddress = getUsdcAddress();
 
   const { data, isLoading, refetch } = useReadContract({

@@ -31,6 +31,10 @@ const callSmartContractMock = vi.fn();
 const refetchPositionMock = vi.fn();
 const refetchAllowanceMock = vi.fn();
 
+vi.mock('@/hooks/useWalletAddress', () => ({
+  useWalletAddress: () => useAccountMock().address,
+}));
+
 vi.mock('wagmi', () => ({
   useAccount: () => useAccountMock(),
   useWriteContract: () => ({ writeContractAsync: writeContractAsyncMock }),

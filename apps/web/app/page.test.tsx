@@ -7,6 +7,9 @@ import { MOCK_EMPTY, MOCK_FUNDED, MOCK_WEIGHTS_ONLY } from '@/lib/mock/position'
 const useAccountMock = vi.fn()
 // useVaultYield (wired in Plan 15) also pulls useChainId from wagmi — mock both.
 vi.mock('wagmi', () => ({ useAccount: () => useAccountMock(), useChainId: () => 421614 }))
+vi.mock('@/hooks/useWalletAddress', () => ({
+  useWalletAddress: () => (useAccountMock().isConnected ? '0x000000000000000000000000000000000000dEaD' : undefined),
+}))
 
 const useNetworkGuardMock = vi.fn()
 vi.mock('@/hooks/useNetworkGuard', () => ({ useNetworkGuard: () => useNetworkGuardMock() }))

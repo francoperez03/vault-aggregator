@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useAccount, useChainId } from 'wagmi';
+import { useChainId } from 'wagmi';
+import { useWalletAddress } from '@/hooks/useWalletAddress';
 import {
   CAP_SECONDS,
   MIN_SAMPLE_INTERVAL_S,
@@ -52,7 +53,7 @@ export function useVaultYield(
   perAdapter: VaultPosition['perAdapter'],
   opts?: UseVaultYieldOpts,
 ): UseVaultYieldResult {
-  const { address: accountAddress } = useAccount();
+  const accountAddress = useWalletAddress();
   const accountChainId = useChainId();
   const chainId = opts?.chainId ?? accountChainId;
   const address = opts?.address ?? accountAddress ?? 'anonymous';

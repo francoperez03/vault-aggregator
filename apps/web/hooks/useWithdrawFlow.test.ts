@@ -10,6 +10,10 @@ const readContractMock = vi.fn();
 const redeemOnChainMock = vi.fn();
 const withdrawMock = vi.fn();
 
+vi.mock('@/hooks/useWalletAddress', () => ({
+  useWalletAddress: () => useAccountMock().address,
+}));
+
 vi.mock('wagmi', () => ({
   useAccount: () => useAccountMock(),
   usePublicClient: () => ({ readContract: readContractMock }),
