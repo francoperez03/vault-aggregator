@@ -1,7 +1,6 @@
 'use client'
 
 import { DepositApproveStep } from '@/components/vault-aggregator/deposit-approve-step'
-import { FundHint } from '@/components/vault-aggregator/fund-hint'
 import { MoveControl } from '@/components/vault-aggregator/move-control'
 import { formatUsdc } from '@/lib/format'
 import type { MovePreview } from '@/lib/vault/move'
@@ -83,9 +82,6 @@ export function MoveScreen({ isLemonRuntime }: MoveScreenProps) {
         onMove={handleMove}
       />
       <DepositApproveStep isLemonRuntime={isLemon} amount={balance} />
-      {/* Web with nothing to move: say how money gets here. Inside Lemon the account block
-          above already is the way in. */}
-      {!isLemon && balance === 0n && totalUsdc === 0n && address && <FundHint address={address} />}
     </div>
   )
 }

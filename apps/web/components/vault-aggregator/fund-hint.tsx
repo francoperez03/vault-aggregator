@@ -5,9 +5,8 @@ import { Copy, Check } from 'lucide-react'
 import { getChainId, getChainLabel } from '@/lib/env'
 
 /**
- * Web only (inside Lemon the account block above is the way in): with no USDC anywhere, the move
- * control is dead and the screen has to say how money gets here — a transfer to this wallet on
- * this chain. On Sepolia the Circle faucet is the honest answer, so it is linked.
+ * Web only (inside Lemon the account block is the way in): how money gets here — a transfer to
+ * this wallet on this chain. On Sepolia the Circle faucet is the honest answer, so it is linked.
  */
 export function FundHint({ address }: { address: `0x${string}` }) {
   const [copied, setCopied] = useState(false)
@@ -32,7 +31,7 @@ export function FundHint({ address }: { address: `0x${string}` }) {
   return (
     <div className="flex flex-col gap-2 rounded-[12px] border border-[var(--border-default)] [background:var(--surface-card)] px-4 py-3 text-sm">
       <p className="text-[var(--text-secondary)]">
-        Para empezar, mandá USDC en {getChainLabel(chainId)} a esta wallet:
+        Mandá USDC en {getChainLabel(chainId)} a esta wallet:
       </p>
       <button
         type="button"

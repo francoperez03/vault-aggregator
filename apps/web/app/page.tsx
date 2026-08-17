@@ -13,6 +13,7 @@ import { ProtocolBreakdown } from '@/components/vault-aggregator/protocol-breakd
 import { ProtocolLogo } from '@/components/vault-aggregator/protocol-logo'
 import { LemonHandshake } from '@/components/vault-aggregator/lemon-handshake'
 import { LemonAccount } from '@/components/vault-aggregator/lemon-account-card'
+import { WalletCard } from '@/components/vault-aggregator/wallet-card'
 import { useUsdcBalance } from '@/hooks/useUsdcBalance'
 import { getVaults } from '@/lib/vaults'
 import { MoveScreen } from '@/components/vault-aggregator/move-screen'
@@ -203,7 +204,8 @@ function toPositionState(
 
 export default function Page() {
   // SIWE wallet inside Lemon, wagmi account otherwise: wagmi alone never connects in the WebView.
-  const isConnected = Boolean(useWalletAddress())
+  const walletAddress = useWalletAddress()
+  const isConnected = Boolean(walletAddress)
   const { isWrongNetwork, expectedName, switchNetwork } = useNetworkGuard()
   const vaultPosition = useVaultPosition()
   // VFE-02: turn the already-fetched positions into the live per-second counter. No txNonce is
@@ -401,6 +403,8 @@ export default function Page() {
                           vaultPosition.refetch()
                         }}
                       />
+                    ) : walletAddress ? (
+                      <WalletCard walletUsdc={walletUsdc} address={walletAddress} onDone={refetchBalance} />
                     ) : (
                       <div className="flex items-baseline justify-between text-sm">
                         <span className="text-[var(--text-secondary)]">En tu wallet</span>

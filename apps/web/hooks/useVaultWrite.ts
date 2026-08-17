@@ -35,7 +35,7 @@ export function toTxPhase(outcome: LemonTxOutcome): TxPhase {
 /** A browser-runtime write failure: a user cancel is `rejected`, a stuck receipt wait is
  * `timeout`, anything else is `reverted` carrying the error's own message as the reason —
  * never silently swallowed. */
-function browserErrorToPhase(error: unknown): TxPhase {
+export function browserErrorToPhase(error: unknown): TxPhase {
   if (error instanceof UserRejectedRequestError) return { kind: 'rejected' };
   if (error instanceof WaitForTransactionReceiptTimeoutError) return { kind: 'timeout' };
   return { kind: 'reverted', reason: error instanceof Error ? error.message : undefined };

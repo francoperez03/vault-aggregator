@@ -30,6 +30,9 @@ vi.mock('@/lib/lemon/bridge', () => ({
   isLemonWebView: () => isLemonWebViewMock(),
   getLemonBridge: () => ({ deposit: vi.fn(), withdraw: vi.fn() }),
 }))
+vi.mock('@/hooks/useUsdcTransfer', () => ({
+  useUsdcTransfer: () => ({ phase: null, isBusy: false, send: vi.fn(), reset: vi.fn() }),
+}))
 vi.mock('@/hooks/useLemonTransfer', () => ({
   useLemonTransfer: () => ({ phase: null, isBusy: false, bringFromLemon: vi.fn(), sendToLemon: vi.fn(), reset: vi.fn() }),
 }))
@@ -133,9 +136,10 @@ describe('Page (default export)', () => {
     // 6-dp precision: the position card on top plus the single morpho row.
     expect(screen.getByRole('region', { name: 'Tu posición' })).toHaveTextContent('$10.000000')
     expect(screen.getAllByText('$10.000000').length).toBeGreaterThan(0)
-    // Web: the card footer is the wallet balance, not the Lemon tabs.
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
-    expect(screen.getByText('En tu wallet')).toBeInTheDocument()
+    // Web: the card footer is the wallet card (Recibir / Enviar to an address), never the Lemon tabs.
+    expect(screen.getByRole('tab', { name: 'Recibir' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Traer' })).not.toBeInTheDocument()
+    expect(screen.getByText('Disponible')).toBeInTheDocument()
     // The overview has no ring and one primary action; the ring belongs to the weights screen.
     expect(screen.queryByTestId('strategy-ring')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Mover plata' })).toBeInTheDocument()
