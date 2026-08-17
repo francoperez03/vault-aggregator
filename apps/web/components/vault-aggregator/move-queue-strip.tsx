@@ -28,7 +28,7 @@ export function MoveQueueStrip() {
           <div
             key={id}
             className={cn(
-              'chamfer-sm flex items-center gap-2 border-[1.5px] px-3 py-2 font-mono text-xs',
+              'rounded-[8px] flex items-center gap-2 border-[1.5px] px-3 py-2 font-mono text-xs',
               done
                 ? 'border-[var(--yield)]/40 bg-[var(--yield)]/10 text-[var(--text-primary)]'
                 : failed

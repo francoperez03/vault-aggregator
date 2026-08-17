@@ -21,8 +21,8 @@ per-user on-chain; exit is always available.
 
 ## Brand personality
 
-Sober-technical. Shares one studio's visual language with CoinFlip (dark canvas, chamfers, cyan
-identity, Chakra Petch chrome) but calmer: this app moves other people's money, so no glitches,
+Sober-technical. Shares one studio's visual language with CoinFlip (dark canvas, cyan
+identity, Chakra Petch chrome; rounded where CoinFlip chamfers) but calmer: this app moves other people's money, so no glitches,
 no shakes, no arcade vocabulary. Confidence comes from precision — mono tabular numbers, exact
 percentages, verifiable addresses — not from hype.
 
@@ -36,5 +36,5 @@ percentages, verifiable addresses — not from hype.
 
 `DESIGN.md` at this root is the authority (ported from CoinFlip's CSS). Tokens live in
 `apps/web/app/globals.css`. Key rules: brand cyan `#12AAFF` is identity and never a button fill;
-action blue `#0160E4` is buttons only; `--yield` green is money going up; chamfer not radius;
+action blue `#0160E4` is buttons only; `--yield` green is money going up; rounded 12px, never chamfer;
 glow not diffuse shadow; one kicker per screen region.

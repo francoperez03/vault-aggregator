@@ -7,14 +7,14 @@ import { useConnect } from 'wagmi'
 import { Button } from '@/components/ui/button'
 import { hasWalletConnect } from '@/lib/wagmi/config'
 
-/** The Vaulty wordmark: display type plus the chamfered brand-cyan mark. Text-based on purpose —
+/** The Vaulty wordmark: display type plus the rounded brand-cyan mark. Text-based on purpose —
  * the mark is the same cut corner every surface in the app carries. */
 export function VaultyWordmark({ compact = false }: { compact?: boolean }) {
   return (
     <span className="flex items-center gap-2">
       <span
         aria-hidden="true"
-        className={compact ? 'chamfer-sm size-3 bg-[var(--brand)]' : 'chamfer-sm size-4 bg-[var(--brand)]'}
+        className={compact ? 'size-3 rounded-[3px] bg-[var(--brand)]' : 'size-4 rounded-[4px] bg-[var(--brand)]'}
         style={{ boxShadow: '0 0 12px var(--brand-glow, rgba(18,170,255,0.35))' }}
       />
       <span
@@ -127,7 +127,7 @@ function LiveSplit() {
 
   return (
     <div aria-hidden="true">
-      <div className="chamfer-sm flex h-3 w-full overflow-hidden bg-[var(--bg-surface)]">
+      <div className="flex h-3 w-full overflow-hidden rounded-full bg-[var(--bg-surface)]">
         {PROTOCOLS.map((p, i) => (
           <span
             key={p.name}
@@ -206,7 +206,7 @@ export function Landing() {
               {i < STEPS.length - 1 && (
                 <span aria-hidden="true" className="absolute left-[13px] top-8 h-[calc(100%-2rem)] w-px bg-[var(--border-subtle,#1E242E)]" />
               )}
-              <span className="chamfer-sm mt-0.5 flex size-7 shrink-0 items-center justify-center border border-[var(--border-default,#2A313C)] font-mono text-xs text-[var(--brand)]">
+              <span className="rounded-[8px] mt-0.5 flex size-7 shrink-0 items-center justify-center border border-[var(--border-default,#2A313C)] font-mono text-xs text-[var(--brand)]">
                 {i + 1}
               </span>
               <div className="flex flex-col gap-0.5">

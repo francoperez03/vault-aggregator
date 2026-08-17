@@ -25,7 +25,7 @@ function Jar({ label, amount, pct, color, emphasis }: JarProps) {
       {/* Sentence case, not a kicker: two tanks side by side with their own uppercase labels was
           the eyebrow reflex — one kicker per region is the rule (DESIGN.md). */}
       <span className="text-sm font-medium text-[var(--text-secondary)]">{label}</span>
-      <div className="chamfer relative h-32 w-full overflow-hidden border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-void)]">
+      <div className="rounded-[12px] relative h-32 w-full overflow-hidden border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-void)]">
         <div
           className="absolute inset-x-0 bottom-0 transition-[height] duration-[var(--dur-base)] ease-[var(--ease-snap)]"
           style={{
