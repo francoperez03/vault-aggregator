@@ -142,7 +142,7 @@ describe('Page (default export)', () => {
     expect(screen.getByText('Disponible')).toBeInTheDocument()
     // The overview has no ring and one primary action; the ring belongs to the weights screen.
     expect(screen.queryByTestId('strategy-ring')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Mover plata' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mover fondos' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Rebalancear' }))
     expect(screen.getByTestId('strategy-ring')).toBeInTheDocument()
   })

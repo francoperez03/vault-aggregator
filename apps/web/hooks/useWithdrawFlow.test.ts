@@ -70,7 +70,7 @@ describe('useWithdrawFlow.redeem (step 1)', () => {
     expect(window.localStorage.getItem(`vault-pending-settlement:${USER_ADDRESS}`)).toBe('600000');
   });
 
-  it('a step 1 revert never produces partial (Pitfall 4): reverted with "No se movió plata"', async () => {
+  it('a step 1 revert never produces partial (Pitfall 4): reverted with "No se movieron fondos"', async () => {
     readContractMock.mockResolvedValueOnce(1_000_000n);
     redeemOnChainMock.mockResolvedValue({ kind: 'reverted', reason: 'RedeemShortfall' });
 

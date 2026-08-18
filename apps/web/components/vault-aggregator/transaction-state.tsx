@@ -83,7 +83,7 @@ export function TransactionState({ phase, onPrimary, onSecondary, summary }: Tra
       return (
         <div className="flex flex-col gap-4 p-5">
           <p className="text-[15px] leading-relaxed text-[var(--text-primary)]">
-            Cancelaste la firma. No pasó nada, no se movió plata.
+            Cancelaste la firma. No pasó nada, no se movieron fondos.
           </p>
           <Button onClick={onPrimary}>Volver a firmar</Button>
         </div>
@@ -93,7 +93,7 @@ export function TransactionState({ phase, onPrimary, onSecondary, summary }: Tra
       return (
         <div className="flex flex-col gap-4 p-5">
           <p className="text-[15px] leading-relaxed text-[var(--danger)]">
-            La transacción no se completó{phase.reason ? ` (${phase.reason})` : ''}. No se movió plata.
+            La transacción no se completó{phase.reason ? ` (${phase.reason})` : ''}. No se movieron fondos.
           </p>
           <Button onClick={onPrimary}>Reintentar transacción</Button>
         </div>

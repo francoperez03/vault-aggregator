@@ -52,7 +52,7 @@ describe('TransactionState', () => {
 
   it('rejected: exact copy, CTA "Volver a firmar", never the error token class', () => {
     const { container } = render(<TransactionState phase={{ kind: 'rejected' }} onPrimary={noop} />);
-    expect(screen.getByText('Cancelaste la firma. No pasó nada, no se movió plata.')).toBeInTheDocument();
+    expect(screen.getByText('Cancelaste la firma. No pasó nada, no se movieron fondos.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Volver a firmar' })).toBeInTheDocument();
     expect(container.innerHTML).not.toMatch(/--danger/);
   });

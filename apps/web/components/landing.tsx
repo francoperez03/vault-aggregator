@@ -177,7 +177,7 @@ export function Landing() {
           className="landing-rise max-w-[16ch] font-display text-[clamp(2rem,9vw,3rem)] font-bold leading-[1.08] text-[var(--text-primary)] [text-wrap:balance]"
           style={{ animationDelay: '80ms', letterSpacing: '-0.02em' }}
         >
-          Tu plata, rindiendo donde vos digas.
+          Tus fondos, rindiendo donde vos digas.
         </h1>
 
         <div className="landing-rise mt-1" style={{ animationDelay: '160ms' }}>

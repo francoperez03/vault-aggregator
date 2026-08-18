@@ -433,7 +433,7 @@ export default function Page() {
                 <div className="px-4 pt-4">
                   <Button type="button" size="lg" className="w-full" onClick={() => setStep('move')}>
                     <ArrowLeftRight aria-hidden="true" />
-                    {vaultPosition.totalUsdc > 0n ? 'Mover plata' : 'Poner a rendir'}
+                    {vaultPosition.totalUsdc > 0n ? 'Mover fondos' : 'Poner a rendir'}
                   </Button>
                 </div>
               )}
