@@ -215,8 +215,10 @@ export default function Page() {
   const { isWrongNetwork, expectedName, switchNetwork } = useNetworkGuard()
   const vaultPosition = useVaultPosition()
   // VFE-02: turn the already-fetched positions into the live per-second counter. No txNonce is
-  // threaded here because deposits/withdraws/rebalances complete on their own routes, not on `/`;
-  // the snapshot's MIN_SAMPLE_INTERVAL gate absorbs the between-visit share jump (Pitfall 2/3).
+  // threaded here even though deposits/withdraws/rebalances now complete on this same `/` rail:
+  // `deriveRate`'s MAX_PLAUSIBLE_APR gate treats any capital-sized jump as a rebase (rate 0)
+  // regardless of which screen or tab produced it, which is strictly wider coverage than a
+  // nonce this component could only thread for its own children.
   const vaultYield = useVaultYield(vaultPosition.perAdapter)
   // D-19: the banner (plan 03/08) is only real once step 1 of a withdrawal actually measured and
   // persisted an amount, which is what useWithdrawFlow reads back from localStorage on mount.

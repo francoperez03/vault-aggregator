@@ -61,7 +61,11 @@ export function useVaultPosition(): VaultPosition {
 
   const { data, isLoading, refetch } = useReadContracts({
     contracts,
-    query: { enabled: enabled, staleTime: STALE_TIME_MS },
+    // refetchInterval: inside the Lemon WebView there are no window-focus events, so without
+    // active polling the position is read once per mount and the yield counter never receives
+    // a second sample to derive a rate from (it extrapolates a stale rate up to its cap and
+    // freezes). One poll per MIN_SAMPLE_INTERVAL_S keeps the samples flowing.
+    query: { enabled: enabled, staleTime: STALE_TIME_MS, refetchInterval: 60_000 },
   });
 
   const perAdapter: VaultPosition['perAdapter'] = {};

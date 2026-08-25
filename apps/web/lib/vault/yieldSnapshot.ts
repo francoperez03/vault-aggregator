@@ -20,12 +20,29 @@ export interface YieldSnapshot {
   valueUsdc: string;
 }
 
+/** Any implied APR above this is capital moving (deposit/redeem/rebalance), not yield: no
+ * lending protocol pays 1000% APR, and the production incident this guards against implied
+ * ~10,000,000% (a 0.5 USDC deposit read as 105s of yield, 2026-08-25). */
+export const MAX_PLAUSIBLE_APR = 10;
+
+const SECONDS_PER_YEAR = 31_536_000;
+
 /** Per-second atomic-USDC rate between two samples. `dt <= 0` (same or reversed timestamps)
- * returns 0 rather than dividing by zero or going negative-time. */
+ * returns 0 rather than dividing by zero or going negative-time.
+ *
+ * A delta whose implied APR exceeds `MAX_PLAUSIBLE_APR` returns 0: that jump is principal
+ * moving between samples, never yield. This is the single choke point every caller derives
+ * rates through, so it also covers writes the `txNonce` rebase can't see (another screen of
+ * the `/` rail, another tab, an external tx). The caller still writes the new sample, which
+ * is exactly the rebase-to-post-tx-value behavior. A `prev` of 0 has no plausible yield at
+ * all, so any delta from it is a first funding, rate 0. */
 export function deriveRate(prev: YieldSnapshot, next: YieldSnapshot): number {
   const dt = (next.timestampMs - prev.timestampMs) / 1000;
   if (dt <= 0) return 0;
-  return Number(BigInt(next.valueUsdc) - BigInt(prev.valueUsdc)) / dt;
+  const rate = Number(BigInt(next.valueUsdc) - BigInt(prev.valueUsdc)) / dt;
+  const maxRate = (Number(BigInt(prev.valueUsdc)) * MAX_PLAUSIBLE_APR) / SECONDS_PER_YEAR;
+  if (Math.abs(rate) > maxRate) return 0;
+  return rate;
 }
 
 /** Projects `lastValueUsdc` forward by `rate` over `elapsedSec`, clamped to `[0, capSeconds]`

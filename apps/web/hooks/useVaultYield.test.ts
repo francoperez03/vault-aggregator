@@ -35,13 +35,13 @@ describe('useVaultYield', () => {
   it('derives an up rate once MIN_SAMPLE_INTERVAL_S has elapsed with a rising value', () => {
     const { result, rerender } = renderHook(
       ({ perAdapter }: { perAdapter: VaultPosition['perAdapter'] }) => useVaultYield(perAdapter),
-      { initialProps: { perAdapter: { morpho: adapter(1_000_000n) } } },
+      { initialProps: { perAdapter: { morpho: adapter(1_000_000_000n) } } },
     );
 
     act(() => {
       vi.advanceTimersByTime(61_000);
     });
-    rerender({ perAdapter: { morpho: adapter(1_061_000n) } });
+    rerender({ perAdapter: { morpho: adapter(1_000_006_000n) } });
     act(() => {
       vi.advanceTimersByTime(1_000);
     });
@@ -53,13 +53,13 @@ describe('useVaultYield', () => {
   it('derives a down rate with a falling value', () => {
     const { result, rerender } = renderHook(
       ({ perAdapter }: { perAdapter: VaultPosition['perAdapter'] }) => useVaultYield(perAdapter),
-      { initialProps: { perAdapter: { morpho: adapter(1_000_000n) } } },
+      { initialProps: { perAdapter: { morpho: adapter(1_000_000_000n) } } },
     );
 
     act(() => {
       vi.advanceTimersByTime(61_000);
     });
-    rerender({ perAdapter: { morpho: adapter(900_000n) } });
+    rerender({ perAdapter: { morpho: adapter(999_994_000n) } });
     act(() => {
       vi.advanceTimersByTime(1_000);
     });
@@ -72,27 +72,49 @@ describe('useVaultYield', () => {
     const { result, rerender } = renderHook(
       ({ perAdapter, opts }: { perAdapter: VaultPosition['perAdapter']; opts: { txNonce: number } }) =>
         useVaultYield(perAdapter, opts),
-      { initialProps: { perAdapter: { morpho: adapter(1_000_000n) }, opts: { txNonce: 1 } } },
+      { initialProps: { perAdapter: { morpho: adapter(1_000_000_000n) }, opts: { txNonce: 1 } } },
     );
 
     act(() => {
       vi.advanceTimersByTime(61_000);
     });
-    rerender({ perAdapter: { morpho: adapter(1_061_000n) }, opts: { txNonce: 1 } });
+    rerender({ perAdapter: { morpho: adapter(1_000_006_000n) }, opts: { txNonce: 1 } });
     act(() => {
       vi.advanceTimersByTime(1_000);
     });
     expect(result.current.perAdapter.morpho?.state).toBe('up'); // sanity: a rate did exist before the reset
 
     // Simulate a completed rebalance/deposit reported via a new txNonce, with a one-time share jump.
-    rerender({ perAdapter: { morpho: adapter(5_000_000n) }, opts: { txNonce: 2 } });
+    rerender({ perAdapter: { morpho: adapter(5_000_000_000n) }, opts: { txNonce: 2 } });
     act(() => {
       vi.advanceTimersByTime(1_000);
     });
 
     expect(result.current.perAdapter.morpho?.state).toBe('flat');
     expect(result.current.perAdapter.morpho?.rate).toBe(0);
-    expect(result.current.perAdapter.morpho?.displayedValueUsdc).toBe(5_000_000n);
+    expect(result.current.perAdapter.morpho?.displayedValueUsdc).toBe(5_000_000_000n);
+  });
+
+  it('a deposit-sized jump WITHOUT a txNonce still rebases flat (MAX_PLAUSIBLE_APR gate)', () => {
+    // The 2026-08-25 production incident: writes complete on the same `/` rail with no nonce
+    // threaded, so the gate in deriveRate is the only thing standing between a 0.5 USDC
+    // deposit and a 10M% APY counter.
+    const { result, rerender } = renderHook(
+      ({ perAdapter }: { perAdapter: VaultPosition['perAdapter'] }) => useVaultYield(perAdapter),
+      { initialProps: { perAdapter: { fluid: adapter(499_998n) } } },
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(105_700);
+    });
+    rerender({ perAdapter: { fluid: adapter(999_998n) } });
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+
+    expect(result.current.perAdapter.fluid?.state).toBe('flat');
+    expect(result.current.perAdapter.fluid?.rate).toBe(0);
+    expect(result.current.perAdapter.fluid?.displayedValueUsdc).toBe(999_998n);
   });
 
   it('totalDisplayedUsdc equals the sum of the per-adapter displayed rows (Pitfall 1)', () => {
