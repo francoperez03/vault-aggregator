@@ -8,7 +8,7 @@
 //! unwind_request(...)` block, so a skipped (fully-throttled) leg's `owed` never made it into the
 //! reconciliation and the leg silently "succeeded" with the burn already applied. The fix moved
 //! `owed_total += owed` OUTSIDE that `if let`, unconditional. `stylus-test` 0.10.7's shared
-//! return-data buffer makes this unreachable in a unit test (`docs/known-issues.md` KI-04): forcing
+//! return-data buffer makes this unreachable in a unit test (the known-issues log KI-04): forcing
 //! `max_withdraw() == 0` in TestVM also forces `totalAssets() == 0` in the same mocked call, which
 //! forces `owed == 0`, and a skipped leg with `owed == 0` can't distinguish the fixed and broken
 //! code. Only a real chain, where each read returns its own value, can catch a regression here.
@@ -19,7 +19,7 @@
 //! Requires `--test-threads=1`: these tests mutate shared on-chain rig state.
 //!
 //! Run with:
-//!   source docs/.sepolia-env
+//!   source .sepolia-env
 //!   ARB_SEPOLIA_RPC_URL=... SEPOLIA_WALLET_KEY=... \
 //!     cargo test -p adapter-e2e --test sepolia_edge_cases -- --test-threads=1 --nocapture
 //!
@@ -282,7 +282,7 @@ async fn withdraw_cap_propagates_to_adapter_max_withdraw() -> anyhow::Result<()>
 /// burned nothing. Clearing the cap and re-running the SAME redeem must then succeed and zero the
 /// caller's position, which is only possible if the failed attempt mutated no state. This is the
 /// only place `unwind_position`'s `owed_total += owed` placement (outside the `if let`) gets
-/// verified end-to-end; see `docs/known-issues.md` KI-02/KI-04.
+/// verified end-to-end; see the known-issues log KI-02/KI-04.
 #[tokio::test]
 async fn throttled_adapter_reverts_whole_redeem_and_burns_nothing() -> anyhow::Result<()> {
     let Some(rig) = connect().await? else {
@@ -491,7 +491,7 @@ async fn zero_amount_deposit_reverts() -> anyhow::Result<()> {
 /// — its sibling `..._within_tolerance..._measured` test below reuses it and reads its OWN baseline
 /// live, so it tolerates running second. Index 2 (EULER) was tried first during this test's
 /// development and now permanently carries unclaimed donation dust from that iteration (D-10: no
-/// path may sweep it) — documented in `docs/known-issues.md`, harmless, not reused here.
+/// path may sweep it) — documented in the known-issues log, harmless, not reused here.
 /// `setDepositCreditBps` is set per the plan's WR-02 ("fee-on-deposit vault") framing even though,
 /// per the above, it is not load-bearing for either revert shape.
 #[tokio::test]

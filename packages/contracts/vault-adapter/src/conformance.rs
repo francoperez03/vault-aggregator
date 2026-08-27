@@ -378,7 +378,7 @@ mod fluid {
         assert_eq!(guard_result.unwrap_err(), errors::zero_shares());
     }
 
-    /// FLUID-THROTTLE's over-report case (`docs/PROTOCOL-PROBES.md`): `maxWithdraw` reports a
+    /// FLUID-THROTTLE's over-report case (the PROTOCOL-PROBES log): `maxWithdraw` reports a
     /// value at or above the requested amount (the guard passes) while Fluid's protocol-native
     /// `withdrawalLimit`/`expandPercent`/`expandDuration` throttle still causes the vault's own
     /// `withdraw` to revert. Proves the adapter surfaces `Err` and performs no partial

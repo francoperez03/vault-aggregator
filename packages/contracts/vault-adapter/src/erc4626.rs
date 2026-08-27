@@ -10,7 +10,7 @@
 //! `stylus_sdk::call::call`/`static_call` dispatch shape as `permit2.rs`, never that macro.
 //!
 //! Every selector below is asserted in `#[cfg(test)]` against the live `cast sig` values
-//! recorded in `docs/PROTOCOL-PROBES.md` (re-confirmed 2026-07-21 against Morpho/Fluid/Euler on
+//! recorded in the PROTOCOL-PROBES log (re-confirmed 2026-07-21 against Morpho/Fluid/Euler on
 //! Arbitrum One) — the exact idiom that caught the M1 defect described above.
 
 use alloc::vec::Vec;
@@ -66,7 +66,7 @@ pub fn deposit_to_vault(
 }
 
 /// Withdraws `assets` from `vault` on behalf of `owner`, crediting `receiver`. Returns shares
-/// burned. Per `docs/PROTOCOL-PROBES.md`'s WITHDRAW-PATH verdict, all three Phase 9 production
+/// burned. Per the PROTOCOL-PROBES log's WITHDRAW-PATH verdict, all three Phase 9 production
 /// vaults support this asset-exact path directly.
 pub fn withdraw_from_vault(
     vm: &impl Host,
@@ -107,7 +107,7 @@ pub fn redeem_from_vault(
     redeemCall::abi_decode_returns(&result).map_err(decode_error)
 }
 
-/// Reads `vault.maxWithdraw(owner)`. Per FLUID-THROTTLE (`docs/PROTOCOL-PROBES.md`), this
+/// Reads `vault.maxWithdraw(owner)`. Per FLUID-THROTTLE (the PROTOCOL-PROBES log), this
 /// interface answer is not unconditionally trustworthy on Fluid — callers guarding a live
 /// withdraw should not treat it as a hard ceiling without Plan 06's empirical boundary check.
 pub fn max_withdraw(vm: &impl Host, vault: Address, owner: Address) -> Result<U256, Vec<u8>> {
@@ -160,7 +160,7 @@ mod tests {
         Address::from([0x33; 20])
     }
 
-    // --- selector cross-checks (docs/PROTOCOL-PROBES.md, cast sig values) ---
+    // --- selector cross-checks (PROTOCOL-PROBES log, cast sig values) ---
 
     #[test]
     fn deposit_selector_matches_cast_sig() {

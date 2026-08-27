@@ -69,7 +69,7 @@ impl VaultAdapter {
     }
 
     /// Reads the vault's `maxWithdraw(adapter)`, USDC-denominated. Per FLUID-THROTTLE
-    /// (`docs/PROTOCOL-PROBES.md`), this interface answer is not unconditionally trustworthy on
+    /// (the PROTOCOL-PROBES log), this interface answer is not unconditionally trustworthy on
     /// Fluid — callers should not treat it as a hard ceiling without a live boundary check.
     pub fn max_withdraw(&self) -> Result<U256, Vec<u8>> {
         self.ensure_initialized()?;

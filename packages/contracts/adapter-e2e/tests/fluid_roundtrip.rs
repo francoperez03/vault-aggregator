@@ -105,7 +105,7 @@ async fn fluid_deposit_withdraw_roundtrip() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Answers FLUID-THROTTLE (`docs/PROTOCOL-PROBES.md`) empirically. Two probes against the
+/// Answers FLUID-THROTTLE (the PROTOCOL-PROBES log) empirically. Two probes against the
 /// caller's live `maxWithdraw()`:
 /// 1. `maxWithdraw() + 1` must revert with the adapter's own `WithdrawExceedsMax` guard — proves
 ///    the guard fires correctly at the boundary.

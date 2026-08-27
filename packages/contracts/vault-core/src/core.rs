@@ -1589,7 +1589,7 @@ mod tests {
     ///
     /// The end-to-end half (redeem with `total_assets() > 0` and `max_withdraw() == 0` reverting
     /// `RedeemShortfall`) is NOT constructible under `stylus-test` 0.10.7 and deliberately has no
-    /// test here — see KI-04 in `docs/known-issues.md` for the proof and for the Sepolia rig test
+    /// test here — see KI-04 in the known-issues log for the proof and for the Sepolia rig test
     /// that covers it (`throttled_adapter_reverts_whole_redeem_and_burns_nothing`).
     #[test]
     fn unwind_request_skips_zero_and_throttled() {

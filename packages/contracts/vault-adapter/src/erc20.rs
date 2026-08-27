@@ -127,7 +127,7 @@ mod tests {
         }
     }
 
-    // --- selector cross-checks (docs/PROTOCOL-PROBES.md, cast sig values) ---
+    // --- selector cross-checks (PROTOCOL-PROBES log, cast sig values) ---
 
     #[test]
     fn approve_selector_matches_cast_sig() {

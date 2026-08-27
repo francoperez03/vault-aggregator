@@ -7,7 +7,7 @@
 //! own weights, never a global allocation; the asset is real USDC with no `mint`.
 //!
 //! Run with:
-//!   source docs/.sepolia-env
+//!   source .sepolia-env
 //!   ARB_SEPOLIA_RPC_URL=... SEPOLIA_WALLET_KEY=... \
 //!     cargo test -p adapter-e2e --test sepolia_core_flow -- --test-threads=1 --nocapture
 //!
@@ -73,7 +73,7 @@ fn assert_close(actual: U256, expected: U256, label: &str) {
 /// crate on purpose: if this replica ever diverges from the real formula, the test fails — that
 /// divergence IS the thing KI-03 exists to catch, since TestVM's shared return-data buffer
 /// (`stylus-test` 0.10.7) makes the equivalent assertion unreachable in unit tests
-/// (`docs/known-issues.md` KI-03). Plain U256 arithmetic is safe here: shares/assets in this rig
+/// (the known-issues log KI-03). Plain U256 arithmetic is safe here: shares/assets in this rig
 /// never approach 2^256, unlike the on-chain version this doesn't need the U512 widen.
 fn convert_to_assets_offchain(shares: U256, total_shares: U256, total_assets: U256) -> U256 {
     const OFFSET_POW: u64 = 1_000_000;
@@ -347,7 +347,7 @@ async fn deposit_without_weights_reverts_no_weights_set() -> anyhow::Result<()> 
 /// test. Share-ledger independence between users IS provable under TestVM and already is
 /// (`two_users_with_different_weights_redeem_only_their_own_position`); the EXACT payout amount
 /// is not, and this live test is the only place it gets checked (pattern T-12.1-21,
-/// `docs/known-issues.md` KI-03).
+/// the known-issues log KI-03).
 ///
 /// Two users, disjoint adapters, disjoint weights: A only ever touches adapters[0]/[1] at
 /// 50/50, B only ever touches adapters[2]/[3] at 70/30. `write_weights` rejects zero weights, so
@@ -564,7 +564,7 @@ async fn two_users_exact_payout_with_different_weights() -> anyhow::Result<()> {
 /// N = 5 (D-09's range is 5/10/20): each cycle is a full round-trip (deposit -> rebalance to a
 /// distinct allocation -> full-bps redeem), and `USDC.balanceOf(core)` is read before the loop and
 /// after every cycle. Five cycles landed a clearly non-zero, non-exploding series on the first
-/// run (see the `KI-01-DUST` verdict this test's output feeds into `docs/PROTOCOL-PROBES.md`), so
+/// run (see the `KI-01-DUST` verdict this test's output feeds into the PROTOCOL-PROBES log), so
 /// there was no need to burn more of the finite faucet budget on 10 or 20.
 ///
 /// The dust is expected to be monotonic non-decreasing (nothing sweeps it) and small relative to

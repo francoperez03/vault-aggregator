@@ -17,7 +17,7 @@
 //! `sepolia_edge_cases.rs`.
 //!
 //! Run with:
-//!   source docs/.sepolia-env
+//!   source .sepolia-env
 //!   ARB_SEPOLIA_RPC_URL=... SEPOLIA_WALLET_KEY=... SEPOLIA_WALLET_KEY_2=... \
 //!     cargo test -p adapter-e2e --test sepolia_periphery -- --test-threads=1 --nocapture
 
