@@ -28,7 +28,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARB_ONE_RPC_URL="${ARB_ONE_RPC_URL:-https://arb1.arbitrum.io/rpc}"
 KEY_PATH="${KEY_PATH:-$HOME/.wakeup-m2-arb1.key}"
 MAX_FEE_GWEI="${MAX_FEE_GWEI:-0.1}"
-ENV_OUT="$ROOT/docs/.m2-env"
+ENV_OUT="$ROOT/.m2-env"
 
 # Deploy targets on Arbitrum One (DISCOVERY.md §2/§3, ADR 001 as amended 2026-07-21).
 USDC="0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
@@ -44,7 +44,7 @@ MIN_USDC=5000000 # 5 USDC at 6 decimals — lowered from 10 (Phase 10 Plan 04): 
 
 # --- Preflight: fail loudly before spending anything (RESEARCH Pitfall 4) -------------------
 
-[ -r "$KEY_PATH" ] || { echo "No key file at $KEY_PATH — see docs/RUNBOOK-M2.md" >&2; exit 1; }
+[ -r "$KEY_PATH" ] || { echo "No key file at $KEY_PATH" >&2; exit 1; }
 
 # cast has no --private-key-path flag; read the key file inline (contents never echoed).
 DEPLOYER="$(cast wallet address --private-key "$(cat "$KEY_PATH")")"

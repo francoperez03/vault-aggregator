@@ -15,7 +15,7 @@
 # vault-core and vault-adapter are built with `--features testnet`, which compiles in the real
 # Arbitrum Sepolia USDC address (0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d) as their USDC
 # constant. **The testnet artifacts must never be deployed to mainnet.** The mainnet rig
-# (`scripts/deploy-adapters.sh`, docs/RUNBOOK-M2.md) is untouched.
+# (`scripts/deploy-adapters.sh`) is untouched.
 #
 # The USDC address is a known constant (real Sepolia USDC, not a mock this script deploys), so
 # there is no bootstrap step for it. The rig cannot mint its own USDC: the deployer must be
@@ -29,7 +29,7 @@
 #   KEY_PATH             - file holding the Sepolia deployer key (default: ~/.wakeup-sepolia.key)
 #   MAX_FEE_GWEI         - gas-price ceiling (default: 0.1)
 #   MIN_USDC_UNITS       - preflight minimum deployer USDC balance (default: 20000000 = 20 USDC)
-#   TESTNET_CORE_ADDR etc. - any address already recorded in docs/.sepolia-env is reused
+#   TESTNET_CORE_ADDR etc. - any address already recorded in .sepolia-env is reused
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,7 +37,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${ARB_SEPOLIA_RPC_URL:?Set ARB_SEPOLIA_RPC_URL}"
 KEY_PATH="${KEY_PATH:-$HOME/.wakeup-sepolia.key}"
 MAX_FEE_GWEI="${MAX_FEE_GWEI:-0.1}"
-ENV_OUT="$ROOT/docs/.sepolia-env"
+ENV_OUT="$ROOT/.sepolia-env"
 
 ADAPTER_CONST_FILE="$ROOT/packages/contracts/vault-adapter/src/adapter.rs"
 CORE_CONST_FILE="$ROOT/packages/contracts/vault-core/src/core.rs"
@@ -49,7 +49,7 @@ SEPOLIA_USDC_ADDR=0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d
 PERMIT2_ADDR=0x000000000022D473030F116dDEE9F6B43aC78BA3
 
 # Preflight minimum: 20 USDC (6 decimals). The Circle faucet drips ~10 USDC/hour, so funding may
-# take two passes; see docs/TESTNET.md for the faucet flow.
+# take two passes.
 MIN_USDC_UNITS="${MIN_USDC_UNITS:-20000000}"
 
 # --- Preflight ------------------------------------------------------------------------------

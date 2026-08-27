@@ -21,10 +21,10 @@ Four pieces:
 - **`mock-vault`** — a textbook ERC-4626 stand-in used only on the Arbitrum Sepolia test rig, so
   `vault-core`'s plumbing can be exercised on-chain without touching real protocol money. Real
   protocol behavior is validated separately, directly against Aave/Morpho/Fluid/Euler on Arbitrum
-  One (see `docs/RUNBOOK-M2.md`).
+  One.
 
 Production `vault-core` and `vault-periphery` are live on Arbitrum One since 2026-08-10 (addresses
-and the real-USDC smoke run in `docs/RUNBOOK-M2.md`). Before that, the mainnet adapters were validated
+below). Before that, the mainnet adapters were validated
 standalone, driven by an EOA standing in for the core, and the Arbitrum Sepolia rig was the first
 deployment of the core anywhere.
 
@@ -101,10 +101,25 @@ browser/EOA path (plain `approve` + `core.deposit`) is unaffected and still work
 
 ## Deployed addresses
 
-Not duplicated here — one source of truth, updated as rigs get redeployed:
+Arbitrum One (production, live since 2026-08-10):
 
-- Arbitrum Sepolia test rig (mock vaults, disposable): `docs/TESTNET.md`
-- Arbitrum One production adapters + wallets: `docs/RUNBOOK-M2.md`
+| Contract | Address |
+|---|---|
+| vault-core | `0x8a1758d3dd3d1049c43bfb1d1fec11fd403d3553` |
+| vault-periphery | `0x4e69892949f07623f3f59b24ebbb6e7ca2327bbc` |
+| Adapter — Morpho `gtUSDCc` | `0x9aa8886c64d7b3799f676a41ad8bada77f128603` |
+| Adapter — Fluid `fUSDC` | `0xe6f1d13787cb3cc8d0483fdd8a748f9d60ba5110` |
+| Adapter — Euler `eUSDC-2` | `0x5ab92d390895ce6662568585413b42524eeabcfd` |
+| Adapter — Aave `stataArbUSDCn` | `0x156dc816990079917594cf1394389ed918e4ff3c` |
+| USDC (native) | `0xaf88d065e77c8cC2239327C5EDb3A432268e5831` |
+
+Deployer / registry owner: `0x13B56eA93CB18ae90d7Ff6E01Cb97C1AbFB2B992` (key kept outside the repo).
+Every Stylus write from a client pins a 6,000,000 gas limit: `eth_estimateGas` under-reports for
+Stylus→EVM calls (a full four-protocol rebalance measured 2.6M and a 2M limit OOG'd on mainnet);
+unused gas is refunded on Arbitrum.
+
+The Arbitrum Sepolia rig is disposable; `scripts/deploy-testnet-mocks.sh` writes its addresses to
+`.sepolia-env` at the repo root.
 
 ## Stylus version upgrades (re-activation)
 
@@ -130,7 +145,8 @@ cargo stylus activate --address <program> --endpoint $RPC --private-key-path <ke
 
 Activation is keyed by codehash, so the four adapters (one binary, four instances) need a single
 activation; `ProgramUpToDate()` on the rest is the expected answer. The 2026-08-22 v2→v3
-re-activation (three txs, ~0.0005 ETH) is logged in `docs/RUNBOOK-M2.md`.
+re-activation took three txs (~0.0005 ETH): core `0x1d762042…`, periphery `0xbaa6e17b…`,
+adapters `0x1d6e4205…`; storage, weights and user shares verified intact afterwards.
 
 ## WASM size gate
 

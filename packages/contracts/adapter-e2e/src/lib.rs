@@ -9,25 +9,25 @@ use alloy::primitives::{address, Address};
 /// an env var — a typo in an env var would point real money at the wrong token.
 pub const USDC: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
 
-/// Morpho Gauntlet USDC Core `gtUSDCc`, the production vault (`docs/PROTOCOL-PROBES.md`).
+/// Morpho Gauntlet USDC Core `gtUSDCc`, the production vault.
 pub const MORPHO_VAULT: Address = address!("7e97fa6893871A2751B5fE961978DCCb2c201E65");
 
 /// Fluid `fUSDC`, the production vault. FLUID-THROTTLE is UNRESOLVED from static reads
-/// (`docs/PROTOCOL-PROBES.md`) — `fluid_roundtrip.rs`'s boundary test is the empirical answer.
+/// — `fluid_roundtrip.rs`'s boundary test is the empirical answer.
 pub const FLUID_VAULT: Address = address!("1A996cb54bb95462040408C06122D45D6Cdb6096");
 
 /// Euler v2 `eUSDC-2`, the production vault.
 pub const EULER_VAULT: Address = address!("6afb8d3f6d4a34e9cb2f217317f4dc8e05aa673b");
 
 /// Aave v3 via its official Stata static wrapper `stataArbUSDCn`. The adapter holds Stata shares,
-/// never the rebasing `aArbUSDCn` aToken (ADR 001, `docs/DISCOVERY.md` §2.1). Asset-exact
+/// never the rebasing `aArbUSDCn` aToken. Asset-exact
 /// `withdraw()` confirmed against the deployed implementation — `PROTOCOL-PROBES.md`
 /// AAVE-WITHDRAW-PATH.
 pub const STATA_VAULT: Address = address!("7cfadfd5645b50be87d546f42699d863648251ad");
 
 /// Explicit gas limit for every adapter-mutating tx, because `eth_estimateGas` under-estimates
 /// Stylus calls on Arbitrum One. Both failures were mined at status=0 with gasUsed ~= gasLimit,
-/// while the identical call replayed as `eth_call` succeeded (2026-07-22, `docs/RUNBOOK-M2.md`):
+/// while the identical call replayed as `eth_call` succeeded (2026-07-22):
 ///
 /// | Vault  | estimate | mined OOG at | actually needed |
 /// |--------|----------|--------------|-----------------|
@@ -82,8 +82,8 @@ pub mod arbitrum_one {
 ///
 /// The mocks deliberately do NOT reproduce any real protocol's quirks (Fluid's throttle, Aave's
 /// Stata wrapping, Morpho's queue walk). Adapter-vs-real-protocol behaviour is proven by the
-/// Arbitrum One round-trips in this same crate and recorded in `docs/RUNBOOK-M2.md` — these
-/// Sepolia tests never substitute for that evidence. See `docs/TESTNET.md`.
+/// Arbitrum One round-trips in this same crate; these
+/// Sepolia tests never substitute for that evidence.
 pub mod sepolia {
     use alloy::primitives::Address;
     use alloy::sol;
@@ -180,10 +180,10 @@ pub mod sepolia {
 
     /// Reads and parses one address from the environment. `Result`, not `Option`: past the
     /// `rpc_url()` skip gate a missing address is a configuration error. All of these are written
-    /// to `docs/.sepolia-env` by the deploy script — `source` it before running the tests.
+    /// to `.sepolia-env` (repo root) by the deploy script — `source` it before running the tests.
     pub fn env_addr(var: &str) -> anyhow::Result<Address> {
         std::env::var(var)
-            .map_err(|_| anyhow::anyhow!("{var} not set (source docs/.sepolia-env)"))?
+            .map_err(|_| anyhow::anyhow!("{var} not set (source .sepolia-env)"))?
             .parse()
             .map_err(|e| anyhow::anyhow!("bad {var}: {e}"))
     }

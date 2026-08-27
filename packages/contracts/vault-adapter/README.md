@@ -19,7 +19,7 @@ The public surface is five functions, no more:
 - `max_withdraw()` — public view, no gate.
 
 Everything mutating is behind `onlyCore`; both views are open. For the four deployed instances'
-addresses (Morpho, Fluid, Euler, Aave), see `docs/RUNBOOK-M2.md` — not duplicated here, addresses
+addresses (Morpho, Fluid, Euler, Aave), see the root `README.md` ("Deployed addresses") — not duplicated here, addresses
 and doc pages drift out of sync otherwise.
 
 ## Accounting

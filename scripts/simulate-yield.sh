@@ -8,7 +8,7 @@
 # anyone can donate to total_assets()), so this is Option A from the Wave-0 decision.
 #
 # Run with:
-#   source docs/.sepolia-env
+#   source .sepolia-env
 #   ARB_SEPOLIA_RPC_URL=... SEPOLIA_WALLET_KEY=... ./scripts/simulate-yield.sh
 #
 # Testnet-only. Never point this at Arbitrum One or a mainnet key.
@@ -29,7 +29,7 @@ set -euo pipefail
 
 USDC=0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d
 
-# Morpho / Fluid / Euler / Aave MockVault slots (docs/TESTNET.md, Phase 14.1 redeploy).
+# Morpho / Fluid / Euler / Aave MockVault slots.
 MOCK_VAULTS=(
   0x09135d78253449c5f0df675b6b6e18582bdcfbab # Morpho
   0x65ab69fa086fa134b1645f81be64f15ed5793464 # Fluid

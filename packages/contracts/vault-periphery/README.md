@@ -36,5 +36,5 @@ signatures are scoped to the spender contract that will spend them).
 
 ## Deployed addresses
 
-Not duplicated here — see `../../../docs/TESTNET.md` (Arbitrum Sepolia) and
-`../../../docs/RUNBOOK-M2.md` (Arbitrum One).
+Not duplicated here — see the root `README.md` ("Deployed addresses"); the Sepolia rig's
+addresses live in `.sepolia-env` at the repo root.
