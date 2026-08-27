@@ -238,3 +238,22 @@ All adapterTotalShares back to 0 after exit.
 weight-setting rebalance 318,244 · full rebalance 2,607,088. A 2,000,000 limit OOG'd the
 first real rebalance attempt (tx `0xbc118ed6…`, gasUsed == limit) — the frontend and every
 script now pin **6,000,000**; unused gas refunds, the headroom is free.
+
+## Stylus v2 → v3 re-activation (2026-08-22)
+
+Arbitrum One's ArbOS bumped the Stylus version from 2 to 3 between 2026-08-18 (last successful
+core tx) and 2026-08-22. All six programs reverted every call with `ProgramNeedsUpgrade(2, 3)`;
+in Lemon this surfaced as the generic `errors.undefined` sheet on any write (simulation revert,
+nothing broadcast). Diagnosed via `ArbWasm.stylusVersion() == 3` vs `programVersion(<addr>)`
+reverting. Re-activated from the M2 wallet (needed funding first, it was at 0 ETH):
+
+| Program | Activation tx |
+|---|---|
+| vault-core | `0x1d762042bd3734e4a1b0485d2d3c572cdfe8f9b2165951dfa34bc031bc1d9ad0` |
+| vault-periphery | `0xbaa6e17bc0ff8c811e6dd7dcdbee17fd74c5f84b4520bac3a8f0d40c0c2070c9` |
+| adapters (shared codehash, one tx) | `0x1d6e420534136b9a93c137ef872b1bac73e254c56d5c250991c15074dffabb13` |
+
+Fluid/Euler/Aave returned `ProgramUpToDate()` after the Morpho instance's activation: activation is
+per codehash. Total cost ~0.0005 ETH. Storage, weights and user shares were verified intact
+afterwards. Expect this again on every future Stylus version bump; the README's "Stylus version
+upgrades" section has the check-and-fix commands.

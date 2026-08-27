@@ -69,8 +69,23 @@ adapter can never strand a position.
 ## Live yield counter
 
 The in-app "live" APY/yield counter (VFE-02) is not a contract feature: it is a client-side rate
-derived by sampling `assets-per-share` on an interval and computing the delta over time. See
-`apps/web/hooks/useVaultYield.ts`.
+derived by sampling the position's USDC value every 60s (`useVaultPosition` polls; inside the
+Lemon WebView there are no focus events to piggyback on) and computing the delta over time. See
+`apps/web/hooks/useVaultYield.ts` and `apps/web/lib/vault/yieldSnapshot.ts`.
+
+Two properties of that derivation matter for anyone reading the number:
+
+- **Capital moves are never yield.** `deriveRate` rejects any delta whose implied APR exceeds
+  `MAX_PLAUSIBLE_APR` (1000%) and treats it as a rebase (rate 0, new baseline). A deposit,
+  redeem or rebalance landing between two samples therefore never shows up as a rate, whichever
+  screen or tab produced it. This replaced the earlier `txNonce`-only protection after a 0.5 USDC
+  deposit read as 105s of yield rendered a 10,170,003% APY in production (2026-08-25).
+- **USDC has 6 decimals, so small positions accrue in visible steps.** At ~4.5% APY a $0.50
+  position gains one atomic unit ($0.000001) roughly every 16 minutes; between two 60s samples
+  the delta is usually 0 and the APY pill stays hidden ("nothing derived, nothing claimed"). When
+  a single atomic step does land inside one window, that window's annualized rate over a tiny
+  principal reads high for a minute. The displayed APY converges to the protocol's real rate as
+  the position grows; for a $100+ position the noise is negligible.
 
 ## Permit2 write path
 
@@ -90,6 +105,32 @@ Not duplicated here — one source of truth, updated as rigs get redeployed:
 
 - Arbitrum Sepolia test rig (mock vaults, disposable): `docs/TESTNET.md`
 - Arbitrum One production adapters + wallets: `docs/RUNBOOK-M2.md`
+
+## Stylus version upgrades (re-activation)
+
+Every Stylus program records the Stylus version it was activated under. When an ArbOS upgrade
+bumps that version, the chain refuses to run older programs — every `eth_call` and tx against
+them reverts with `ProgramNeedsUpgrade(activated, current)` — until someone re-activates them.
+This is protocol behavior, not a bug in the contract or the app, and it affects every Stylus
+program on the network at once. Solidity contracts (USDC, Permit2, the underlying protocols) and
+Lemon's smart accounts are unaffected.
+
+Symptoms: in Lemon, every write shows the generic red sheet
+(`MiniAppsStackStrings...errors.undefined`) because the pre-flight simulation reverts before
+anything is broadcast; in the web app, position reads fail.
+
+Check and fix (any funded key works; the owner is not required; storage is untouched):
+
+```bash
+RPC=https://arb1.arbitrum.io/rpc
+cast call 0x0000000000000000000000000000000000000071 'stylusVersion()(uint16)' -r $RPC
+cast call 0x0000000000000000000000000000000000000071 'programVersion(address)(uint16)' <program> -r $RPC
+cargo stylus activate --address <program> --endpoint $RPC --private-key-path <key>
+```
+
+Activation is keyed by codehash, so the four adapters (one binary, four instances) need a single
+activation; `ProgramUpToDate()` on the rest is the expected answer. The 2026-08-22 v2→v3
+re-activation (three txs, ~0.0005 ETH) is logged in `docs/RUNBOOK-M2.md`.
 
 ## WASM size gate
 
